@@ -97,17 +97,73 @@ Key Skills: ${topSkills}
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
-  
+  return extractCleanEmail(responseText, candidateTitle, company);
+}
+
+/**
+ * Robustly parses and extracts pure subject and plain text body from LLM output.
+ * Guarantees NO raw JSON artifacts, keys, or brackets appear in the final email.
+ */
+function extractCleanEmail(rawText, candidateTitle, company) {
+  let subject = `Application for ${candidateTitle} - ${company}`;
+  let body = '';
+
+  let text = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+  // 1. Try JSON parsing with control character escaping
   try {
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    return JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
-  } catch (e) {
-    console.error('Failed to parse cold email JSON. Returning raw response.', responseText);
-    return {
-      subject: `Application for ${candidateTitle} - ${company}`,
-      body: responseText
-    };
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const jsonCandidate = jsonMatch[0].replace(/[\u0000-\u001F]+/g, (c) => {
+        if (c === '\n') return '\\n';
+        if (c === '\r') return '\\r';
+        if (c === '\t') return '\\t';
+        return '';
+      });
+      const parsed = JSON.parse(jsonCandidate);
+      if (parsed.subject) subject = parsed.subject.trim();
+      if (parsed.body) body = parsed.body.trim();
+    }
+  } catch (err) {
+    // Continue to regex extraction
   }
+
+  // 2. Regex fallback for subject and body
+  if (!body) {
+    const subjectMatch = text.match(/"subject"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i) ||
+                         text.match(/subject:\s*([^\n\r]+)/i);
+    if (subjectMatch) {
+      subject = subjectMatch[1].replace(/\\"/g, '"').trim();
+    }
+
+    const bodyMatch = text.match(/"body"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/i) ||
+                      text.match(/"body"\s*:\s*([\s\S]*)/i);
+    if (bodyMatch) {
+      body = bodyMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .replace(/\s*"\s*\}?\s*$/, '')
+        .trim();
+    }
+  }
+
+  // 3. Thoroughly clean any leftover JSON syntax
+  if (body) {
+    body = body
+      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+      .replace(/"?\s*\}\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .trim();
+  } else {
+    body = text
+      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+      .replace(/"?\s*\}\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .trim();
+  }
+
+  return { subject, body };
 }
 
 /**

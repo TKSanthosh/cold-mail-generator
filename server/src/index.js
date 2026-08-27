@@ -199,6 +199,23 @@ app.post('/api/send', async (req, res) => {
     return res.status(401).json({ error: 'Gmail account is not connected. Connect via OAuth first.' });
   }
 
+  // Sanitize body if raw JSON was somehow passed
+  let cleanBody = body;
+  if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
+    cleanBody = cleanBody
+      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+      .replace(/"?\s*\}\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .trim();
+  }
+
+  let cleanSubject = subject;
+  if (typeof cleanSubject === 'string' && cleanSubject.includes('"subject":')) {
+    const sm = cleanSubject.match(/"subject"\s*:\s*"([^"]+)"/);
+    if (sm) cleanSubject = sm[1];
+  }
+
   const tempPdfPath = path.join(UPLOADS_DIR, `Resume_${Date.now()}.pdf`);
   const parsedInfo = parseHrEmail(email);
   const targetName = hrName || parsedInfo.name;
@@ -210,7 +227,7 @@ app.post('/api/send', async (req, res) => {
     await generateResumePdf(resume, tempPdfPath);
 
     // Send via Gmail
-    const result = await sendGmail(email, subject, body, tempPdfPath);
+    const result = await sendGmail(email, cleanSubject, cleanBody, tempPdfPath);
 
     // Cleanup PDF
     if (fs.existsSync(tempPdfPath)) {
