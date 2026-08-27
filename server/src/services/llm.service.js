@@ -51,42 +51,42 @@ async function callLlm(systemPrompt, userPrompt, jsonMode = false) {
  */
 async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
   const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
-  const candidateTitle = resumeData?.personalInfo?.title || 'Software Development Engineer';
+  const candidateTitle = resumeData?.personalInfo?.title || 'Software Development Engineer 2 (SDE2)';
   const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
   const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
+  const candidateGithub = resumeData?.personalInfo?.github || 'github.com/TKSanthosh';
   const resumeSummary = resumeData?.summary || '';
   const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 6).join(', ');
   const companySummary = companyIntel?.summary || `${company} is an innovative technology enterprise.`;
 
-  const systemPrompt = `You are a high-performing tech career coach and copywriter specializing in direct, high-response cold outreach.
-Write a 100% finished, ready-to-send cold email from ${candidateName} to ${hrName} at ${company}.
+  const systemPrompt = `You are a seasoned senior software engineer writing a direct, professional, and respectful cold outreach email to a hiring manager or recruiter.
 
-CRITICAL MANDATES:
-1. ZERO PLACEHOLDERS: NEVER use brackets like [Your Name], [industry/field], [Company], [insert ...], or [Job Title]. All text must be fully written out, authentic, and 100% sendable without any manual editing.
-2. Sign off exactly as:
-Best regards,
-${candidateName}
-${candidateTitle}
-${candidateEmail} | ${candidatePhone}
-${candidateLinkedin ? candidateLinkedin : ''}
+WRITING GUIDELINES:
+1. SUBJECT LINE: Keep it clean, direct, and human. NEVER use marketing cliches or buzzwords like "Unlocking Excellence" or "Revolutionizing".
+   Examples:
+   - "Software Development Engineer 2 Application - ${candidateName}"
+   - "SDE 2 / Backend Engineering Opportunities - ${candidateName}"
+   - "Exploring Software Development Engineer 2 Roles at ${company} - ${candidateName}"
 
-3. Address the recipient naturally: "Hi ${hrName}," (or "Hi Hiring Team," if generic).
-4. Naturally reference ${company}'s domain/work based on this background: "${companySummary}".
-5. Clearly state interest in joining ${company} as a ${candidateTitle}.
-6. Highlight 2-3 genuine core technical strengths (${topSkills}) matching their business needs.
-7. Explicitly mention that the resume is attached for their review.
-8. Keep it concise, professional, punchy, and confident (around 100 to 140 words).
+2. EMAIL STRUCTURE (Write in 3 concise, left-aligned paragraphs):
+   - Paragraph 1: Greeting + brief intro + target role (${candidateTitle}) + natural mention of what ${company} does based on: "${companySummary}".
+   - Paragraph 2: Highlight genuine technical strengths (${topSkills}) and measurable experience (e.g. scalable REST APIs, microservices, performance tuning, and enterprise applications).
+   - Paragraph 3: Mention attached resume and express interest in a brief 10-minute introductory conversation.
+
+3. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], [Phone], or any bracketed text.
+4. NO TAB OR SPACE INDENTATION: Start every line flush left.
+5. LENGTH: 90 to 130 words. Natural, confident, and executive tone.
 
 Output format MUST be a JSON object:
 {
-  "subject": "Clear, compelling subject line without placeholders",
-  "body": "The complete, fully written email body text ready to send immediately"
+  "subject": "Clean professional subject line",
+  "body": "The 3-paragraph email body text without broken signatures"
 }`;
 
   let userPrompt = `Target HR: ${hrName}
 Target Company: ${company}
-Company Intelligence / What they do: ${companySummary}
+Company Intelligence: ${companySummary}
 Candidate Name: ${candidateName}
 Candidate Title: ${candidateTitle}
 Candidate Summary: ${resumeSummary}
@@ -94,26 +94,33 @@ Key Skills: ${topSkills}
 `;
 
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to ${company}'s domain and the provided JD requirements.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to the target company's business domain and JD requirements.`;
   } else {
-    userPrompt += `\nTask: Draft a customized cold outreach email that references ${company}'s domain and explains why the candidate is a strong fit for their engineering team.`;
+    userPrompt += `\nTask: Draft a clean, professional cold outreach email expressing interest in engineering opportunities at ${company}.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
-  return extractCleanEmail(responseText, candidateTitle, company);
+  return extractCleanEmail(responseText, candidateTitle, company, {
+    name: candidateName,
+    title: candidateTitle,
+    email: candidateEmail,
+    phone: candidatePhone,
+    linkedin: candidateLinkedin,
+    github: candidateGithub
+  });
 }
 
 /**
- * Robustly parses and extracts pure subject and plain text body from LLM output.
- * Guarantees NO raw JSON artifacts, keys, or brackets appear in the final email.
+ * Robustly parses and formats pure subject and plain text body from LLM output.
+ * Ensures flush-left alignment, proper paragraph spacing, and a clean professional signature.
  */
-function extractCleanEmail(rawText, candidateTitle, company) {
-  let subject = `Application for ${candidateTitle} - ${company}`;
-  let body = '';
+function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
+  let subject = `Software Development Engineer 2 Application - ${candidateInfo?.name || 'Santhosh T K'}`;
+  let rawBody = '';
 
   let text = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
-  // 1. Try JSON parsing with control character escaping
+  // 1. Try JSON parsing
   try {
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
@@ -125,14 +132,14 @@ function extractCleanEmail(rawText, candidateTitle, company) {
       });
       const parsed = JSON.parse(jsonCandidate);
       if (parsed.subject) subject = parsed.subject.trim();
-      if (parsed.body) body = parsed.body.trim();
+      if (parsed.body) rawBody = parsed.body.trim();
     }
   } catch (err) {
-    // Continue to regex extraction
+    // Continue to regex
   }
 
-  // 2. Regex fallback for subject and body
-  if (!body) {
+  // 2. Regex fallback
+  if (!rawBody) {
     const subjectMatch = text.match(/"subject"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i) ||
                          text.match(/subject:\s*([^\n\r]+)/i);
     if (subjectMatch) {
@@ -142,7 +149,7 @@ function extractCleanEmail(rawText, candidateTitle, company) {
     const bodyMatch = text.match(/"body"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/i) ||
                       text.match(/"body"\s*:\s*([\s\S]*)/i);
     if (bodyMatch) {
-      body = bodyMatch[1]
+      rawBody = bodyMatch[1]
         .replace(/\\n/g, '\n')
         .replace(/\\"/g, '"')
         .replace(/\s*"\s*\}?\s*$/, '')
@@ -150,23 +157,41 @@ function extractCleanEmail(rawText, candidateTitle, company) {
     }
   }
 
-  // 3. Thoroughly clean any leftover JSON syntax
-  if (body) {
-    body = body
-      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
-      .replace(/"?\s*\}\s*$/, '')
-      .replace(/\\n/g, '\n')
-      .replace(/\\"/g, '"')
-      .trim();
-  } else {
-    body = text
+  if (!rawBody) {
+    rawBody = text
       .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
       .replace(/"?\s*\}\s*$/, '')
       .replace(/\\n/g, '\n')
       .trim();
   }
 
-  return { subject, body };
+  // 3. Format and clean paragraphs + build crisp signature
+  const name = candidateInfo?.name || 'Santhosh T K';
+  const title = candidateInfo?.title || 'Software Development Engineer 2 (SDE2)';
+  const phone = candidateInfo?.phone || '+91 8825802707';
+  const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
+  const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
+  const github = candidateInfo?.github || 'github.com/TKSanthosh';
+
+  // Strip broken signoffs at end of rawBody
+  const signoffRegex = /(?:best regards|warm regards|sincerely|regards|thanks & regards|thanks and regards)/i;
+  const signoffIndex = rawBody.search(signoffRegex);
+  let mainBody = rawBody;
+  if (signoffIndex !== -1) {
+    mainBody = rawBody.substring(0, signoffIndex).trim();
+  }
+
+  // Strip leading spaces/tabs on each line and create clean paragraphs
+  const rawParagraphs = mainBody.split(/\n\s*\n/);
+  const cleanedParagraphs = rawParagraphs
+    .map(p => p.split('\n').map(line => line.trim()).filter(Boolean).join(' '))
+    .map(p => p.trim())
+    .filter(Boolean);
+
+  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone} | ${email}\n${linkedin} | ${github}`;
+  const finalBody = cleanedParagraphs.join('\n\n') + '\n\n' + cleanSignature;
+
+  return { subject, body: finalBody };
 }
 
 /**

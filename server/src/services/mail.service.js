@@ -23,8 +23,15 @@ function buildMimeMessage(to, subject, htmlBody, attachmentPath) {
     `Content-Type: multipart/mixed; boundary="${boundary}"`
   ].join('\r\n');
 
-  // Convert plain text breaks to HTML breaks if needed, or wrap in paragraphs
-  const formattedBody = htmlBody.includes('<') ? htmlBody : htmlBody.replace(/\n/g, '<br/>');
+  // Convert plain text breaks to elegant HTML paragraphs
+  let formattedBody = htmlBody;
+  if (!formattedBody.includes('<p>') && !formattedBody.includes('<div>')) {
+    const parts = formattedBody.split(/\n\s*\n/);
+    const htmlParagraphs = parts.map(p => `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #222222;">${p.replace(/\n/g, '<br/>')}</p>`);
+    formattedBody = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14.5px; color: #222222; max-width: 650px;">
+      ${htmlParagraphs.join('\n')}
+    </div>`;
+  }
 
   const bodySection = [
     `--${boundary}`,
