@@ -47,39 +47,64 @@ async function callLlm(systemPrompt, userPrompt, jsonMode = false) {
 }
 
 /**
- * Generates a tailored cold email.
+ * Generates a tailored cold email with zero placeholders.
  */
-async function generateColdEmail(hrName, company, jd, resumeSummary) {
-  const systemPrompt = `You are a professional corporate recruiter and expert copywriter specializing in cold outreach. 
-Write a highly compelling, short, and customized cold email to a hiring manager/HR.
-The tone must be professional, warm, confident, and direct. Avoid generic/spammy corporate phrases.
-Your output must be in JSON format:
+async function generateColdEmail(hrName, company, jd, resumeData) {
+  const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
+  const candidateTitle = resumeData?.personalInfo?.title || 'Software Development Engineer';
+  const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
+  const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
+  const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
+  const resumeSummary = resumeData?.summary || '';
+  const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 6).join(', ');
+
+  const systemPrompt = `You are a high-performing tech career coach and copywriter specializing in direct, high-response cold outreach.
+Write a 100% finished, ready-to-send cold email from ${candidateName} to ${hrName} at ${company}.
+
+CRITICAL MANDATES:
+1. ZERO PLACEHOLDERS: NEVER use brackets like [Your Name], [industry/field], [Company], [insert ...], or [Job Title]. All text must be fully written out, authentic, and 100% sendable without any manual editing.
+2. Sign off exactly as:
+Best regards,
+${candidateName}
+${candidateTitle}
+${candidateEmail} | ${candidatePhone}
+${candidateLinkedin ? candidateLinkedin : ''}
+
+3. Address the recipient naturally: "Hi ${hrName}," (or "Hi Hiring Team," if generic).
+4. Clearly state interest in joining ${company} as a ${candidateTitle}.
+5. Highlight 2-3 genuine core technical strengths (${topSkills}) matching the role.
+6. Explicitly mention that the resume is attached for their review.
+7. Keep it concise, professional, punchy, and confident (around 100 to 140 words).
+
+Output format MUST be a JSON object:
 {
-  "subject": "Email subject line",
-  "body": "Plain text email body (use \\n for line breaks)"
+  "subject": "Clear, compelling subject line without placeholders",
+  "body": "The complete, fully written email body text ready to send immediately"
 }`;
 
-  let userPrompt = `HR Name: ${hrName}
-Company Name: ${company}
-Candidate Profile Summary: ${resumeSummary}
+  let userPrompt = `Target HR: ${hrName}
+Target Company: ${company}
+Candidate Name: ${candidateName}
+Candidate Title: ${candidateTitle}
+Candidate Summary: ${resumeSummary}
+Key Skills: ${topSkills}
 `;
 
-  if (jd) {
-    userPrompt += `\nJob Description (JD) to align with:\n${jd}\n\nTask: Draft a tailored cold email that highlights the candidate's matching experience/projects, showing why they are a great fit for this specific role.`;
+  if (jd && jd.trim().length > 0) {
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to the JD keywords and requirements.`;
   } else {
-    userPrompt += `\n\nTask: Draft a standard cold email introducing the candidate's general expertise and expressing interest in opportunities at the company.`;
+    userPrompt += `\nTask: Draft a general cold outreach email expressing interest in opportunities at ${company}.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
   
   try {
-    // Extract JSON block if model wrapped it in markdown
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     return JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
   } catch (e) {
     console.error('Failed to parse cold email JSON. Returning raw response.', responseText);
     return {
-      subject: `Application for Software Developer Opportunity - ${company}`,
+      subject: `Application for ${candidateTitle} - ${company}`,
       body: responseText
     };
   }

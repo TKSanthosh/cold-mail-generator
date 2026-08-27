@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { exec } = require('child_process');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
 const { parseHrEmail } = require('./utils/parser');
@@ -16,7 +17,7 @@ const RESUME_PATH = process.env.RESUME_PATH || path.join(__dirname, '../resume.j
 const LOGS_PATH = process.env.LOGS_PATH || path.join(__dirname, '../logs.json');
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
-app.use(express.json());
+app.use(express.json({ limit: '20mb' }));
 
 // Verify configuration on boot
 if (!fs.existsSync(RESUME_PATH)) {
@@ -116,6 +117,45 @@ app.post('/api/resume', (req, res) => {
   }
 });
 
+app.post('/api/resume/upload', async (req, res) => {
+  const { pdfBase64 } = req.body;
+  if (!pdfBase64) {
+    return res.status(400).json({ error: 'Missing pdfBase64 file data' });
+  }
+
+  const uploadPdfPath = path.join(UPLOADS_DIR, `Uploaded_Resume_${Date.now()}.pdf`);
+  try {
+    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
+    const buffer = Buffer.from(cleanBase64, 'base64');
+    fs.writeFileSync(uploadPdfPath, buffer);
+
+    const scriptPath = path.join(__dirname, 'utils/resume_extractor.py');
+    exec(`python "${scriptPath}" "${uploadPdfPath}"`, (error, stdout, stderr) => {
+      // Clean up uploaded temp file
+      if (fs.existsSync(uploadPdfPath)) {
+        fs.unlinkSync(uploadPdfPath);
+      }
+
+      if (error) {
+        console.error('Resume extraction error:', stderr || error.message);
+        return res.status(500).json({ error: stderr || error.message });
+      }
+
+      try {
+        const parsedResume = JSON.parse(stdout.trim());
+        res.json({ success: true, resume: parsedResume });
+      } catch (err) {
+        res.status(500).json({ error: 'Failed to parse extracted JSON output' });
+      }
+    });
+  } catch (e) {
+    if (fs.existsSync(uploadPdfPath)) {
+      fs.unlinkSync(uploadPdfPath);
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- GENERATION ENDPOINT ---
 app.post('/api/generate', async (req, res) => {
   const { email, jd } = req.body;
@@ -133,9 +173,8 @@ app.post('/api/generate', async (req, res) => {
       tailoredResume = await tailorResume(standardResume, jd);
     }
 
-    // Step 2: Generate Cold Email Body
-    const resumeSummary = tailoredResume.summary || standardResume.summary;
-    const emailContent = await generateColdEmail(name, company, jd, resumeSummary);
+    // Step 2: Generate Cold Email Body (100% complete with zero placeholders)
+    const emailContent = await generateColdEmail(name, company, jd, tailoredResume);
 
     res.json({
       name,

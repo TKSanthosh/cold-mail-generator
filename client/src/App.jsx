@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -999,6 +999,8 @@ function ResumeEditor({ showToast }) {
   const [resumeData, setResumeData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const fetchResume = async () => {
     try {
@@ -1015,6 +1017,39 @@ function ResumeEditor({ showToast }) {
   useEffect(() => {
     fetchResume();
   }, []);
+
+  const handleFileUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      return showToast('Please upload a valid PDF resume file.', 'error');
+    }
+
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = async () => {
+      try {
+        const base64 = reader.result;
+        const res = await fetch(`${BACKEND_URL}/api/resume/upload`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pdfBase64: base64 })
+        });
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+
+        setResumeData(data.resume);
+        showToast('Resume PDF parsed and baseline updated with AI!', 'success');
+      } catch (err) {
+        showToast(err.message || 'Failed to parse resume PDF', 'error');
+      } finally {
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsDataURL(file);
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -1055,18 +1090,54 @@ function ResumeEditor({ showToast }) {
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <FileText className="w-5 h-5 text-indigo-600" /> Base Resume Template Editor
-        </h2>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-xs shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
-        >
-          {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-          Save Changes
-        </button>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+        <div>
+          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-indigo-600" /> Base Resume Template Editor
+          </h2>
+          <p className="text-xs text-slate-500 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            accept=".pdf"
+            className="hidden"
+          />
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploading}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 border border-slate-200"
+          >
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" /> : <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />}
+            {uploading ? 'Parsing with AI...' : 'Upload Updated Resume (PDF)'}
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={saving || uploading}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-xs shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
+          >
+            {saving && <Loader2 className="w-3 h-3 animate-spin" />}
+            Save Changes
+          </button>
+        </div>
+      </div>
+
+      {/* Upload Banner */}
+      <div 
+        onClick={() => fileInputRef.current?.click()}
+        className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center"
+      >
+        <div className="p-3 bg-white text-indigo-600 rounded-full shadow-sm">
+          {uploading ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <UploadCloud className="w-6 h-6" />}
+        </div>
+        <div>
+          <p className="text-xs font-bold text-slate-800">
+            {uploading ? 'Extracting text and parsing details using AI...' : 'Click to Upload your Updated Resume PDF'}
+          </p>
+          <p className="text-[11px] text-slate-500 mt-0.5">The system will automatically extract your experience, skills, projects, and education into your baseline template.</p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
