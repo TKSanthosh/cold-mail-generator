@@ -252,6 +252,16 @@ app.post('/api/bulk-parse', (req, res) => {
   res.json({ parsed });
 });
 
+// --- SERVE PRODUCTION CLIENT ASSETS ---
+const clientDistPath = path.join(__dirname, '../../client/dist');
+if (fs.existsSync(clientDistPath)) {
+  app.use(express.static(clientDistPath));
+  app.get('*', (req, res, next) => {
+    if (req.path.startsWith('/api')) return next();
+    res.sendFile(path.join(clientDistPath, 'index.html'));
+  });
+}
+
 app.listen(PORT, () => {
   console.log(`[INFO] Cold Email Backend listening on http://localhost:${PORT}`);
 });

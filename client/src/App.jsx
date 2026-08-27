@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search } from 'lucide-react';
 
-const BACKEND_URL = 'http://localhost:5001';
+const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('single');
