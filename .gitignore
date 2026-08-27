@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Secrets & Authentication
+.env
+*/.env
+token.json
+*/token.json
+client_secret*.json
+
+# Generated PDFs & logs
+uploads/*.pdf
+!uploads/.gitkeep
+logs.json
+
+# Build outputs
+dist/
+client/dist/
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

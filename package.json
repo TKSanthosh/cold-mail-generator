@@ -1,0 +1,22 @@
+{
+  "name": "cold-mail-generator",
+  "version": "1.0.0",
+  "description": "Automated Cold Email & Dynamic Resume Tailor application powered by NVIDIA NIM and Google OAuth2",
+  "main": "server/src/index.js",
+  "scripts": {
+    "postinstall": "npm install --prefix server && npm install --prefix client",
+    "build": "npm run build --prefix client",
+    "start": "node server/src/index.js",
+    "dev:server": "node server/src/index.js",
+    "dev:client": "npm run dev --prefix client"
+  },
+  "keywords": [
+    "cold-email",
+    "resume-tailor",
+    "nvidia-nim",
+    "gmail-oauth2",
+    "pdfkit"
+  ],
+  "author": "Santhosh T K",
+  "license": "MIT"
+}

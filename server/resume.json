@@ -1,0 +1,99 @@
+{
+  "personalInfo": {
+    "name": "Santhosh T K",
+    "title": "Software Development Engineer 2 (SDE2)",
+    "email": "tksanthosh494@gmail.com",
+    "phone": "+91 8825802707",
+    "location": "Bangalore",
+    "github": "github.com/TKSanthosh",
+    "linkedin": "linkedin.com/in/santhosh-tk"
+  },
+  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS.",
+  "skills": {
+    "Languages": [
+      "Node.js",
+      "Express.js",
+      "React.js",
+      "JavaScript (ES6+)"
+    ],
+    "Frontend": [
+      "React.js",
+      "HTML5",
+      "CSS3",
+      "Reusable Components"
+    ],
+    "Backend": [
+      "Node.js",
+      "Express.js",
+      "RESTful APIs",
+      "JWT Authentication",
+      "Middleware",
+      "MVC Architecture",
+      "Async/Await",
+      "WebSockets"
+    ],
+    "Databases": [
+      "MySQL",
+      "MongoDB",
+      "Joins",
+      "Indexing",
+      "Query Optimization"
+    ],
+    "Tools": [
+      "Git",
+      "GitHub",
+      "Postman",
+      "npm",
+      "VS Code",
+      "JSON"
+    ]
+  },
+  "experience": [
+    {
+      "company": "IQVIA",
+      "role": "Software Development Engineer 2 (SDE2)",
+      "duration": "June 2026 - Present",
+      "highlights": [
+        "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+        "Involved in application enhancements and feature modifications based on client and business requirements.",
+        "Collaborating with team members to resolve issues and support ongoing application development."
+      ]
+    },
+    {
+      "company": "Sify Technologies",
+      "role": "Software Developer",
+      "duration": "July 2023 – June 2026",
+      "highlights": [
+        "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+        "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+        "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+        "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+        "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "title": "Exam Engine – Exam Delivery System",
+      "techStack": "Node.js, Express.js, MySQL, MongoDB",
+      "highlights": [
+        "Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization."
+      ]
+    },
+    {
+      "title": "QPTool – Exam Configuration Platform",
+      "techStack": "Node.js, Express.js, MySQL, MongoDB",
+      "highlights": [
+        "Improved API response time by approximately 20%."
+      ]
+    }
+  ],
+  "education": [
+    {
+      "institution": "Velammal College of Engineering & Technology, Madurai",
+      "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+      "duration": "2023",
+      "details": "CGPA: 9.15 / 10"
+    }
+  ]
+}
