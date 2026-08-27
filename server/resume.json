@@ -1,28 +1,17 @@
 {
   "personalInfo": {
-    "name": "Santhosh T K",
+    "name": "SANTHOSH T K",
     "title": "Software Development Engineer 2 (SDE2)",
+    "location": "Bangalore",
     "email": "tksanthosh494@gmail.com",
     "phone": "+91 8825802707",
-    "location": "Bangalore",
-    "github": "github.com/TKSanthosh",
-    "linkedin": "linkedin.com/in/santhosh-tk"
+    "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+    "linkedin": "linkedin.com/in/santhosh-tk",
+    "github": "github.com/TKSanthosh"
   },
-  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS.",
+  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
   "skills": {
-    "Languages": [
-      "Node.js",
-      "Express.js",
-      "React.js",
-      "JavaScript (ES6+)"
-    ],
-    "Frontend": [
-      "React.js",
-      "HTML5",
-      "CSS3",
-      "Reusable Components"
-    ],
-    "Backend": [
+    "Backend Technologies": [
       "Node.js",
       "Express.js",
       "RESTful APIs",
@@ -32,6 +21,14 @@
       "Async/Await",
       "WebSockets"
     ],
+    "Frontend Technologies": [
+      "React.js",
+      "JavaScript (ES6+)",
+      "React Hooks",
+      "HTML5",
+      "CSS3",
+      "Reusable Components"
+    ],
     "Databases": [
       "MySQL",
       "MongoDB",
@@ -39,7 +36,7 @@
       "Indexing",
       "Query Optimization"
     ],
-    "Tools": [
+    "Tools & Platforms": [
       "Git",
       "GitHub",
       "Postman",
@@ -50,9 +47,10 @@
   },
   "experience": [
     {
-      "company": "IQVIA",
       "role": "Software Development Engineer 2 (SDE2)",
+      "company": "IQVIA, Bangalore",
       "duration": "June 2026 - Present",
+      "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
       "highlights": [
         "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
         "Involved in application enhancements and feature modifications based on client and business requirements.",
@@ -60,38 +58,53 @@
       ]
     },
     {
-      "company": "Sify Technologies",
       "role": "Software Developer",
+      "company": "Sify Technologies, Chennai",
       "duration": "July 2023 – June 2026",
-      "highlights": [
-        "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
-        "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
-        "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
-        "Resolved asynchronous issues, race conditions, and UI rendering delays.",
-        "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+      "projects": [
+        {
+          "name": "Project: Exam Engine – Exam Delivery System",
+          "highlights": [
+            "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+            "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+            "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+            "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+            "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+          ]
+        },
+        {
+          "name": "Project: QPTool – Exam Configuration Platform",
+          "highlights": [
+            "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+            "Built reusable React.js components and handled frontend API integration and UI logic.",
+            "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+            "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+            "Enhanced API validation, security, and centralized error handling to improve system stability."
+          ]
+        }
       ]
     }
   ],
-  "projects": [
-    {
-      "title": "Exam Engine – Exam Delivery System",
-      "techStack": "Node.js, Express.js, MySQL, MongoDB",
-      "highlights": [
-        "Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization."
-      ]
-    },
-    {
-      "title": "QPTool – Exam Configuration Platform",
-      "techStack": "Node.js, Express.js, MySQL, MongoDB",
-      "highlights": [
-        "Improved API response time by approximately 20%."
-      ]
-    }
+  "achievements": [
+    "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+    "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+    "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+    "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
   ],
+  "internship": {
+    "role": "Full Stack Intern",
+    "company": "Sify Technologies – CHIP 2023 Program",
+    "duration": "February 2023 – June 2023",
+    "highlights": [
+      "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+      "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+      "Built internal tools and modules used by engineering teams in real projects."
+    ]
+  },
   "education": [
     {
-      "institution": "Velammal College of Engineering & Technology, Madurai",
       "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+      "institution": "Velammal College of Engineering & Technology, Madurai",
       "duration": "2023",
       "details": "CGPA: 9.15 / 10"
     }
