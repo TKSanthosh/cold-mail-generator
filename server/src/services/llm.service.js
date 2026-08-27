@@ -57,46 +57,44 @@ async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) 
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
   const candidateGithub = resumeData?.personalInfo?.github || 'github.com/TKSanthosh';
   const resumeSummary = resumeData?.summary || '';
-  const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 6).join(', ');
-  const companySummary = companyIntel?.summary || `${company} is an innovative technology enterprise.`;
+  const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 8).join(', ');
+  const companySummary = companyIntel?.summary ? `Target Company Domain: ${companyIntel.summary}` : '';
 
-  const systemPrompt = `You are a seasoned senior software engineer writing a direct, professional, and respectful cold outreach email to a hiring manager or recruiter.
+  const systemPrompt = `You are Santhosh T K, a results-driven Senior Software Engineer (SDE 2) writing a direct, high-impact cold outreach email to a recruiter/hiring manager (${hrName}) at ${company}.
 
-WRITING GUIDELINES:
-1. SUBJECT LINE: Keep it clean, direct, and human. NEVER use marketing cliches or buzzwords like "Unlocking Excellence" or "Revolutionizing".
-   Examples:
-   - "Software Development Engineer 2 Application - ${candidateName}"
-   - "SDE 2 / Backend Engineering Opportunities - ${candidateName}"
-   - "Exploring Software Development Engineer 2 Roles at ${company} - ${candidateName}"
-
-2. EMAIL STRUCTURE (Write in 3 concise, left-aligned paragraphs):
-   - Paragraph 1: Greeting + brief intro + target role (${candidateTitle}) + natural mention of what ${company} does based on: "${companySummary}".
-   - Paragraph 2: Highlight genuine technical strengths (${topSkills}) and measurable experience (e.g. scalable REST APIs, microservices, performance tuning, and enterprise applications).
-   - Paragraph 3: Mention attached resume and express interest in a brief 10-minute introductory conversation.
-
-3. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], [Phone], or any bracketed text.
-4. NO TAB OR SPACE INDENTATION: Start every line flush left.
-5. LENGTH: 90 to 130 words. Natural, confident, and executive tone.
+STRICT WRITING RULES:
+1. ZERO FLATTERY / NO CORPORATE ESSAYS: NEVER praise the company's mission, user numbers (e.g. "I am drawn to your mission of..."), or write generic compliments. Recruiters delete flattery immediately.
+2. BE DIRECT & VALUE-DRIVEN: State clearly and confidently:
+   - Who you are: SDE 2 with 3+ years of production experience building scalable web applications and microservices.
+   - Core Tech Stack: ${topSkills}.
+   - Measurable Experience: Building high-performance REST APIs, reducing API response times by 20%, eliminating production bottlenecks, and architecting enterprise platforms at IQVIA and Sify Technologies.
+   - Exact Value: Ready to deliver immediate engineering impact, write clean scalable code, and optimize backend systems.
+3. CONCISE & PUNCHY: 80 to 110 words maximum. Every sentence must communicate competence and value.
+4. STRUCTURE:
+   - Line 1: Hi ${hrName},
+   - Paragraph 1: Direct pitch introducing yourself as an SDE 2 with 3+ years of experience and expressing interest in engineering roles at ${company}.
+   - Paragraph 2: Core technical capabilities (${topSkills}) and tangible achievements at IQVIA & Sify.
+   - Paragraph 3: Mention attached resume and ask for a quick 10-minute introductory call.
+5. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], or any bracketed text.
 
 Output format MUST be a JSON object:
 {
-  "subject": "Clean professional subject line",
-  "body": "The 3-paragraph email body text without broken signatures"
+  "subject": "SDE 2 / Backend Engineering Opportunities - Santhosh T K",
+  "body": "The direct 3-paragraph email text without signatures"
 }`;
 
-  let userPrompt = `Target HR: ${hrName}
+  let userPrompt = `Target Recruiter: ${hrName}
 Target Company: ${company}
-Company Intelligence: ${companySummary}
-Candidate Name: ${candidateName}
-Candidate Title: ${candidateTitle}
-Candidate Summary: ${resumeSummary}
-Key Skills: ${topSkills}
+${companySummary}
+Candidate: ${candidateName} (${candidateTitle})
+Core Tech Stack: ${topSkills}
+Experience Highlights: 3+ years at IQVIA (Clinical Event Platform) and Sify Technologies (Exam Engine, QPTool, 20% API speedup)
 `;
 
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to the target company's business domain and JD requirements.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align your direct technical pitch with the provided JD requirements.`;
   } else {
-    userPrompt += `\nTask: Draft a clean, professional cold outreach email expressing interest in engineering opportunities at ${company}.`;
+    userPrompt += `\nTask: Draft a direct value-driven outreach email highlighting why you are a high-value hire for ${company}.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);

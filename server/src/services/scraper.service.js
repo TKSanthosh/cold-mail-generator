@@ -10,8 +10,16 @@ async function scrapeCompanyIntel(companyName, domain) {
     source: ''
   };
 
+  const isPersonalEmail = !domain || ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'protonmail.com'].includes(domain.toLowerCase());
+
+  if (isPersonalEmail || ['gmail', 'yahoo', 'outlook', 'hotmail'].includes(companyName.toLowerCase())) {
+    intel.summary = '';
+    intel.source = 'Direct Recruiter Outreach';
+    return intel;
+  }
+
   // 1. Check if official domain is accessible and extract homepage meta description
-  if (domain && !['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com'].includes(domain.toLowerCase())) {
+  if (domain) {
     try {
       const targetUrl = `https://${domain}`;
       const controller = new AbortController();
@@ -27,18 +35,15 @@ async function scrapeCompanyIntel(companyName, domain) {
 
       if (pageRes.ok) {
         const html = await pageRes.text();
-        // Extract meta description
         const metaDescMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
                               html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["']description["']/i) ||
                               html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
         
-        // Extract title
         const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
 
         let title = titleMatch ? titleMatch[1].trim() : '';
         let desc = metaDescMatch ? metaDescMatch[1].trim() : '';
 
-        // Decode basic HTML entities
         title = title.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
         desc = desc.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&#39;/g, "'").replace(/&quot;/g, '"');
 
@@ -66,12 +71,9 @@ async function scrapeCompanyIntel(companyName, domain) {
       }
     }
   } catch (e) {
-    // Continue to generic fallback
+    // Fallback
   }
 
-  // 3. Fallback
-  intel.summary = `${companyName} is a technology-driven organization delivering digital engineering, scalable systems, and industry-leading products.`;
-  intel.source = 'General Industry Knowledge';
   return intel;
 }
 
