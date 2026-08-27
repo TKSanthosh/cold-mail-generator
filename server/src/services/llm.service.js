@@ -49,7 +49,7 @@ async function callLlm(systemPrompt, userPrompt, jsonMode = false) {
 /**
  * Generates a tailored cold email with zero placeholders.
  */
-async function generateColdEmail(hrName, company, jd, resumeData) {
+async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
   const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
   const candidateTitle = resumeData?.personalInfo?.title || 'Software Development Engineer';
   const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
@@ -57,6 +57,7 @@ async function generateColdEmail(hrName, company, jd, resumeData) {
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
   const resumeSummary = resumeData?.summary || '';
   const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 6).join(', ');
+  const companySummary = companyIntel?.summary || `${company} is an innovative technology enterprise.`;
 
   const systemPrompt = `You are a high-performing tech career coach and copywriter specializing in direct, high-response cold outreach.
 Write a 100% finished, ready-to-send cold email from ${candidateName} to ${hrName} at ${company}.
@@ -71,10 +72,11 @@ ${candidateEmail} | ${candidatePhone}
 ${candidateLinkedin ? candidateLinkedin : ''}
 
 3. Address the recipient naturally: "Hi ${hrName}," (or "Hi Hiring Team," if generic).
-4. Clearly state interest in joining ${company} as a ${candidateTitle}.
-5. Highlight 2-3 genuine core technical strengths (${topSkills}) matching the role.
-6. Explicitly mention that the resume is attached for their review.
-7. Keep it concise, professional, punchy, and confident (around 100 to 140 words).
+4. Naturally reference ${company}'s domain/work based on this background: "${companySummary}".
+5. Clearly state interest in joining ${company} as a ${candidateTitle}.
+6. Highlight 2-3 genuine core technical strengths (${topSkills}) matching their business needs.
+7. Explicitly mention that the resume is attached for their review.
+8. Keep it concise, professional, punchy, and confident (around 100 to 140 words).
 
 Output format MUST be a JSON object:
 {
@@ -84,6 +86,7 @@ Output format MUST be a JSON object:
 
   let userPrompt = `Target HR: ${hrName}
 Target Company: ${company}
+Company Intelligence / What they do: ${companySummary}
 Candidate Name: ${candidateName}
 Candidate Title: ${candidateTitle}
 Candidate Summary: ${resumeSummary}
@@ -91,9 +94,9 @@ Key Skills: ${topSkills}
 `;
 
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to the JD keywords and requirements.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the email specifically to ${company}'s domain and the provided JD requirements.`;
   } else {
-    userPrompt += `\nTask: Draft a general cold outreach email expressing interest in opportunities at ${company}.`;
+    userPrompt += `\nTask: Draft a customized cold outreach email that references ${company}'s domain and explains why the candidate is a strong fit for their engineering team.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);

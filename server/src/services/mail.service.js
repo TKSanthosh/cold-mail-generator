@@ -85,6 +85,28 @@ async function sendGmail(to, subject, htmlBody, attachmentPath) {
   return res.data;
 }
 
+/**
+ * Creates a ready-to-send draft directly in the user's Gmail app with PDF attached.
+ */
+async function createGmailDraft(to, subject, htmlBody, attachmentPath) {
+  const oauth2Client = getOAuth2Client();
+  const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+  const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath);
+
+  const res = await gmail.users.drafts.create({
+    userId: 'me',
+    requestBody: {
+      message: {
+        raw: raw
+      }
+    }
+  });
+
+  return res.data;
+}
+
 module.exports = {
-  sendGmail
+  sendGmail,
+  createGmailDraft
 };

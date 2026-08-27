@@ -9,7 +9,9 @@ const { parseHrEmail } = require('./utils/parser');
 const { getAuthUrl, handleCallbackCode, isAuthorized, logout } = require('./services/oauth.service');
 const { generateColdEmail, tailorResume } = require('./services/llm.service');
 const { generateResumePdf } = require('./services/pdf.service');
-const { sendGmail } = require('./services/mail.service');
+const { sendGmail, createGmailDraft } = require('./services/mail.service');
+const { scrapeCompanyIntel } = require('./services/scraper.service');
+const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -164,7 +166,11 @@ app.post('/api/generate', async (req, res) => {
   }
 
   try {
-    const { name, company } = parseHrEmail(email);
+    const { name, company, domain } = parseHrEmail(email);
+
+    // Step 0: Live Internet Scraping for Company Background & Intelligence
+    const companyIntel = await scrapeCompanyIntel(company, domain);
+
     const standardResume = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
 
     // Step 1: Generate Tailored Resume (if JD is provided)
@@ -173,12 +179,13 @@ app.post('/api/generate', async (req, res) => {
       tailoredResume = await tailorResume(standardResume, jd);
     }
 
-    // Step 2: Generate Cold Email Body (100% complete with zero placeholders)
-    const emailContent = await generateColdEmail(name, company, jd, tailoredResume);
+    // Step 2: Generate Cold Email Body (informed by live company intelligence)
+    const emailContent = await generateColdEmail(name, company, jd, tailoredResume, companyIntel);
 
     res.json({
       name,
       company,
+      companyIntel,
       email: emailContent,
       resume: tailoredResume
     });
@@ -269,6 +276,119 @@ app.post('/api/send', async (req, res) => {
 
     res.status(500).json({ error: e.message });
   }
+});
+
+// Initialize background morning schedule dispatcher
+initScheduler(addLogEntry);
+
+// --- GMAIL DRAFT CREATION ENDPOINT (Schedule inside Gmail App) ---
+app.post('/api/draft', async (req, res) => {
+  const { email, subject, body, resume, hrName, company, resumeType, jdSnippet } = req.body;
+  if (!email || !subject || !body || !resume) {
+    return res.status(400).json({ error: 'Missing email, subject, body, or resume parameter' });
+  }
+
+  if (!isAuthorized()) {
+    return res.status(401).json({ error: 'Gmail account is not connected. Connect via OAuth first.' });
+  }
+
+  let cleanBody = body;
+  if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
+    cleanBody = cleanBody
+      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+      .replace(/"?\s*\}\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .trim();
+  }
+
+  let cleanSubject = subject;
+  if (typeof cleanSubject === 'string' && cleanSubject.includes('"subject":')) {
+    const sm = cleanSubject.match(/"subject"\s*:\s*"([^"]+)"/);
+    if (sm) cleanSubject = sm[1];
+  }
+
+  const tempPdfPath = path.join(UPLOADS_DIR, `Draft_Resume_${Date.now()}.pdf`);
+  const parsedInfo = parseHrEmail(email);
+  const targetName = hrName || parsedInfo.name;
+  const targetCompany = company || parsedInfo.company;
+  const isTailored = resumeType === 'Tailored' || !!(jdSnippet && jdSnippet.trim().length > 0);
+
+  try {
+    // Generate tailored 1-page PDF
+    await generateResumePdf(resume, tempPdfPath);
+
+    // Create Draft in Gmail App
+    const result = await createGmailDraft(email, cleanSubject, cleanBody, tempPdfPath);
+
+    if (fs.existsSync(tempPdfPath)) {
+      fs.unlinkSync(tempPdfPath);
+    }
+
+    addLogEntry({
+      hrEmail: email,
+      hrName: targetName,
+      company: targetCompany,
+      subject: cleanSubject,
+      body: cleanBody,
+      resumeType: isTailored ? 'Tailored (with JD)' : 'Standard Resume',
+      tailoredSummary: resume.summary || '',
+      status: 'Created Draft in Gmail App',
+      draftId: result.id
+    });
+
+    res.json({ success: true, draft: result });
+  } catch (e) {
+    console.error('Draft creation error:', e);
+    if (fs.existsSync(tempPdfPath)) {
+      fs.unlinkSync(tempPdfPath);
+    }
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// --- SCHEDULE DISPATCH ENDPOINTS ---
+app.post('/api/schedule', (req, res) => {
+  const { email, subject, body, resume, hrName, company, scheduledAt, resumeType } = req.body;
+  if (!email || !subject || !body || !resume || !scheduledAt) {
+    return res.status(400).json({ error: 'Missing required scheduling parameters' });
+  }
+
+  if (!isAuthorized()) {
+    return res.status(401).json({ error: 'Gmail account is not connected.' });
+  }
+
+  let cleanBody = body;
+  if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
+    cleanBody = cleanBody
+      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+      .replace(/"?\s*\}\s*$/, '')
+      .replace(/\\n/g, '\n')
+      .replace(/\\"/g, '"')
+      .trim();
+  }
+
+  const job = addScheduledJob({
+    email,
+    subject,
+    body: cleanBody,
+    resume,
+    hrName,
+    company,
+    scheduledAt,
+    resumeType
+  });
+
+  res.json({ success: true, job });
+});
+
+app.get('/api/scheduled', (req, res) => {
+  res.json({ jobs: getScheduledJobs() });
+});
+
+app.delete('/api/scheduled/:id', (req, res) => {
+  cancelScheduledJob(req.params.id);
+  res.json({ success: true });
 });
 
 // --- OUTREACH LOGS ENDPOINTS ---

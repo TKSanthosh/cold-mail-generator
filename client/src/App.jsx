@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -191,6 +191,7 @@ function SingleSender({ isAuthorized, showToast }) {
   const [emailSubject, setEmailSubject] = useState('');
   const [emailBody, setEmailBody] = useState('');
   const [tailoredResume, setTailoredResume] = useState(null);
+  const [companyIntel, setCompanyIntel] = useState(null);
 
   // Auto-parse on blur or typing check
   const handleEmailBlur = () => {
@@ -221,7 +222,8 @@ function SingleSender({ isAuthorized, showToast }) {
       setEmailSubject(data.email.subject);
       setEmailBody(data.email.body);
       setTailoredResume(data.resume);
-      showToast('Tailored email and resume generated successfully!', 'success');
+      setCompanyIntel(data.companyIntel || null);
+      showToast('Scraped company intelligence & tailored templates successfully!', 'success');
     } catch (e) {
       showToast(e.message || 'Failed to generate tailored items', 'error');
     } finally {
@@ -262,6 +264,77 @@ function SingleSender({ isAuthorized, showToast }) {
     }
   };
 
+  const handleCreateDraft = async () => {
+    if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
+    if (!emailSubject || !emailBody || !tailoredResume) {
+      return showToast('Please generate the tailored templates first.', 'error');
+    }
+
+    setSending(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/draft`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: hrEmail,
+          subject: emailSubject,
+          body: emailBody,
+          resume: tailoredResume,
+          hrName: parsedName,
+          company: parsedCompany,
+          resumeType: jd && jd.trim().length > 0 ? 'Tailored' : 'Standard',
+          jdSnippet: jd
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast(`Draft created in Gmail with 1-page PDF attached! You can open your Gmail app to schedule or send anytime.`, 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to create Gmail draft', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleScheduleMorning = async () => {
+    if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
+    if (!emailSubject || !emailBody || !tailoredResume) {
+      return showToast('Please generate the tailored templates first.', 'error');
+    }
+
+    // Calculate tomorrow 8:30 AM
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(8, 30, 0, 0);
+
+    setSending(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/schedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: hrEmail,
+          subject: emailSubject,
+          body: emailBody,
+          resume: tailoredResume,
+          hrName: parsedName,
+          company: parsedCompany,
+          scheduledAt: tomorrow.toISOString(),
+          resumeType: jd && jd.trim().length > 0 ? 'Tailored' : 'Standard'
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast(`Scheduled for tomorrow morning at 8:30 AM via Gmail!`, 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to schedule email', 'error');
+    } finally {
+      setSending(false);
+    }
+  };
+
   const handleTailorAndSendInstantly = async () => {
     if (!hrEmail) return showToast('Please enter an HR email address.', 'error');
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
@@ -283,6 +356,7 @@ function SingleSender({ isAuthorized, showToast }) {
       setEmailSubject(data.email.subject);
       setEmailBody(data.email.body);
       setTailoredResume(data.resume);
+      setCompanyIntel(data.companyIntel || null);
 
       // Step 2: Send Email Immediately
       const sendRes = await fetch(`${BACKEND_URL}/api/send`, {
@@ -355,37 +429,49 @@ function SingleSender({ isAuthorized, showToast }) {
           </div>
         </div>
 
+        {/* Scraped Company Intelligence Card */}
+        {companyIntel && (
+          <div className="bg-indigo-50/70 border border-indigo-100 rounded-lg p-3 text-xs text-indigo-950 flex flex-col gap-1">
+            <span className="font-bold flex items-center gap-1.5 text-indigo-700">
+              <Globe className="w-3.5 h-3.5" /> Scraped Company Intelligence ({companyIntel.source || 'Online'})
+            </span>
+            <p className="leading-relaxed text-slate-700 italic">{companyIntel.summary}</p>
+          </div>
+        )}
+
         <div>
           <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Job Description (JD) <span className="text-slate-400 font-normal">(Optional)</span></label>
           <textarea
             value={jd}
             onChange={(e) => setJd(e.target.value)}
-            placeholder="Paste the job description or requirements here to dynamically tailor the email text and resume bullet points..."
-            rows={8}
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs resize-y"
+            placeholder="Paste the job description here to tailor your resume & email to this specific role..."
+            rows={5}
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs"
           />
           <p className="text-slate-400 text-xs mt-1">If left blank, a standard cold email template and default resume PDF will be used.</p>
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-3">
-          <button
-            onClick={handleGenerate}
-            disabled={generating || sending || !hrEmail}
-            className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-          >
-            {generating && !sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-            Preview & Tailor
-          </button>
-          
-          <button
-            onClick={handleTailorAndSendInstantly}
-            disabled={generating || sending || !hrEmail}
-            className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
-            title="Tailors the email and resume and sends it directly in 1 click"
-          >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            ⚡ Tailor & Send Directly
-          </button>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={handleGenerate}
+              disabled={generating || sending || !hrEmail}
+              className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {generating && !sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+              Preview & Tailor
+            </button>
+            
+            <button
+              onClick={handleTailorAndSendInstantly}
+              disabled={generating || sending || !hrEmail}
+              className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
+              title="Tailors the email and resume and sends it directly in 1 click"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              ⚡ Tailor & Send Now
+            </button>
+          </div>
         </div>
       </div>
 
@@ -430,15 +516,39 @@ function SingleSender({ isAuthorized, showToast }) {
             />
           </div>
 
-          {/* Direct Send Button inside Email Card */}
-          <button
-            onClick={handleSendEmail}
-            disabled={sending || !emailBody}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-3 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
-          >
-            {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            Send Email with Tailored Resume to {parsedName || 'HR'}
-          </button>
+          {/* Action Buttons inside Email Card */}
+          <div className="flex flex-col gap-2">
+            <button
+              onClick={handleSendEmail}
+              disabled={sending || !emailBody}
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+            >
+              {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              Send Email Now to {parsedName || 'HR'}
+            </button>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <button
+                onClick={handleScheduleMorning}
+                disabled={sending || !emailBody}
+                className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                title="Schedules email dispatch for tomorrow morning at 8:30 AM"
+              >
+                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                🌅 Schedule Morning (8:30 AM)
+              </button>
+
+              <button
+                onClick={handleCreateDraft}
+                disabled={sending || !emailBody}
+                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                title="Creates a ready draft in your Gmail app with the 1-page PDF attached so you can schedule send in Gmail"
+              >
+                <Bookmark className="w-3.5 h-3.5 text-indigo-600" />
+                📝 Save Draft in Gmail App
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Resume Preview */}
