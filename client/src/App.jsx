@@ -157,12 +157,20 @@ export default function App() {
         </button>
       </div>
 
-      {/* Main Content */}
+      {/* Main Content (Preserved in Memory) */}
       <main className="flex-1 p-6 overflow-y-auto max-w-7xl w-full mx-auto">
-        {activeTab === 'single' && <SingleSender isAuthorized={isAuthorized} showToast={showToast} />}
-        {activeTab === 'bulk' && <BulkSender isAuthorized={isAuthorized} showToast={showToast} />}
-        {activeTab === 'logs' && <LogsViewer showToast={showToast} />}
-        {activeTab === 'resume' && <ResumeEditor showToast={showToast} />}
+        <div className={activeTab === 'single' ? 'block' : 'hidden'}>
+          <SingleSender isAuthorized={isAuthorized} showToast={showToast} />
+        </div>
+        <div className={activeTab === 'bulk' ? 'block' : 'hidden'}>
+          <BulkSender isAuthorized={isAuthorized} showToast={showToast} />
+        </div>
+        <div className={activeTab === 'logs' ? 'block' : 'hidden'}>
+          <LogsViewer showToast={showToast} />
+        </div>
+        <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
+          <ResumeEditor showToast={showToast} />
+        </div>
       </main>
     </div>
   );
@@ -572,6 +580,55 @@ function BulkSender({ isAuthorized, showToast }) {
     showToast('Bulk campaign completed and logged!', 'success');
   };
 
+  const handleExportHrExcel = () => {
+    if (parsedItems.length === 0) {
+      if (!emailsText.trim()) return showToast('Please enter recipient emails first.', 'error');
+      const rawEmails = emailsText
+        .split('\n')
+        .map(e => e.trim())
+        .filter(e => e.includes('@'));
+      if (rawEmails.length === 0) return showToast('No valid email addresses found.', 'error');
+      
+      const headers = ['HR Name', 'Company Name', 'HR Email Address'];
+      const rows = rawEmails.map(email => {
+        const [local, domain] = email.split('@');
+        let name = local.replace(/[._\-+]/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+        if (['hr', 'recruitment', 'jobs', 'careers'].includes(name.toLowerCase())) name = 'Hiring Team';
+        const company = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1).toLowerCase();
+        return [`"${name}"`, `"${company}"`, `"${email}"`];
+      });
+
+      const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `HR_Contacts_List_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Downloaded HR Emails list as Excel CSV!', 'success');
+      return;
+    }
+
+    const headers = ['HR Name', 'Company Name', 'HR Email Address', 'Campaign Status'];
+    const rows = parsedItems.map(item => [
+      `"${item.name || 'Hiring Manager'}"`,
+      `"${item.company || 'Unknown'}"`,
+      `"${item.email}"`,
+      `"${item.status || 'Pending'}"`
+    ]);
+
+    const csvContent = 'data:text/csv;charset=utf-8,\uFEFF' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `HR_Emails_Directory_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Downloaded HR Emails list as Excel CSV!', 'success');
+  };
+
   const updateItemStatus = (index, status, errorMsg = '') => {
     setParsedItems(prev => {
       const updated = [...prev];
@@ -593,11 +650,21 @@ function BulkSender({ isAuthorized, showToast }) {
         <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
           <Mail className="w-5 h-5 text-indigo-600" /> Bulk Outreach Campaign
         </h2>
-        {parsedItems.length > 0 && (
-          <button onClick={handleReset} className="text-xs text-rose-600 hover:text-rose-800 font-semibold">
-            Reset List
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleExportHrExcel}
+            disabled={!emailsText && parsedItems.length === 0}
+            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5 border border-slate-200 disabled:opacity-50"
+            title="Download HR names, company names, and emails as an Excel CSV file"
+          >
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> Download HR Emails (Excel)
           </button>
-        )}
+          {parsedItems.length > 0 && (
+            <button onClick={handleReset} className="text-xs text-rose-600 hover:text-rose-800 font-semibold">
+              Reset List
+            </button>
+          )}
+        </div>
       </div>
 
       {campaignState === 'idle' ? (
@@ -613,13 +680,22 @@ function BulkSender({ isAuthorized, showToast }) {
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
               />
             </div>
-            <button
-              onClick={handleParseEmails}
-              disabled={!emailsText}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50"
-            >
-              Parse Email Addresses
-            </button>
+            <div className="flex gap-2">
+              <button
+                onClick={handleParseEmails}
+                disabled={!emailsText}
+                className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2.5 rounded-lg text-sm transition-all disabled:opacity-50"
+              >
+                Parse Email Addresses
+              </button>
+              <button
+                onClick={handleExportHrExcel}
+                disabled={!emailsText}
+                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 py-2.5 rounded-lg text-xs transition-all border border-slate-200 disabled:opacity-50 flex items-center gap-1.5"
+              >
+                <Download className="w-4 h-4 text-emerald-600" /> Export Excel
+              </button>
+            </div>
           </div>
 
           <div>
