@@ -1,1 +1,617 @@
-[]
+[
+  {
+    "id": "sched_1787857876085_c983o",
+    "createdAt": "2026-08-27T19:11:16.085Z",
+    "email": "tksanthosh494@gmail.com",
+    "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
+    "body": "Hi Tksanthosh494,\n\nI'm Santhosh T K, a seasoned Full Stack Software Development Engineer 2 with 3+ years of production experience delivering end-to-end web applications. I'm excited about full stack / software engineering opportunities at Gmail. As a full stack expert, I leverage React.js for responsive, modular UI and Node.js with Express for robust, high-performance backend microservices and APIs. I've optimized database queries at IQVIA and Sify, reducing API response times by 20% and eliminating UI rendering delays and production bottlenecks. I'm ready to deliver immediate impact across both frontend and backend engineering initiatives at Gmail. I've attached my resume for your review. I'd appreciate a quick 10-minute introductory call to discuss how my skills align with Gmail's engineering goals.\n\nBest regards,\nSANTHOSH T K\nFull Stack Software Engineer (SDE 2)\n+91 8825802707 | tksanthosh494@gmail.com\nlinkedin.com/in/santhosh-tk | github.com/TKSanthosh",
+    "resume": {
+      "personalInfo": {
+        "name": "SANTHOSH T K",
+        "title": "Software Development Engineer 2 (SDE2)",
+        "location": "Bangalore",
+        "email": "tksanthosh494@gmail.com",
+        "phone": "+91 8825802707",
+        "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+        "linkedin": "linkedin.com/in/santhosh-tk",
+        "github": "github.com/TKSanthosh"
+      },
+      "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+      "skills": {
+        "Backend Technologies": [
+          "Node.js",
+          "Express.js",
+          "RESTful APIs",
+          "JWT Authentication",
+          "Middleware",
+          "MVC Architecture",
+          "Async/Await",
+          "WebSockets"
+        ],
+        "Frontend Technologies": [
+          "React.js",
+          "JavaScript (ES6+)",
+          "React Hooks",
+          "HTML5",
+          "CSS3",
+          "Reusable Components"
+        ],
+        "Databases": [
+          "MySQL",
+          "MongoDB",
+          "Joins",
+          "Indexing",
+          "Query Optimization"
+        ],
+        "Tools & Platforms": [
+          "Git",
+          "GitHub",
+          "Postman",
+          "npm",
+          "VS Code",
+          "JSON"
+        ]
+      },
+      "experience": [
+        {
+          "role": "Software Development Engineer 2 (SDE2)",
+          "company": "IQVIA, Bangalore",
+          "duration": "June 2026 - Present",
+          "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+          "highlights": [
+            "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+            "Involved in application enhancements and feature modifications based on client and business requirements.",
+            "Collaborating with team members to resolve issues and support ongoing application development."
+          ]
+        },
+        {
+          "role": "Software Developer",
+          "company": "Sify Technologies, Chennai",
+          "duration": "July 2023 – June 2026",
+          "projects": [
+            {
+              "name": "Project: Exam Engine – Exam Delivery System",
+              "highlights": [
+                "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+                "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+                "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+                "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+                "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+              ]
+            },
+            {
+              "name": "Project: QPTool – Exam Configuration Platform",
+              "highlights": [
+                "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+                "Built reusable React.js components and handled frontend API integration and UI logic.",
+                "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+                "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+                "Enhanced API validation, security, and centralized error handling to improve system stability."
+              ]
+            }
+          ]
+        }
+      ],
+      "achievements": [
+        "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+        "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+        "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+        "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
+      ],
+      "internship": {
+        "role": "Full Stack Intern",
+        "company": "Sify Technologies – CHIP 2023 Program",
+        "duration": "February 2023 – June 2023",
+        "highlights": [
+          "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+          "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+          "Built internal tools and modules used by engineering teams in real projects."
+        ]
+      },
+      "education": [
+        {
+          "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+          "institution": "Velammal College of Engineering & Technology, Madurai",
+          "duration": "2023",
+          "details": "CGPA: 9.15 / 10"
+        }
+      ]
+    },
+    "hrName": "Tksanthosh494",
+    "company": "Gmail",
+    "scheduledAt": "2026-08-29T03:00:00.000Z",
+    "resumeType": "Standard"
+  },
+  {
+    "id": "sched_1787857897860_n6r2c",
+    "createdAt": "2026-08-27T19:11:37.860Z",
+    "email": "tksanthosh494@gmail.com",
+    "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
+    "body": "Hi Tksanthosh494,\n\nI'm Santhosh T K, a seasoned Full Stack Software Development Engineer 2 with 3+ years of production experience delivering end-to-end web applications. I'm excited about full stack / software engineering opportunities at Gmail. As a full stack expert, I leverage React.js for responsive, modular UI and Node.js with Express for robust, high-performance backend microservices and APIs. I've optimized database queries at IQVIA and Sify, reducing API response times by 20% and eliminating UI rendering delays and production bottlenecks. I'm ready to deliver immediate impact across both frontend and backend engineering initiatives at Gmail. I've attached my resume for your review. I'd appreciate a quick 10-minute introductory call to discuss how my skills align with Gmail's engineering goals.\n\nBest regards,\nSANTHOSH T K\nFull Stack Software Engineer (SDE 2)\n+91 8825802707 | tksanthosh494@gmail.com\nlinkedin.com/in/santhosh-tk | github.com/TKSanthosh",
+    "resume": {
+      "personalInfo": {
+        "name": "SANTHOSH T K",
+        "title": "Software Development Engineer 2 (SDE2)",
+        "location": "Bangalore",
+        "email": "tksanthosh494@gmail.com",
+        "phone": "+91 8825802707",
+        "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+        "linkedin": "linkedin.com/in/santhosh-tk",
+        "github": "github.com/TKSanthosh"
+      },
+      "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+      "skills": {
+        "Backend Technologies": [
+          "Node.js",
+          "Express.js",
+          "RESTful APIs",
+          "JWT Authentication",
+          "Middleware",
+          "MVC Architecture",
+          "Async/Await",
+          "WebSockets"
+        ],
+        "Frontend Technologies": [
+          "React.js",
+          "JavaScript (ES6+)",
+          "React Hooks",
+          "HTML5",
+          "CSS3",
+          "Reusable Components"
+        ],
+        "Databases": [
+          "MySQL",
+          "MongoDB",
+          "Joins",
+          "Indexing",
+          "Query Optimization"
+        ],
+        "Tools & Platforms": [
+          "Git",
+          "GitHub",
+          "Postman",
+          "npm",
+          "VS Code",
+          "JSON"
+        ]
+      },
+      "experience": [
+        {
+          "role": "Software Development Engineer 2 (SDE2)",
+          "company": "IQVIA, Bangalore",
+          "duration": "June 2026 - Present",
+          "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+          "highlights": [
+            "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+            "Involved in application enhancements and feature modifications based on client and business requirements.",
+            "Collaborating with team members to resolve issues and support ongoing application development."
+          ]
+        },
+        {
+          "role": "Software Developer",
+          "company": "Sify Technologies, Chennai",
+          "duration": "July 2023 – June 2026",
+          "projects": [
+            {
+              "name": "Project: Exam Engine – Exam Delivery System",
+              "highlights": [
+                "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+                "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+                "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+                "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+                "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+              ]
+            },
+            {
+              "name": "Project: QPTool – Exam Configuration Platform",
+              "highlights": [
+                "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+                "Built reusable React.js components and handled frontend API integration and UI logic.",
+                "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+                "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+                "Enhanced API validation, security, and centralized error handling to improve system stability."
+              ]
+            }
+          ]
+        }
+      ],
+      "achievements": [
+        "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+        "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+        "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+        "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
+      ],
+      "internship": {
+        "role": "Full Stack Intern",
+        "company": "Sify Technologies – CHIP 2023 Program",
+        "duration": "February 2023 – June 2023",
+        "highlights": [
+          "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+          "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+          "Built internal tools and modules used by engineering teams in real projects."
+        ]
+      },
+      "education": [
+        {
+          "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+          "institution": "Velammal College of Engineering & Technology, Madurai",
+          "duration": "2023",
+          "details": "CGPA: 9.15 / 10"
+        }
+      ]
+    },
+    "hrName": "Tksanthosh494",
+    "company": "Gmail",
+    "scheduledAt": "2026-08-29T03:00:00.000Z",
+    "resumeType": "Standard"
+  },
+  {
+    "id": "sched_1787857899633_n6mxh",
+    "createdAt": "2026-08-27T19:11:39.633Z",
+    "email": "tksanthosh494@gmail.com",
+    "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
+    "body": "Hi Tksanthosh494,\n\nI'm Santhosh T K, a seasoned Full Stack Software Development Engineer 2 with 3+ years of production experience delivering end-to-end web applications. I'm excited about full stack / software engineering opportunities at Gmail. As a full stack expert, I leverage React.js for responsive, modular UI and Node.js with Express for robust, high-performance backend microservices and APIs. I've optimized database queries at IQVIA and Sify, reducing API response times by 20% and eliminating UI rendering delays and production bottlenecks. I'm ready to deliver immediate impact across both frontend and backend engineering initiatives at Gmail. I've attached my resume for your review. I'd appreciate a quick 10-minute introductory call to discuss how my skills align with Gmail's engineering goals.\n\nBest regards,\nSANTHOSH T K\nFull Stack Software Engineer (SDE 2)\n+91 8825802707 | tksanthosh494@gmail.com\nlinkedin.com/in/santhosh-tk | github.com/TKSanthosh",
+    "resume": {
+      "personalInfo": {
+        "name": "SANTHOSH T K",
+        "title": "Software Development Engineer 2 (SDE2)",
+        "location": "Bangalore",
+        "email": "tksanthosh494@gmail.com",
+        "phone": "+91 8825802707",
+        "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+        "linkedin": "linkedin.com/in/santhosh-tk",
+        "github": "github.com/TKSanthosh"
+      },
+      "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+      "skills": {
+        "Backend Technologies": [
+          "Node.js",
+          "Express.js",
+          "RESTful APIs",
+          "JWT Authentication",
+          "Middleware",
+          "MVC Architecture",
+          "Async/Await",
+          "WebSockets"
+        ],
+        "Frontend Technologies": [
+          "React.js",
+          "JavaScript (ES6+)",
+          "React Hooks",
+          "HTML5",
+          "CSS3",
+          "Reusable Components"
+        ],
+        "Databases": [
+          "MySQL",
+          "MongoDB",
+          "Joins",
+          "Indexing",
+          "Query Optimization"
+        ],
+        "Tools & Platforms": [
+          "Git",
+          "GitHub",
+          "Postman",
+          "npm",
+          "VS Code",
+          "JSON"
+        ]
+      },
+      "experience": [
+        {
+          "role": "Software Development Engineer 2 (SDE2)",
+          "company": "IQVIA, Bangalore",
+          "duration": "June 2026 - Present",
+          "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+          "highlights": [
+            "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+            "Involved in application enhancements and feature modifications based on client and business requirements.",
+            "Collaborating with team members to resolve issues and support ongoing application development."
+          ]
+        },
+        {
+          "role": "Software Developer",
+          "company": "Sify Technologies, Chennai",
+          "duration": "July 2023 – June 2026",
+          "projects": [
+            {
+              "name": "Project: Exam Engine – Exam Delivery System",
+              "highlights": [
+                "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+                "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+                "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+                "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+                "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+              ]
+            },
+            {
+              "name": "Project: QPTool – Exam Configuration Platform",
+              "highlights": [
+                "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+                "Built reusable React.js components and handled frontend API integration and UI logic.",
+                "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+                "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+                "Enhanced API validation, security, and centralized error handling to improve system stability."
+              ]
+            }
+          ]
+        }
+      ],
+      "achievements": [
+        "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+        "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+        "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+        "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
+      ],
+      "internship": {
+        "role": "Full Stack Intern",
+        "company": "Sify Technologies – CHIP 2023 Program",
+        "duration": "February 2023 – June 2023",
+        "highlights": [
+          "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+          "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+          "Built internal tools and modules used by engineering teams in real projects."
+        ]
+      },
+      "education": [
+        {
+          "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+          "institution": "Velammal College of Engineering & Technology, Madurai",
+          "duration": "2023",
+          "details": "CGPA: 9.15 / 10"
+        }
+      ]
+    },
+    "hrName": "Tksanthosh494",
+    "company": "Gmail",
+    "scheduledAt": "2026-08-29T03:00:00.000Z",
+    "resumeType": "Standard"
+  },
+  {
+    "id": "sched_1787857900583_82781",
+    "createdAt": "2026-08-27T19:11:40.583Z",
+    "email": "tksanthosh494@gmail.com",
+    "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
+    "body": "Hi Tksanthosh494,\n\nI'm Santhosh T K, a seasoned Full Stack Software Development Engineer 2 with 3+ years of production experience delivering end-to-end web applications. I'm excited about full stack / software engineering opportunities at Gmail. As a full stack expert, I leverage React.js for responsive, modular UI and Node.js with Express for robust, high-performance backend microservices and APIs. I've optimized database queries at IQVIA and Sify, reducing API response times by 20% and eliminating UI rendering delays and production bottlenecks. I'm ready to deliver immediate impact across both frontend and backend engineering initiatives at Gmail. I've attached my resume for your review. I'd appreciate a quick 10-minute introductory call to discuss how my skills align with Gmail's engineering goals.\n\nBest regards,\nSANTHOSH T K\nFull Stack Software Engineer (SDE 2)\n+91 8825802707 | tksanthosh494@gmail.com\nlinkedin.com/in/santhosh-tk | github.com/TKSanthosh",
+    "resume": {
+      "personalInfo": {
+        "name": "SANTHOSH T K",
+        "title": "Software Development Engineer 2 (SDE2)",
+        "location": "Bangalore",
+        "email": "tksanthosh494@gmail.com",
+        "phone": "+91 8825802707",
+        "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+        "linkedin": "linkedin.com/in/santhosh-tk",
+        "github": "github.com/TKSanthosh"
+      },
+      "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+      "skills": {
+        "Backend Technologies": [
+          "Node.js",
+          "Express.js",
+          "RESTful APIs",
+          "JWT Authentication",
+          "Middleware",
+          "MVC Architecture",
+          "Async/Await",
+          "WebSockets"
+        ],
+        "Frontend Technologies": [
+          "React.js",
+          "JavaScript (ES6+)",
+          "React Hooks",
+          "HTML5",
+          "CSS3",
+          "Reusable Components"
+        ],
+        "Databases": [
+          "MySQL",
+          "MongoDB",
+          "Joins",
+          "Indexing",
+          "Query Optimization"
+        ],
+        "Tools & Platforms": [
+          "Git",
+          "GitHub",
+          "Postman",
+          "npm",
+          "VS Code",
+          "JSON"
+        ]
+      },
+      "experience": [
+        {
+          "role": "Software Development Engineer 2 (SDE2)",
+          "company": "IQVIA, Bangalore",
+          "duration": "June 2026 - Present",
+          "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+          "highlights": [
+            "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+            "Involved in application enhancements and feature modifications based on client and business requirements.",
+            "Collaborating with team members to resolve issues and support ongoing application development."
+          ]
+        },
+        {
+          "role": "Software Developer",
+          "company": "Sify Technologies, Chennai",
+          "duration": "July 2023 – June 2026",
+          "projects": [
+            {
+              "name": "Project: Exam Engine – Exam Delivery System",
+              "highlights": [
+                "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+                "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+                "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+                "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+                "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+              ]
+            },
+            {
+              "name": "Project: QPTool – Exam Configuration Platform",
+              "highlights": [
+                "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+                "Built reusable React.js components and handled frontend API integration and UI logic.",
+                "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+                "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+                "Enhanced API validation, security, and centralized error handling to improve system stability."
+              ]
+            }
+          ]
+        }
+      ],
+      "achievements": [
+        "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+        "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+        "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+        "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
+      ],
+      "internship": {
+        "role": "Full Stack Intern",
+        "company": "Sify Technologies – CHIP 2023 Program",
+        "duration": "February 2023 – June 2023",
+        "highlights": [
+          "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+          "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+          "Built internal tools and modules used by engineering teams in real projects."
+        ]
+      },
+      "education": [
+        {
+          "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+          "institution": "Velammal College of Engineering & Technology, Madurai",
+          "duration": "2023",
+          "details": "CGPA: 9.15 / 10"
+        }
+      ]
+    },
+    "hrName": "Tksanthosh494",
+    "company": "Gmail",
+    "scheduledAt": "2026-08-29T03:00:00.000Z",
+    "resumeType": "Standard"
+  },
+  {
+    "id": "sched_1787857901264_1frql",
+    "createdAt": "2026-08-27T19:11:41.264Z",
+    "email": "tksanthosh494@gmail.com",
+    "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
+    "body": "Hi Tksanthosh494,\n\nI'm Santhosh T K, a seasoned Full Stack Software Development Engineer 2 with 3+ years of production experience delivering end-to-end web applications. I'm excited about full stack / software engineering opportunities at Gmail. As a full stack expert, I leverage React.js for responsive, modular UI and Node.js with Express for robust, high-performance backend microservices and APIs. I've optimized database queries at IQVIA and Sify, reducing API response times by 20% and eliminating UI rendering delays and production bottlenecks. I'm ready to deliver immediate impact across both frontend and backend engineering initiatives at Gmail. I've attached my resume for your review. I'd appreciate a quick 10-minute introductory call to discuss how my skills align with Gmail's engineering goals.\n\nBest regards,\nSANTHOSH T K\nFull Stack Software Engineer (SDE 2)\n+91 8825802707 | tksanthosh494@gmail.com\nlinkedin.com/in/santhosh-tk | github.com/TKSanthosh",
+    "resume": {
+      "personalInfo": {
+        "name": "SANTHOSH T K",
+        "title": "Software Development Engineer 2 (SDE2)",
+        "location": "Bangalore",
+        "email": "tksanthosh494@gmail.com",
+        "phone": "+91 8825802707",
+        "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+        "linkedin": "linkedin.com/in/santhosh-tk",
+        "github": "github.com/TKSanthosh"
+      },
+      "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+      "skills": {
+        "Backend Technologies": [
+          "Node.js",
+          "Express.js",
+          "RESTful APIs",
+          "JWT Authentication",
+          "Middleware",
+          "MVC Architecture",
+          "Async/Await",
+          "WebSockets"
+        ],
+        "Frontend Technologies": [
+          "React.js",
+          "JavaScript (ES6+)",
+          "React Hooks",
+          "HTML5",
+          "CSS3",
+          "Reusable Components"
+        ],
+        "Databases": [
+          "MySQL",
+          "MongoDB",
+          "Joins",
+          "Indexing",
+          "Query Optimization"
+        ],
+        "Tools & Platforms": [
+          "Git",
+          "GitHub",
+          "Postman",
+          "npm",
+          "VS Code",
+          "JSON"
+        ]
+      },
+      "experience": [
+        {
+          "role": "Software Development Engineer 2 (SDE2)",
+          "company": "IQVIA, Bangalore",
+          "duration": "June 2026 - Present",
+          "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+          "highlights": [
+            "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+            "Involved in application enhancements and feature modifications based on client and business requirements.",
+            "Collaborating with team members to resolve issues and support ongoing application development."
+          ]
+        },
+        {
+          "role": "Software Developer",
+          "company": "Sify Technologies, Chennai",
+          "duration": "July 2023 – June 2026",
+          "projects": [
+            {
+              "name": "Project: Exam Engine – Exam Delivery System",
+              "highlights": [
+                "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+                "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+                "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+                "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+                "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+              ]
+            },
+            {
+              "name": "Project: QPTool – Exam Configuration Platform",
+              "highlights": [
+                "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+                "Built reusable React.js components and handled frontend API integration and UI logic.",
+                "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+                "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+                "Enhanced API validation, security, and centralized error handling to improve system stability."
+              ]
+            }
+          ]
+        }
+      ],
+      "achievements": [
+        "Performance Impact: Reduced API response time by 20% and eliminated 30% of production bugs through systematic code migration and optimization.",
+        "Project Delivery: Shipped 8+ major features ahead of deadlines across two production systems.",
+        "Code Quality: Maintained 95%+ code review approval rate and established coding standards adopted by 5-member team",
+        "Technical Leadership: Led PHP-to-Node.js migration project, mentored 2 junior developers on backend best practices."
+      ],
+      "internship": {
+        "role": "Full Stack Intern",
+        "company": "Sify Technologies – CHIP 2023 Program",
+        "duration": "February 2023 – June 2023",
+        "highlights": [
+          "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+          "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+          "Built internal tools and modules used by engineering teams in real projects."
+        ]
+      },
+      "education": [
+        {
+          "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+          "institution": "Velammal College of Engineering & Technology, Madurai",
+          "duration": "2023",
+          "details": "CGPA: 9.15 / 10"
+        }
+      ]
+    },
+    "hrName": "Tksanthosh494",
+    "company": "Gmail",
+    "scheduledAt": "2026-08-29T03:00:00.000Z",
+    "resumeType": "Standard"
+  }
+]

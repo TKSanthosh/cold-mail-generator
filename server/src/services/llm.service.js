@@ -63,25 +63,23 @@ async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) 
   const systemPrompt = `You are Santhosh T K, a results-driven Full Stack Software Engineer (SDE 2) writing a direct, high-impact cold outreach email to a recruiter/hiring manager (${hrName}) at ${company}.
 
 STRICT WRITING MANDATES:
-1. FULL STACK POSITIONING: Emphasize complete end-to-end full stack capabilities — building responsive, modular UI in React.js paired with robust, high-performance backend microservices and APIs in Node.js, Express, MySQL, and MongoDB.
-2. ZERO FLATTERY / NO CORPORATE ESSAYS: NEVER praise the company's mission, user numbers (e.g. "I am drawn to your mission of..."), or write generic compliments.
+1. FULL STACK POSITIONING: Emphasize complete end-to-end full stack capabilities — building responsive, modular UI in React.js paired with robust backend microservices and APIs in Node.js, Express, MySQL, and MongoDB.
+2. ZERO FLATTERY / NO CORPORATE ESSAYS: NEVER praise the company's mission or write generic compliments.
 3. BE DIRECT & VALUE-DRIVEN: State clearly and confidently:
    - Who you are: Full Stack Software Engineer (SDE 2) with 3+ years of production experience delivering end-to-end web applications.
    - Core Tech Stack: React.js, Node.js, Express.js, MongoDB, MySQL, RESTful APIs, AWS.
    - Measurable Experience: Building enterprise event management platforms (IQVIA) and exam delivery engines (Sify), reducing API response times by 20%, and eliminating UI rendering delays and production bottlenecks.
    - Exact Value: Ready to deliver immediate impact across both frontend (React) and backend (Node.js) engineering initiatives at ${company}.
-4. CONCISE & PUNCHY: 85 to 115 words maximum.
-5. STRUCTURE:
-   - Line 1: Hi ${hrName},
-   - Paragraph 1: Direct pitch introducing yourself as a Full Stack SDE 2 with 3+ years of experience and expressing interest in full stack / software engineering opportunities at ${company}.
-   - Paragraph 2: Full stack technical capabilities (React.js frontend + Node.js backend microservices + database query optimization) and track record at IQVIA and Sify.
-   - Paragraph 3: Mention attached resume and ask for a quick 10-minute introductory call.
-6. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], or any bracketed text.
+4. CONCISE & PUNCHY: 80 to 110 words maximum.
+5. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], or any bracketed text.
 
-Output format MUST be a JSON object:
+You MUST format the output as a JSON object with 3 separate paragraph keys:
 {
   "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
-  "body": "The direct 3-paragraph email text without signatures"
+  "greeting": "Hi ${hrName},",
+  "paragraph1": "Direct introduction stating 3+ years of Full Stack SDE 2 experience delivering end-to-end web apps and expressing interest in engineering opportunities with ${company}.",
+  "paragraph2": "Core full stack technical capabilities (React.js frontend + Node.js/Express backend + MySQL/MongoDB) and tangible achievements at IQVIA & Sify.",
+  "paragraph3": "Mention attached resume and ask for a quick 10-minute introductory call this week."
 }`;
 
   let userPrompt = `Target Recruiter: ${hrName}
@@ -99,7 +97,7 @@ Experience Highlights: 3+ years delivering full stack web applications at IQVIA 
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
-  return extractCleanEmail(responseText, candidateTitle, company, {
+  return extractCleanEmail(responseText, candidateTitle, company, hrName, {
     name: candidateName,
     title: candidateTitle,
     email: candidateEmail,
@@ -111,11 +109,11 @@ Experience Highlights: 3+ years delivering full stack web applications at IQVIA 
 
 /**
  * Robustly parses and formats pure subject and plain text body from LLM output.
- * Ensures flush-left alignment, proper paragraph spacing, greeting separation, and a clean professional signature.
+ * Ensures 3 distinct paragraphs with blank lines between them and a clean multi-line signature.
  */
-function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
+function extractCleanEmail(rawText, candidateTitle, company, hrName, candidateInfo) {
   let subject = `Full Stack Software Engineer (SDE 2) - ${candidateInfo?.name || 'Santhosh T K'}`;
-  let rawBody = '';
+  let parsed = null;
 
   let text = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
 
@@ -129,80 +127,85 @@ function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
         if (c === '\t') return '\\t';
         return '';
       });
-      const parsed = JSON.parse(jsonCandidate);
+      parsed = JSON.parse(jsonCandidate);
       if (parsed.subject) subject = parsed.subject.trim();
-      if (parsed.body) rawBody = parsed.body.trim();
     }
   } catch (err) {
-    // Continue to regex
+    // Continue
   }
 
-  // 2. Regex fallback
-  if (!rawBody) {
-    const subjectMatch = text.match(/"subject"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/i) ||
-                         text.match(/subject:\s*([^\n\r]+)/i);
-    if (subjectMatch) {
-      subject = subjectMatch[1].replace(/\\"/g, '"').trim();
-    }
-
-    const bodyMatch = text.match(/"body"\s*:\s*"([\s\S]*?)"\s*\}?\s*$/i) ||
-                      text.match(/"body"\s*:\s*([\s\S]*)/i);
-    if (bodyMatch) {
-      rawBody = bodyMatch[1]
-        .replace(/\\n/g, '\n')
-        .replace(/\\"/g, '"')
-        .replace(/\s*"\s*\}?\s*$/, '')
-        .trim();
-    }
-  }
-
-  if (!rawBody) {
-    rawBody = text
-      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
-      .replace(/"?\s*\}\s*$/, '')
-      .replace(/\\n/g, '\n')
-      .trim();
-  }
-
-  // 3. Format and clean paragraphs + build crisp signature
   const name = candidateInfo?.name || 'Santhosh T K';
   const title = candidateInfo?.title || 'Full Stack Software Engineer (SDE 2)';
   const phone = candidateInfo?.phone || '+91 8825802707';
   const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
   const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
   const github = candidateInfo?.github || 'github.com/TKSanthosh';
+  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone} | ${email}\n${linkedin} | ${github}`;
 
-  // Strip broken signoffs at end of rawBody
-  const signoffRegex = /(?:best regards|warm regards|sincerely|regards|thanks & regards|thanks and regards)/i;
-  const signoffIndex = rawBody.search(signoffRegex);
-  let mainBody = rawBody;
-  if (signoffIndex !== -1) {
-    mainBody = rawBody.substring(0, signoffIndex).trim();
+  // Case A: Model returned distinct paragraph fields
+  if (parsed && parsed.paragraph1 && parsed.paragraph2) {
+    const greeting = parsed.greeting ? parsed.greeting.trim() : `Hi ${hrName || 'Hiring Team'},`;
+    const p1 = parsed.paragraph1.trim();
+    const p2 = parsed.paragraph2.trim();
+    const p3 = parsed.paragraph3 ? parsed.paragraph3.trim() : "I have attached my resume for your review. Would you be open to a brief 10-minute introductory conversation this week?";
+    const finalBody = [greeting, p1, p2, p3, cleanSignature].join('\n\n');
+    return { subject, body: finalBody };
   }
 
-  // Strip leading spaces/tabs on each line
-  const rawParagraphs = mainBody.split(/\n\s*\n/);
-  const rawCleaned = rawParagraphs
-    .map(p => p.split('\n').map(line => line.trim()).filter(Boolean).join(' '))
-    .map(p => p.trim())
-    .filter(Boolean);
+  // Case B: Fallback from raw body string
+  let rawBody = (parsed && parsed.body) ? parsed.body : text;
+  rawBody = rawBody
+    .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+    .replace(/"?\s*\}\s*$/, '')
+    .replace(/\\n/g, '\n')
+    .replace(/\\"/g, '"')
+    .trim();
 
-  // Separate greeting if merged into paragraph 1
-  let paragraphs = [];
-  rawCleaned.forEach(p => {
-    const greetingMatch = p.match(/^(Hi\s+[^,]+,|Dear\s+[^,]+,|Hello\s+[^,]+,)\s*(.*)$/i);
-    if (greetingMatch) {
-      paragraphs.push(greetingMatch[1].trim());
-      if (greetingMatch[2] && greetingMatch[2].trim().length > 0) {
-        paragraphs.push(greetingMatch[2].trim());
+  // Strip existing signoffs
+  const signoffRegex = /(?:best regards|warm regards|sincerely|regards|thanks & regards|thanks and regards)/i;
+  const signoffIndex = rawBody.search(signoffRegex);
+  if (signoffIndex !== -1) {
+    rawBody = rawBody.substring(0, signoffIndex).trim();
+  }
+
+  // Strip greeting if embedded
+  let mainContent = rawBody;
+  const greetingMatch = rawBody.match(/^(Hi\s+[^,]+,|Dear\s+[^,]+,|Hello\s+[^,]+,)\s*([\s\S]*)$/i);
+  if (greetingMatch) {
+    mainContent = greetingMatch[2].trim();
+  }
+
+  // Split into paragraphs
+  const rawParagraphs = mainContent.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  let finalParagraphs = [];
+
+  if (rawParagraphs.length >= 2) {
+    finalParagraphs = rawParagraphs.map(p => p.split('\n').map(l => l.trim()).filter(Boolean).join(' '));
+  } else {
+    // Break single continuous block into 3 paragraphs by sentence grouping
+    const sentences = mainContent.match(/[^.!?]+[.!?]+(\s+|$)/g) || [mainContent];
+    const cleanedSentences = sentences.map(s => s.trim()).filter(Boolean);
+    let s1 = [], s2 = [], s3 = [];
+    cleanedSentences.forEach(s => {
+      const lower = s.toLowerCase();
+      if (lower.includes('attached') || lower.includes('10-minute') || lower.includes('call') || lower.includes('conversation') || lower.includes('discuss') || lower.includes('look forward')) {
+        s3.push(s);
+      } else if (lower.includes('iqvia') || lower.includes('sify') || lower.includes('reduced') || lower.includes('track record') || lower.includes('microservices') || lower.includes('bottlenecks') || lower.includes('built')) {
+        s2.push(s);
+      } else {
+        s1.push(s);
       }
-    } else {
-      paragraphs.push(p);
-    }
-  });
+    });
 
-  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone} | ${email}\n${linkedin} | ${github}`;
-  const finalBody = paragraphs.join('\n\n') + '\n\n' + cleanSignature;
+    finalParagraphs = [
+      s1.length > 0 ? s1.join(' ') : `I am a Full Stack Software Engineer (SDE 2) with 3+ years of experience delivering end-to-end web applications, and I am writing to explore engineering opportunities with ${company}.`,
+      s2.length > 0 ? s2.join(' ') : `At IQVIA and Sify Technologies, I’ve built responsive UI in React.js paired with robust backend microservices in Node.js, Express, MySQL, and MongoDB, reducing API response times by 20%.`,
+      s3.length > 0 ? s3.join(' ') : `I have attached my resume for your review. Would you be open to a brief 10-minute introductory conversation this week?`
+    ];
+  }
+
+  const greeting = `Hi ${hrName || 'Hiring Team'},`;
+  const finalBody = [greeting, ...finalParagraphs, cleanSignature].join('\n\n');
 
   return { subject, body: finalBody };
 }

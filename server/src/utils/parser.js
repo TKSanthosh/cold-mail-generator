@@ -1,49 +1,43 @@
 /**
- * Parses an HR email address to extract the HR name and Company name.
- * Example: santhosh@indi.co -> { name: 'Santhosh', company: 'Indi' }
- * 
- * @param {string} email 
- * @returns {{ name: string, company: string }}
+ * Parses an HR email address to extract a clean HR name and Company name.
+ * Handles personal email domains and cleans out numbers and unwanted artifacts.
  */
 function parseHrEmail(email) {
   if (!email || typeof email !== 'string' || !email.includes('@')) {
-    return { name: 'HR Manager', company: 'Company' };
+    return { name: 'Hiring Manager', company: 'your team', domain: '' };
   }
 
   const [localPart, domainPart] = email.split('@');
+  const domain = domainPart.toLowerCase().trim();
 
-  // Parse Name from local part
-  // Replace dots, hyphens, underscores, and plus signs with spaces
-  let name = localPart
-    .replace(/[._\-+]/g, ' ')
+  // 1. Parse Name from local part (strip numbers and separators)
+  const cleanLocal = localPart.replace(/\d+/g, '').replace(/[._\-+]/g, ' ').trim();
+  let name = cleanLocal
     .split(' ')
-    .filter(word => word.length > 0)
+    .filter(word => word.length > 1)
     .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
     .join(' ');
 
-  // Standard cleanup for generic terms
-  if (!name || name.toLowerCase() === 'hr' || name.toLowerCase() === 'careers' || name.toLowerCase() === 'jobs' || name.toLowerCase() === 'recruitment') {
+  const genericNames = ['hr', 'careers', 'jobs', 'recruitment', 'talent', 'hiring', 'admin', 'contact', 'info', 'support', 'team'];
+  if (!name || genericNames.includes(name.toLowerCase())) {
     name = 'Hiring Team';
   }
 
-  // Parse Company from domain part
-  // E.g., "indi.co" -> ["indi", "co"]
-  const domainParts = domainPart.split('.');
-  let company = 'Company';
-  
-  if (domainParts.length > 0) {
-    // If domain is like "mail.google.com", take the second one if first is common subdomain, 
-    // otherwise take the first part.
+  // 2. Parse Company from domain part
+  const personalDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'protonmail.com', 'mail.com'];
+  let company = 'your organization';
+
+  if (!personalDomains.includes(domain)) {
+    const domainParts = domain.split('.');
     const subdomains = ['mail', 'email', 'careers', 'jobs', 'recruitment', 'hr', 'www'];
     let compPart = domainParts[0];
     if (subdomains.includes(compPart.toLowerCase()) && domainParts.length > 1) {
       compPart = domainParts[1];
     }
-    
     company = compPart.charAt(0).toUpperCase() + compPart.slice(1).toLowerCase();
   }
 
-  return { name, company };
+  return { name, company, domain };
 }
 
 module.exports = { parseHrEmail };
