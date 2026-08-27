@@ -51,50 +51,51 @@ async function callLlm(systemPrompt, userPrompt, jsonMode = false) {
  */
 async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
   const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
-  const candidateTitle = resumeData?.personalInfo?.title || 'Software Development Engineer 2 (SDE2)';
+  const candidateTitle = 'Full Stack Software Engineer (SDE 2)';
   const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
   const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
   const candidateGithub = resumeData?.personalInfo?.github || 'github.com/TKSanthosh';
   const resumeSummary = resumeData?.summary || '';
-  const topSkills = Object.values(resumeData?.skills || {}).flat().slice(0, 8).join(', ');
+  const topSkills = 'React.js, Node.js, Express.js, JavaScript (ES6+), MySQL, MongoDB, RESTful APIs, AWS';
   const companySummary = companyIntel?.summary ? `Target Company Domain: ${companyIntel.summary}` : '';
 
-  const systemPrompt = `You are Santhosh T K, a results-driven Senior Software Engineer (SDE 2) writing a direct, high-impact cold outreach email to a recruiter/hiring manager (${hrName}) at ${company}.
+  const systemPrompt = `You are Santhosh T K, a results-driven Full Stack Software Engineer (SDE 2) writing a direct, high-impact cold outreach email to a recruiter/hiring manager (${hrName}) at ${company}.
 
-STRICT WRITING RULES:
-1. ZERO FLATTERY / NO CORPORATE ESSAYS: NEVER praise the company's mission, user numbers (e.g. "I am drawn to your mission of..."), or write generic compliments. Recruiters delete flattery immediately.
-2. BE DIRECT & VALUE-DRIVEN: State clearly and confidently:
-   - Who you are: SDE 2 with 3+ years of production experience building scalable web applications and microservices.
-   - Core Tech Stack: ${topSkills}.
-   - Measurable Experience: Building high-performance REST APIs, reducing API response times by 20%, eliminating production bottlenecks, and architecting enterprise platforms at IQVIA and Sify Technologies.
-   - Exact Value: Ready to deliver immediate engineering impact, write clean scalable code, and optimize backend systems.
-3. CONCISE & PUNCHY: 80 to 110 words maximum. Every sentence must communicate competence and value.
-4. STRUCTURE:
+STRICT WRITING MANDATES:
+1. FULL STACK POSITIONING: Emphasize complete end-to-end full stack capabilities — building responsive, modular UI in React.js paired with robust, high-performance backend microservices and APIs in Node.js, Express, MySQL, and MongoDB.
+2. ZERO FLATTERY / NO CORPORATE ESSAYS: NEVER praise the company's mission, user numbers (e.g. "I am drawn to your mission of..."), or write generic compliments.
+3. BE DIRECT & VALUE-DRIVEN: State clearly and confidently:
+   - Who you are: Full Stack Software Engineer (SDE 2) with 3+ years of production experience delivering end-to-end web applications.
+   - Core Tech Stack: React.js, Node.js, Express.js, MongoDB, MySQL, RESTful APIs, AWS.
+   - Measurable Experience: Building enterprise event management platforms (IQVIA) and exam delivery engines (Sify), reducing API response times by 20%, and eliminating UI rendering delays and production bottlenecks.
+   - Exact Value: Ready to deliver immediate impact across both frontend (React) and backend (Node.js) engineering initiatives at ${company}.
+4. CONCISE & PUNCHY: 85 to 115 words maximum.
+5. STRUCTURE:
    - Line 1: Hi ${hrName},
-   - Paragraph 1: Direct pitch introducing yourself as an SDE 2 with 3+ years of experience and expressing interest in engineering roles at ${company}.
-   - Paragraph 2: Core technical capabilities (${topSkills}) and tangible achievements at IQVIA & Sify.
+   - Paragraph 1: Direct pitch introducing yourself as a Full Stack SDE 2 with 3+ years of experience and expressing interest in full stack / software engineering opportunities at ${company}.
+   - Paragraph 2: Full stack technical capabilities (React.js frontend + Node.js backend microservices + database query optimization) and track record at IQVIA and Sify.
    - Paragraph 3: Mention attached resume and ask for a quick 10-minute introductory call.
-5. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], or any bracketed text.
+6. ZERO PLACEHOLDERS: NEVER use [Your Name], [Company], or any bracketed text.
 
 Output format MUST be a JSON object:
 {
-  "subject": "SDE 2 / Backend Engineering Opportunities - Santhosh T K",
+  "subject": "Full Stack Software Engineer (SDE 2) Application - Santhosh T K",
   "body": "The direct 3-paragraph email text without signatures"
 }`;
 
   let userPrompt = `Target Recruiter: ${hrName}
 Target Company: ${company}
 ${companySummary}
-Candidate: ${candidateName} (${candidateTitle})
-Core Tech Stack: ${topSkills}
-Experience Highlights: 3+ years at IQVIA (Clinical Event Platform) and Sify Technologies (Exam Engine, QPTool, 20% API speedup)
+Candidate: ${candidateName} (Full Stack Software Development Engineer 2)
+Core Tech Stack: React.js (Frontend), Node.js & Express (Backend), MySQL & MongoDB (Databases), AWS
+Experience Highlights: 3+ years delivering full stack web applications at IQVIA and Sify Technologies
 `;
 
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align your direct technical pitch with the provided JD requirements.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align your direct full-stack technical pitch with the provided JD requirements.`;
   } else {
-    userPrompt += `\nTask: Draft a direct value-driven outreach email highlighting why you are a high-value hire for ${company}.`;
+    userPrompt += `\nTask: Draft a direct value-driven outreach email highlighting why you are a high-value full stack hire for ${company}.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
@@ -110,10 +111,10 @@ Experience Highlights: 3+ years at IQVIA (Clinical Event Platform) and Sify Tech
 
 /**
  * Robustly parses and formats pure subject and plain text body from LLM output.
- * Ensures flush-left alignment, proper paragraph spacing, and a clean professional signature.
+ * Ensures flush-left alignment, proper paragraph spacing, greeting separation, and a clean professional signature.
  */
 function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
-  let subject = `Software Development Engineer 2 Application - ${candidateInfo?.name || 'Santhosh T K'}`;
+  let subject = `Full Stack Software Engineer (SDE 2) - ${candidateInfo?.name || 'Santhosh T K'}`;
   let rawBody = '';
 
   let text = rawText.replace(/```json/gi, '').replace(/```/g, '').trim();
@@ -165,7 +166,7 @@ function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
 
   // 3. Format and clean paragraphs + build crisp signature
   const name = candidateInfo?.name || 'Santhosh T K';
-  const title = candidateInfo?.title || 'Software Development Engineer 2 (SDE2)';
+  const title = candidateInfo?.title || 'Full Stack Software Engineer (SDE 2)';
   const phone = candidateInfo?.phone || '+91 8825802707';
   const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
   const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
@@ -179,15 +180,29 @@ function extractCleanEmail(rawText, candidateTitle, company, candidateInfo) {
     mainBody = rawBody.substring(0, signoffIndex).trim();
   }
 
-  // Strip leading spaces/tabs on each line and create clean paragraphs
+  // Strip leading spaces/tabs on each line
   const rawParagraphs = mainBody.split(/\n\s*\n/);
-  const cleanedParagraphs = rawParagraphs
+  const rawCleaned = rawParagraphs
     .map(p => p.split('\n').map(line => line.trim()).filter(Boolean).join(' '))
     .map(p => p.trim())
     .filter(Boolean);
 
+  // Separate greeting if merged into paragraph 1
+  let paragraphs = [];
+  rawCleaned.forEach(p => {
+    const greetingMatch = p.match(/^(Hi\s+[^,]+,|Dear\s+[^,]+,|Hello\s+[^,]+,)\s*(.*)$/i);
+    if (greetingMatch) {
+      paragraphs.push(greetingMatch[1].trim());
+      if (greetingMatch[2] && greetingMatch[2].trim().length > 0) {
+        paragraphs.push(greetingMatch[2].trim());
+      }
+    } else {
+      paragraphs.push(p);
+    }
+  });
+
   const cleanSignature = `Best regards,\n${name}\n${title}\n${phone} | ${email}\n${linkedin} | ${github}`;
-  const finalBody = cleanedParagraphs.join('\n\n') + '\n\n' + cleanSignature;
+  const finalBody = paragraphs.join('\n\n') + '\n\n' + cleanSignature;
 
   return { subject, body: finalBody };
 }
