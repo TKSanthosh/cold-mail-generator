@@ -249,7 +249,7 @@ export default function App() {
           <BulkSender isAuthorized={isAuthorized} showToast={showToast} />
         </div>
         <div className={activeTab === 'logs' ? 'block' : 'hidden'}>
-          <LogsViewer showToast={showToast} />
+          <LogsViewer showToast={showToast} isActive={activeTab === 'logs'} />
         </div>
         <div className={activeTab === 'jdtailor' ? 'block' : 'hidden'}>
           <JdResumeTailor showToast={showToast} />
@@ -1010,7 +1010,7 @@ function BulkSender({ isAuthorized, showToast }) {
 /* =========================================================================
    OUTREACH LOGS / HISTORY MODULE
    ========================================================================= */
-function LogsViewer({ showToast }) {
+function LogsViewer({ showToast, isActive }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1030,7 +1030,7 @@ function LogsViewer({ showToast }) {
 
   useEffect(() => {
     fetchLogs();
-  }, []);
+  }, [isActive]);
 
   const handleClearLogs = async () => {
     if (!window.confirm('Are you sure you want to clear all outreach logs?')) return;
@@ -1054,7 +1054,7 @@ function LogsViewer({ showToast }) {
       `"${new Date(l.timestamp).toLocaleString()}"`,
       `"${l.company || ''}"`,
       `"${l.hrName || ''}"`,
-      `"${l.hrEmail || ''}"`,
+      `"${l.hrEmail || l.email || ''}"`,
       `"${l.resumeType || ''}"`,
       `"${l.status || ''}"`,
       `"${(l.subject || '').replace(/"/g, '""')}"`
@@ -1072,15 +1072,16 @@ function LogsViewer({ showToast }) {
 
   const filteredLogs = logs.filter(l => {
     const q = searchQuery.toLowerCase();
+    const email = (l.hrEmail || l.email || '').toLowerCase();
     return (
       (l.company && l.company.toLowerCase().includes(q)) ||
       (l.hrName && l.hrName.toLowerCase().includes(q)) ||
-      (l.hrEmail && l.hrEmail.toLowerCase().includes(q)) ||
+      email.includes(q) ||
       (l.subject && l.subject.toLowerCase().includes(q))
     );
   });
 
-  const totalSent = logs.filter(l => l.status === 'Sent').length;
+  const totalSent = logs.filter(l => l.status === 'Sent' || l.status === 'Sent Successfully' || l.status?.includes('Sent')).length;
   const tailoredCount = logs.filter(l => (l.resumeType || '').includes('Tailored')).length;
   const uniqueCompanies = new Set(logs.map(l => l.company).filter(Boolean)).size;
 
@@ -1208,7 +1209,7 @@ function LogsViewer({ showToast }) {
                     </td>
                     <td className="p-3">
                       <div className="font-semibold text-slate-800">{log.hrName || 'Hiring Manager'}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">{log.hrEmail}</div>
+                      <div className="text-[11px] text-slate-500 font-mono">{log.hrEmail || log.email}</div>
                     </td>
                     <td className="p-3">
                       {(log.resumeType || '').includes('Tailored') ? (
@@ -1222,12 +1223,16 @@ function LogsViewer({ showToast }) {
                       )}
                     </td>
                     <td className="p-3">
-                      {log.status === 'Sent' ? (
+                      {(log.status === 'Sent' || log.status === 'Sent Successfully' || log.status?.includes('Sent')) ? (
                         <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
                           <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> Sent
                         </span>
+                      ) : log.status?.includes('Draft') ? (
+                        <span className="inline-flex items-center gap-1 text-indigo-600 font-bold">
+                          <Bookmark className="w-3.5 h-3.5 text-indigo-500" /> Draft Saved
+                        </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-rose-600 font-bold" title={log.error}>
+                        <span className="inline-flex items-center gap-1 text-rose-600 font-bold" title={log.error || log.status}>
                           <XCircle className="w-3.5 h-3.5 text-rose-500" /> Failed
                         </span>
                       )}

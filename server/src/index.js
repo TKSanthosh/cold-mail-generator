@@ -329,10 +329,12 @@ app.post('/api/send', async (req, res) => {
     addUserLog(userKey, {
       type: 'Single Email',
       email,
+      hrEmail: email,
       hrName: hrName || 'HR',
       company: company || 'Company',
       subject,
-      status: 'Sent Successfully',
+      body: cleanBody,
+      status: 'Sent',
       resumeType: resumeType || 'Standard',
       messageId: result.id
     });
@@ -343,9 +345,11 @@ app.post('/api/send', async (req, res) => {
     addUserLog(userKey, {
       type: 'Single Email',
       email,
+      hrEmail: email,
       hrName: hrName || 'HR',
       company: company || 'Company',
       subject,
+      body,
       status: 'Failed: ' + e.message,
       resumeType: resumeType || 'Standard'
     });
@@ -389,10 +393,12 @@ app.post('/api/draft', async (req, res) => {
     addUserLog(userKey, {
       type: 'Draft Created in Gmail App',
       email,
+      hrEmail: email,
       hrName: hrName || 'HR',
       company: company || 'Company',
       subject,
-      status: 'Draft Saved (Ready for Schedule Send in Gmail App)',
+      body: cleanBody,
+      status: 'Draft Saved (Ready in Gmail App)',
       resumeType: resumeType || 'Standard',
       draftId: result.id
     });
