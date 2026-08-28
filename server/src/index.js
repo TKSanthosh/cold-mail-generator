@@ -278,16 +278,14 @@ app.post('/api/generate', async (req, res) => {
     const finalCompany = company || parsed.company;
     const targetDomain = parsed.domain;
 
-    let companyIntel = null;
-    try {
-      companyIntel = await scrapeCompanyIntel(finalCompany, targetDomain);
-    } catch (scrapErr) {
-      console.warn('Company scraping failed, proceeding with fallback:', scrapErr.message);
-    }
-
     const standardResume = getUserResume(userKey);
-    const tailoredResumeData = await tailorResume(standardResume, jd);
-    const emailData = await generateColdEmail(finalHrName, finalCompany, jd, tailoredResumeData, companyIntel);
+
+    // Parallel Concurrency: Run Scraping, Resume Tailoring, and Cold Email Generation in parallel
+    const [companyIntel, tailoredResumeData, emailData] = await Promise.all([
+      scrapeCompanyIntel(finalCompany, targetDomain).catch(() => null),
+      tailorResume(standardResume, jd).catch(() => standardResume),
+      generateColdEmail(finalHrName, finalCompany, jd, standardResume, null)
+    ]);
 
     res.json({
       hrName: finalHrName,

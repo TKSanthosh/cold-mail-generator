@@ -1,8 +1,15 @@
+const intelCache = new Map();
+
 /**
  * Scrapes company background info from official website meta tags and Wikipedia.
  * Provides live contextual intelligence for tailoring cold emails and resumes.
  */
 async function scrapeCompanyIntel(companyName, domain) {
+  const cacheKey = `${companyName}_${domain}`.toLowerCase();
+  if (intelCache.has(cacheKey)) {
+    return intelCache.get(cacheKey);
+  }
+
   let intel = {
     company: companyName,
     domain: domain,
@@ -15,6 +22,7 @@ async function scrapeCompanyIntel(companyName, domain) {
   if (isPersonalEmail || ['gmail', 'yahoo', 'outlook', 'hotmail'].includes(companyName.toLowerCase())) {
     intel.summary = '';
     intel.source = 'Direct Recruiter Outreach';
+    intelCache.set(cacheKey, intel);
     return intel;
   }
 
@@ -23,7 +31,7 @@ async function scrapeCompanyIntel(companyName, domain) {
     try {
       const targetUrl = `https://${domain}`;
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 1500);
       
       const pageRes = await fetch(targetUrl, {
         signal: controller.signal,

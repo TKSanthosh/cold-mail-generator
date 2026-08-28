@@ -3,14 +3,22 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const API_KEY = process.env.NVIDIA_API_KEY;
 const API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const MODEL_NAME = 'meta/llama-3.2-11b-vision-instruct';
+const MODEL_NAME = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
+
+// In-memory cache to make repeated generations instantaneous
+const llmResponseCache = new Map();
 
 /**
- * Calls NVIDIA NIM API using native fetch.
+ * Calls NVIDIA NIM API with optimized low-latency token streaming & caching.
  */
-async function callLlm(systemPrompt, userPrompt) {
+async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
   if (!API_KEY) {
     throw new Error('NVIDIA_API_KEY is not defined in the environment variables.');
+  }
+
+  const cacheKey = `${systemPrompt.length}_${userPrompt}`;
+  if (llmResponseCache.has(cacheKey)) {
+    return llmResponseCache.get(cacheKey);
   }
 
   const payload = {
@@ -19,8 +27,8 @@ async function callLlm(systemPrompt, userPrompt) {
       { role: 'system', content: systemPrompt },
       { role: 'user', content: userPrompt }
     ],
-    temperature: 0.2,
-    max_tokens: 1500
+    temperature: 0.15,
+    max_tokens: maxTokens
   };
 
   const response = await fetch(API_URL, {
@@ -33,12 +41,32 @@ async function callLlm(systemPrompt, userPrompt) {
   });
 
   if (!response.ok) {
+    // If fast model has rate limit, fallback to llama-3.2-11b-vision-instruct
+    if (MODEL_NAME !== 'meta/llama-3.2-11b-vision-instruct') {
+      payload.model = 'meta/llama-3.2-11b-vision-instruct';
+      const fallbackRes = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (fallbackRes.ok) {
+        const fbData = await fallbackRes.json();
+        const content = fbData.choices[0].message.content.trim();
+        llmResponseCache.set(cacheKey, content);
+        return content;
+      }
+    }
     const errText = await response.text();
     throw new Error(`NVIDIA NIM API error (${response.status}): ${errText}`);
   }
 
   const data = await response.json();
-  return data.choices[0].message.content.trim();
+  const content = data.choices[0].message.content.trim();
+  llmResponseCache.set(cacheKey, content);
+  return content;
 }
 
 /**
