@@ -1,7 +1,7 @@
 {
   "personalInfo": {
     "name": "Santhosh T K",
-    "title": "Software Development Engineer 2 (SDE2)",
+    "title": "Software Development Engineer / Full Stack Developer",
     "location": "Bangalore",
     "email": "tksanthosh494@gmail.com",
     "phone": "+91 8825802707",
@@ -9,7 +9,7 @@
     "linkedin": "linkedin.com/in/santhosh-tk",
     "github": "github.com/TKSanthosh"
   },
-  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of full-time experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, performance optimization, and enterprise application development.",
+  "summary": "Software Development Engineer / Full Stack Developer with 3+ years of full-time experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, performance optimization, and enterprise application development.",
   "skills": {
     "Backend Technologies": [
       "Node.js",
@@ -47,7 +47,7 @@
   },
   "experience": [
     {
-      "role": "Software Development Engineer 2 (SDE2)",
+      "role": "Software Development Engineer",
       "company": "IQVIA, Bangalore",
       "duration": "June 2026 - Present",
       "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",

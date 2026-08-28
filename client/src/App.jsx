@@ -1616,7 +1616,7 @@ function JdResumeTailor({ showToast }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          role: role.trim() || 'Software Development Engineer 2 (SDE2)',
+          role: role.trim() || 'Software Development Engineer',
           company: company.trim() || 'Target Company',
           jd: jd.trim()
         })
@@ -1739,7 +1739,7 @@ function JdResumeTailor({ showToast }) {
               <label className="block text-xs font-bold text-slate-700 mb-1">Target Role / Title</label>
               <input
                 type="text"
-                placeholder="e.g. Full Stack Engineer (SDE2)"
+                placeholder="e.g. Software Development Engineer / Full Stack Developer"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"

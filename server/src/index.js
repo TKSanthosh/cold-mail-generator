@@ -524,7 +524,7 @@ app.post('/api/applications/tailor', async (req, res) => {
     const newApplication = {
       id: appId,
       timestamp: new Date().toISOString(),
-      role: role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer 2'),
+      role: role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer'),
       company: company ? company.trim() : 'Target Company',
       jd: jd.trim(),
       jdSnippet: jd.trim().slice(0, 180) + (jd.trim().length > 180 ? '...' : ''),

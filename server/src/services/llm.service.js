@@ -66,13 +66,14 @@ STRICT RULES:
 - Do not truncate sentences. Every sentence must be grammatically complete.
 - Do not fabricate or round up years of experience. Use EXACTLY "3+ years" of experience as provided in the input data.
 - Do not use the word "seasoned" or similar inflated language.
+- ROLE TITLE MANDATE: Refer to the role strictly as "Software Development Engineer", "Full Stack Developer", or "Software Engineer" (or the exact job title from the JD). NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
 
 OUTPUT FORMAT (plain text, in this exact structure):
 Subject: <one line, no quotes>
 
 Hi ${cleanHrName},
 
-<Paragraph 1: 2-3 sentences. Role (Software Development Engineer 2) + 3+ years experience + core stack: Node.js, Express.js, React.js, MySQL, MongoDB, AWS, REST APIs.>
+<Paragraph 1: 2-3 sentences. Role (Software Development Engineer / Full Stack Developer) + 3+ years experience + core stack: Node.js, Express.js, React.js, MySQL, MongoDB, AWS, REST APIs.>
 
 <Paragraph 2: 2-3 sentences. Specific achievement from input: reduced API response time by 20% and eliminated ~30% of production issues migrating PHP backend to Node.js & MongoDB at Sify Technologies; built clinical event platform at IQVIA. Do not invent metrics not present in input.>
 
@@ -84,7 +85,7 @@ ${candidateTitle}
 ${candidatePhone} | ${candidateEmail}
 ${candidateLinkedin} | ${candidateGithub}
 
-Before finalizing, re-check: no JSON syntax, no truncated sentences, no inflated experience claims, no field-name labels visible in the text.`;
+Before finalizing, re-check: no JSON syntax, no level numbers like SDE2, no truncated sentences, no inflated experience claims, no field-name labels visible in the text.`;
 
   let userPrompt = `Target Recruiter: ${cleanHrName}
 Target Company: ${company}
@@ -92,7 +93,7 @@ Candidate: ${candidateName} (${candidateTitle})
 Total Experience: 3+ years (incl. internship)
 Stack: Node.js, Express.js, React.js, MySQL, MongoDB, AWS, JWT/RBAC, REST APIs
 Experience & Achievements:
-- SDE2 at IQVIA, Bangalore (Clinical Event & Engagement Management Platform)
+- Software Development Engineer at IQVIA, Bangalore (Clinical Event & Engagement Management Platform)
 - Software Developer at Sify Technologies (Exam Engine: migrated PHP backend to Node.js/MongoDB, cutting production issues by ~30%; QPTool: built RESTful APIs + React.js, improved API response time by ~20%)
 - Maintained 95%+ code review approval rate; set coding standards for a 5-member team
 Call to Action: Request a 15-minute intro call this week; resume attached.
