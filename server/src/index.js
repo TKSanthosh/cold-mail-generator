@@ -12,60 +12,55 @@ const { generateResumePdf } = require('./services/pdf.service');
 const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
+const {
+  getUserKeyFromEmail,
+  getUserPaths,
+  ensureUserSandbox,
+  getUserProfile,
+  getUserResume,
+  saveUserResume,
+  getUserApplications,
+  saveUserApplications,
+  getUserLogs,
+  addUserLog,
+  isUserAuthorized,
+  listAllProfiles
+} = require('./services/user.service');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
-const RESUME_PATH = process.env.RESUME_PATH || path.join(__dirname, '../resume.json');
-const LOGS_PATH = process.env.LOGS_PATH || path.join(__dirname, '../logs.json');
 
 app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
 app.use(express.json({ limit: '20mb' }));
 
-// Verify configuration on boot
-if (!fs.existsSync(RESUME_PATH)) {
-  console.warn(`[WARN] Standard resume JSON not found at ${RESUME_PATH}. Creating a blank one.`);
-  const defaultResume = {
-    personalInfo: { name: "", title: "", email: "", phone: "", location: "", github: "", linkedin: "" },
-    summary: "",
-    skills: {},
-    experience: [],
-    projects: [],
-    education: []
-  };
-  fs.writeFileSync(RESUME_PATH, JSON.stringify(defaultResume, null, 2), 'utf8');
-}
-
-if (!fs.existsSync(LOGS_PATH)) {
-  fs.writeFileSync(LOGS_PATH, JSON.stringify([], null, 2), 'utf8');
-}
-
-function addLogEntry(entry) {
-  try {
-    let logs = [];
-    if (fs.existsSync(LOGS_PATH)) {
-      logs = JSON.parse(fs.readFileSync(LOGS_PATH, 'utf8'));
-    }
-    logs.unshift({
-      id: Date.now().toString(),
-      timestamp: new Date().toISOString(),
-      ...entry
-    });
-    fs.writeFileSync(LOGS_PATH, JSON.stringify(logs, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Failed to save log entry:', e);
+// Helper to resolve active user key
+function resolveUserKey(req) {
+  const headerKey = req.headers['x-user-key'];
+  if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
+    return headerKey.trim();
   }
+  const queryKey = req.query.userKey;
+  if (queryKey && typeof queryKey === 'string' && queryKey.trim().length > 0) {
+    return queryKey.trim();
+  }
+  const bodyKey = req.body?.userKey;
+  if (bodyKey && typeof bodyKey === 'string' && bodyKey.trim().length > 0) {
+    return bodyKey.trim();
+  }
+  // Default to Santhosh if not specified
+  return 'tksanthosh494_gmail_com';
 }
 
-// Ensure temp/uploads directory exists
-const UPLOADS_DIR = path.join(__dirname, '../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) {
-  fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-}
+// Ensure default sandbox for Santhosh
+ensureUserSandbox('tksanthosh494_gmail_com', {
+  name: 'Santhosh T K',
+  email: 'tksanthosh494@gmail.com'
+});
 
 // --- AUTH ROUTING ---
 app.get('/api/auth/url', (req, res) => {
   try {
-    const url = getAuthUrl();
+    const url = getAuthUrl(req.query.state || '');
     res.json({ url });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -78,9 +73,10 @@ app.get('/api/auth/callback', async (req, res) => {
     return res.status(400).send('Missing authorization code');
   }
   try {
-    await handleCallbackCode(code);
-    // Redirect to frontend app home
-    res.redirect('http://localhost:5174/?auth=success');
+    const userInfo = await handleCallbackCode(code);
+    // Redirect to frontend app with user details
+    const redirectUrl = `/?auth=success&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
+    res.redirect(redirectUrl);
   } catch (e) {
     console.error('OAuth callback exchange error:', e);
     res.status(500).send(`Authentication failed: ${e.message}`);
@@ -88,22 +84,35 @@ app.get('/api/auth/callback', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  res.json({ authorized: isAuthorized() });
+  const userKey = resolveUserKey(req);
+  const authorized = isUserAuthorized(userKey);
+  const profile = getUserProfile(userKey);
+  res.json({ authorized, user: profile, userKey });
+});
+
+app.get('/api/auth/profiles', (req, res) => {
+  try {
+    res.json({ profiles: listAllProfiles() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/auth/logout', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    logout();
+    logout(userKey);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-// --- RESUME TEMPLATE ROUTING ---
+// --- RESUME TEMPLATE ROUTING (Per-User Sandbox) ---
 app.get('/api/resume', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    const resumeData = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
+    const resumeData = getUserResume(userKey);
     res.json(resumeData);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -111,250 +120,213 @@ app.get('/api/resume', (req, res) => {
 });
 
 app.post('/api/resume', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    fs.writeFileSync(RESUME_PATH, JSON.stringify(req.body, null, 2), 'utf8');
+    saveUserResume(userKey, req.body);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.post('/api/resume/upload', async (req, res) => {
-  const { pdfBase64 } = req.body;
-  if (!pdfBase64) {
-    return res.status(400).json({ error: 'Missing pdfBase64 file data' });
+// Upload and parse uploaded PDF resume via python script
+app.post('/api/resume/upload', (req, res) => {
+  const userKey = resolveUserKey(req);
+  const { fileBase64, filename } = req.body;
+  if (!fileBase64) {
+    return res.status(400).json({ error: 'fileBase64 is required' });
   }
 
-  const uploadPdfPath = path.join(UPLOADS_DIR, `Uploaded_Resume_${Date.now()}.pdf`);
   try {
-    const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, '');
-    const buffer = Buffer.from(cleanBase64, 'base64');
-    fs.writeFileSync(uploadPdfPath, buffer);
+    const userPaths = getUserPaths(userKey);
+    const tempPdfPath = path.join(userPaths.uploadsDir, `uploaded_resume_${Date.now()}.pdf`);
+    const buffer = Buffer.from(fileBase64, 'base64');
+    fs.writeFileSync(tempPdfPath, buffer);
 
     const scriptPath = path.join(__dirname, 'utils/resume_extractor.py');
-    exec(`python "${scriptPath}" "${uploadPdfPath}"`, (error, stdout, stderr) => {
-      // Clean up uploaded temp file
-      if (fs.existsSync(uploadPdfPath)) {
-        fs.unlinkSync(uploadPdfPath);
-      }
+    const pythonExe = `& "${path.join(__dirname, '../../../python-portable/python.exe')}"`;
+
+    exec(`${pythonExe} "${scriptPath}" "${tempPdfPath}"`, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
+      try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
 
       if (error) {
-        console.error('Resume extraction error:', stderr || error.message);
-        return res.status(500).json({ error: stderr || error.message });
+        console.error('Python resume extraction error:', stderr || error.message);
+        return res.status(500).json({ error: 'Failed to extract text from PDF: ' + (stderr || error.message) });
       }
 
       try {
         const parsedResume = JSON.parse(stdout.trim());
+        saveUserResume(userKey, parsedResume);
         res.json({ success: true, resume: parsedResume });
-      } catch (err) {
-        res.status(500).json({ error: 'Failed to parse extracted JSON output' });
+      } catch (parseErr) {
+        console.error('Failed to parse Python JSON output:', stdout);
+        res.status(500).json({ error: 'Failed to parse structured resume data' });
       }
     });
   } catch (e) {
-    if (fs.existsSync(uploadPdfPath)) {
-      fs.unlinkSync(uploadPdfPath);
-    }
     res.status(500).json({ error: e.message });
   }
 });
 
-// --- GENERATION ENDPOINT ---
+// --- SINGLE EMAIL GENERATION & PREVIEW ---
 app.post('/api/generate', async (req, res) => {
-  const { email, jd } = req.body;
-  if (!email) {
-    return res.status(400).json({ error: 'HR Email address is required' });
+  const userKey = resolveUserKey(req);
+  const { hrEmail, hrName, company, jd } = req.body;
+  if (!hrEmail) {
+    return res.status(400).json({ error: 'HR Email is required' });
   }
 
   try {
-    const { name, company, domain } = parseHrEmail(email);
+    const parsed = parseHrEmail(hrEmail);
+    const finalHrName = hrName || parsed.name;
+    const finalCompany = company || parsed.company;
+    const targetDomain = parsed.domain;
 
-    // Step 0: Live Internet Scraping for Company Background & Intelligence
-    const companyIntel = await scrapeCompanyIntel(company, domain);
-
-    const standardResume = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
-
-    // Step 1: Generate Tailored Resume (if JD is provided)
-    let tailoredResume = standardResume;
-    if (jd && jd.trim().length > 0) {
-      tailoredResume = await tailorResume(standardResume, jd);
+    let companyIntel = null;
+    try {
+      companyIntel = await scrapeCompanyIntel(finalCompany, targetDomain);
+    } catch (scrapErr) {
+      console.warn('Company scraping failed, proceeding with fallback:', scrapErr.message);
     }
 
-    // Step 2: Generate Cold Email Body (informed by live company intelligence)
-    const emailContent = await generateColdEmail(name, company, jd, tailoredResume, companyIntel);
+    const standardResume = getUserResume(userKey);
+    const tailoredResumeData = await tailorResume(standardResume, jd);
+    const emailData = await generateColdEmail(finalHrName, finalCompany, jd, tailoredResumeData, companyIntel);
 
     res.json({
-      name,
-      company,
+      hrName: finalHrName,
+      company: finalCompany,
       companyIntel,
-      email: emailContent,
-      resume: tailoredResume
+      subject: emailData.subject,
+      body: emailData.body,
+      tailoredResume: tailoredResumeData
     });
   } catch (e) {
-    console.error('Generation error:', e);
+    console.error('Cold email generation error:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// --- EMAIL SENDING ENDPOINT ---
+// --- SEND EMAIL (Per-User Sandbox) ---
 app.post('/api/send', async (req, res) => {
-  const { email, subject, body, resume, hrName, company, resumeType, jdSnippet } = req.body;
+  const userKey = resolveUserKey(req);
+  const { email, subject, body, resume, hrName, company, resumeType } = req.body;
   if (!email || !subject || !body || !resume) {
-    return res.status(400).json({ error: 'Missing email, subject, body, or resume parameter' });
+    return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  if (!isAuthorized()) {
-    return res.status(401).json({ error: 'Gmail account is not connected. Connect via OAuth first.' });
+  if (!isUserAuthorized(userKey)) {
+    return res.status(401).json({ error: 'Your Gmail account is not connected. Please connect Gmail first.' });
   }
-
-  // Sanitize body if raw JSON was somehow passed
-  let cleanBody = body;
-  if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
-    cleanBody = cleanBody
-      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
-      .replace(/"?\s*\}\s*$/, '')
-      .replace(/\\n/g, '\n')
-      .replace(/\\"/g, '"')
-      .trim();
-  }
-
-  let cleanSubject = subject;
-  if (typeof cleanSubject === 'string' && cleanSubject.includes('"subject":')) {
-    const sm = cleanSubject.match(/"subject"\s*:\s*"([^"]+)"/);
-    if (sm) cleanSubject = sm[1];
-  }
-
-  const tempPdfPath = path.join(UPLOADS_DIR, `Resume_${Date.now()}.pdf`);
-  const parsedInfo = parseHrEmail(email);
-  const targetName = hrName || parsedInfo.name;
-  const targetCompany = company || parsedInfo.company;
-  const isTailored = resumeType === 'Tailored' || !!(jdSnippet && jdSnippet.trim().length > 0);
 
   try {
-    // Generate tailored PDF
-    await generateResumePdf(resume, tempPdfPath);
-
-    // Send via Gmail
-    const result = await sendGmail(email, cleanSubject, cleanBody, tempPdfPath);
-
-    // Cleanup PDF
-    if (fs.existsSync(tempPdfPath)) {
-      fs.unlinkSync(tempPdfPath);
+    let cleanBody = body;
+    if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
+      cleanBody = cleanBody
+        .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+        .replace(/"?\s*\}\s*$/, '')
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .trim();
     }
 
-    // Save Log
-    addLogEntry({
-      hrEmail: email,
-      hrName: targetName,
-      company: targetCompany,
+    const userPaths = getUserPaths(userKey);
+    const candidateName = resume?.personalInfo?.name || 'Resume';
+    const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_${Date.now()}.pdf`);
+
+    await generateResumePdf(resume, tempPdfPath);
+    const result = await sendGmail(email, subject, cleanBody, tempPdfPath, userKey);
+
+    try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+
+    addUserLog(userKey, {
+      type: 'Single Email',
+      email,
+      hrName: hrName || 'HR',
+      company: company || 'Company',
       subject,
-      body,
-      resumeType: isTailored ? 'Tailored (with JD)' : 'Standard Resume',
-      tailoredSummary: resume.summary || '',
-      skillsHighlight: Object.values(resume.skills || {}).flat().slice(0, 8),
-      status: 'Sent',
+      status: 'Sent Successfully',
+      resumeType: resumeType || 'Standard',
       messageId: result.id
     });
 
     res.json({ success: true, result });
   } catch (e) {
-    console.error('Mail sending error:', e);
-    if (fs.existsSync(tempPdfPath)) {
-      fs.unlinkSync(tempPdfPath);
-    }
-
-    // Save Failed Log
-    addLogEntry({
-      hrEmail: email,
-      hrName: targetName,
-      company: targetCompany,
+    console.error('Send mail error:', e);
+    addUserLog(userKey, {
+      type: 'Single Email',
+      email,
+      hrName: hrName || 'HR',
+      company: company || 'Company',
       subject,
-      body,
-      resumeType: isTailored ? 'Tailored (with JD)' : 'Standard Resume',
-      status: 'Failed',
-      error: e.message
+      status: 'Failed: ' + e.message,
+      resumeType: resumeType || 'Standard'
     });
-
     res.status(500).json({ error: e.message });
   }
 });
 
-// Initialize background morning schedule dispatcher
-initScheduler(addLogEntry);
-
-// --- GMAIL DRAFT CREATION ENDPOINT (Schedule inside Gmail App) ---
+// --- SAVE GMAIL DRAFT (Per-User Sandbox) ---
 app.post('/api/draft', async (req, res) => {
-  const { email, subject, body, resume, hrName, company, resumeType, jdSnippet } = req.body;
+  const userKey = resolveUserKey(req);
+  const { email, subject, body, resume, hrName, company, resumeType } = req.body;
   if (!email || !subject || !body || !resume) {
-    return res.status(400).json({ error: 'Missing email, subject, body, or resume parameter' });
+    return res.status(400).json({ error: 'Missing required parameters' });
   }
 
-  if (!isAuthorized()) {
-    return res.status(401).json({ error: 'Gmail account is not connected. Connect via OAuth first.' });
+  if (!isUserAuthorized(userKey)) {
+    return res.status(401).json({ error: 'Your Gmail account is not connected.' });
   }
-
-  let cleanBody = body;
-  if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
-    cleanBody = cleanBody
-      .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
-      .replace(/"?\s*\}\s*$/, '')
-      .replace(/\\n/g, '\n')
-      .replace(/\\"/g, '"')
-      .trim();
-  }
-
-  let cleanSubject = subject;
-  if (typeof cleanSubject === 'string' && cleanSubject.includes('"subject":')) {
-    const sm = cleanSubject.match(/"subject"\s*:\s*"([^"]+)"/);
-    if (sm) cleanSubject = sm[1];
-  }
-
-  const tempPdfPath = path.join(UPLOADS_DIR, `Draft_Resume_${Date.now()}.pdf`);
-  const parsedInfo = parseHrEmail(email);
-  const targetName = hrName || parsedInfo.name;
-  const targetCompany = company || parsedInfo.company;
-  const isTailored = resumeType === 'Tailored' || !!(jdSnippet && jdSnippet.trim().length > 0);
 
   try {
-    // Generate tailored 1-page PDF
-    await generateResumePdf(resume, tempPdfPath);
-
-    // Create Draft in Gmail App
-    const result = await createGmailDraft(email, cleanSubject, cleanBody, tempPdfPath);
-
-    if (fs.existsSync(tempPdfPath)) {
-      fs.unlinkSync(tempPdfPath);
+    let cleanBody = body;
+    if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
+      cleanBody = cleanBody
+        .replace(/^\{[\s\S]*?"body"\s*:\s*"?/i, '')
+        .replace(/"?\s*\}\s*$/, '')
+        .replace(/\\n/g, '\n')
+        .replace(/\\"/g, '"')
+        .trim();
     }
 
-    addLogEntry({
-      hrEmail: email,
-      hrName: targetName,
-      company: targetCompany,
-      subject: cleanSubject,
-      body: cleanBody,
-      resumeType: isTailored ? 'Tailored (with JD)' : 'Standard Resume',
-      tailoredSummary: resume.summary || '',
-      status: 'Created Draft in Gmail App',
+    const userPaths = getUserPaths(userKey);
+    const candidateName = resume?.personalInfo?.name || 'Resume';
+    const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_Draft_${Date.now()}.pdf`);
+
+    await generateResumePdf(resume, tempPdfPath);
+    const result = await createGmailDraft(email, subject, cleanBody, tempPdfPath, userKey);
+
+    try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+
+    addUserLog(userKey, {
+      type: 'Draft Created in Gmail App',
+      email,
+      hrName: hrName || 'HR',
+      company: company || 'Company',
+      subject,
+      status: 'Draft Saved (Ready for Schedule Send in Gmail App)',
+      resumeType: resumeType || 'Standard',
       draftId: result.id
     });
 
-    res.json({ success: true, draft: result });
+    res.json({ success: true, result });
   } catch (e) {
-    console.error('Draft creation error:', e);
-    if (fs.existsSync(tempPdfPath)) {
-      fs.unlinkSync(tempPdfPath);
-    }
+    console.error('Create draft error:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 // --- SCHEDULE DISPATCH ENDPOINTS ---
 app.post('/api/schedule', (req, res) => {
+  const userKey = resolveUserKey(req);
   const { email, subject, body, resume, hrName, company, scheduledAt, resumeType } = req.body;
   if (!email || !subject || !body || !resume || !scheduledAt) {
     return res.status(400).json({ error: 'Missing required scheduling parameters' });
   }
 
-  if (!isAuthorized()) {
+  if (!isUserAuthorized(userKey)) {
     return res.status(401).json({ error: 'Gmail account is not connected.' });
   }
 
@@ -369,6 +341,7 @@ app.post('/api/schedule', (req, res) => {
   }
 
   const job = addScheduledJob({
+    userKey,
     email,
     subject,
     body: cleanBody,
@@ -383,7 +356,10 @@ app.post('/api/schedule', (req, res) => {
 });
 
 app.get('/api/scheduled', (req, res) => {
-  res.json({ jobs: getScheduledJobs() });
+  const userKey = resolveUserKey(req);
+  const allJobs = getScheduledJobs();
+  const userJobs = allJobs.filter(j => !j.userKey || j.userKey === userKey);
+  res.json({ jobs: userJobs });
 });
 
 app.delete('/api/scheduled/:id', (req, res) => {
@@ -391,22 +367,21 @@ app.delete('/api/scheduled/:id', (req, res) => {
   res.json({ success: true });
 });
 
-// --- OUTREACH LOGS ENDPOINTS ---
+// --- OUTREACH LOGS ENDPOINTS (Per-User Sandbox) ---
 app.get('/api/logs', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    if (!fs.existsSync(LOGS_PATH)) {
-      return res.json({ logs: [] });
-    }
-    const logs = JSON.parse(fs.readFileSync(LOGS_PATH, 'utf8'));
-    res.json({ logs });
+    res.json({ logs: getUserLogs(userKey) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 app.delete('/api/logs', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    fs.writeFileSync(LOGS_PATH, JSON.stringify([], null, 2), 'utf8');
+    const userPaths = getUserPaths(userKey);
+    fs.writeFileSync(userPaths.logsPath, JSON.stringify([], null, 2), 'utf8');
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -415,7 +390,7 @@ app.delete('/api/logs', (req, res) => {
 
 // --- BULK PREVIEW ENDPOINT ---
 app.post('/api/bulk-parse', (req, res) => {
-  const { emails } = req.body; // Array of emails
+  const { emails } = req.body;
   if (!emails || !Array.isArray(emails)) {
     return res.status(400).json({ error: 'Emails array is required' });
   }
@@ -428,61 +403,30 @@ app.post('/api/bulk-parse', (req, res) => {
   res.json({ parsed });
 });
 
-// --- DEDICATED JD RESUME TAILOR & APPLICATION LOGS ENDPOINTS ---
-const APPLICATIONS_PATH = process.env.APPLICATIONS_PATH || path.join(__dirname, '../applications.json');
-
-if (!fs.existsSync(APPLICATIONS_PATH)) {
-  fs.writeFileSync(APPLICATIONS_PATH, JSON.stringify([], null, 2), 'utf8');
-}
-
-function getApplications() {
-  try {
-    if (fs.existsSync(APPLICATIONS_PATH)) {
-      return JSON.parse(fs.readFileSync(APPLICATIONS_PATH, 'utf8'));
-    }
-  } catch (e) {
-    console.error('Failed to read applications.json:', e);
-  }
-  return [];
-}
-
-function saveApplications(apps) {
-  try {
-    fs.writeFileSync(APPLICATIONS_PATH, JSON.stringify(apps, null, 2), 'utf8');
-  } catch (e) {
-    console.error('Failed to save applications.json:', e);
-  }
-}
-
+// --- DEDICATED JD RESUME TAILOR & APPLICATION LOGS ENDPOINTS (Per-User Sandbox) ---
 app.post('/api/applications/tailor', async (req, res) => {
+  const userKey = resolveUserKey(req);
   const { role, company, jd } = req.body;
   if (!jd || jd.trim().length === 0) {
     return res.status(400).json({ error: 'Job description (JD) is required.' });
   }
 
   try {
-    let standardResume = {};
-    if (fs.existsSync(RESUME_PATH)) {
-      standardResume = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
-    }
-
-    // Call LLM to tailor the resume
+    const standardResume = getUserResume(userKey);
     const tailoredResume = await tailorResume(standardResume, jd);
 
-    // If role is provided, align the title in personalInfo
     if (role && role.trim().length > 0) {
       tailoredResume.personalInfo = tailoredResume.personalInfo || {};
       tailoredResume.personalInfo.title = role.trim();
     }
 
+    const userPaths = getUserPaths(userKey);
     const appId = `app_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const pdfFilename = `tailored_resume_${appId}.pdf`;
-    const pdfPath = path.join(UPLOADS_DIR, pdfFilename);
+    const pdfPath = path.join(userPaths.uploadsDir, pdfFilename);
 
-    // Compile 1-Page PDF
     await generateResumePdf(tailoredResume, pdfPath);
 
-    // Extract matched skills from tailored resume
     const matchedSkills = Object.values(tailoredResume.skills || {}).flat().slice(0, 8);
 
     const newApplication = {
@@ -498,9 +442,9 @@ app.post('/api/applications/tailor', async (req, res) => {
       status: 'Tailored & Ready'
     };
 
-    const apps = getApplications();
+    const apps = getUserApplications(userKey);
     apps.unshift(newApplication);
-    saveApplications(apps);
+    saveUserApplications(userKey, apps);
 
     res.json({ success: true, application: newApplication });
   } catch (e) {
@@ -510,51 +454,60 @@ app.post('/api/applications/tailor', async (req, res) => {
 });
 
 app.get('/api/applications', (req, res) => {
+  const userKey = resolveUserKey(req);
   try {
-    res.json({ applications: getApplications() });
+    res.json({ applications: getUserApplications(userKey) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
 app.get('/api/applications/:id/pdf', (req, res) => {
+  const userKey = resolveUserKey(req);
   const { id } = req.params;
-  const apps = getApplications();
+  const apps = getUserApplications(userKey);
   const appItem = apps.find(a => a.id === id);
 
   if (!appItem || !appItem.pdfFilename) {
     return res.status(404).json({ error: 'Application record or PDF not found' });
   }
 
-  const pdfPath = path.join(UPLOADS_DIR, appItem.pdfFilename);
+  const userPaths = getUserPaths(userKey);
+  const pdfPath = path.join(userPaths.uploadsDir, appItem.pdfFilename);
   if (!fs.existsSync(pdfPath)) {
     return res.status(404).json({ error: 'PDF file not found on server' });
   }
 
   const sanitizedCompany = (appItem.company || 'Company').replace(/[^a-zA-Z0-9_-]/g, '_');
   const sanitizedRole = (appItem.role || 'SDE2').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const downloadName = `Santhosh_TK_${sanitizedCompany}_${sanitizedRole}_Resume.pdf`;
+  const candidateName = (appItem.tailoredResume?.personalInfo?.name || 'Resume').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const downloadName = `${candidateName}_${sanitizedCompany}_${sanitizedRole}_Resume.pdf`;
 
   res.download(pdfPath, downloadName);
 });
 
 app.delete('/api/applications/:id', (req, res) => {
+  const userKey = resolveUserKey(req);
   const { id } = req.params;
-  let apps = getApplications();
+  let apps = getUserApplications(userKey);
   const appItem = apps.find(a => a.id === id);
 
   if (appItem && appItem.pdfFilename) {
-    const pdfPath = path.join(UPLOADS_DIR, appItem.pdfFilename);
+    const userPaths = getUserPaths(userKey);
+    const pdfPath = path.join(userPaths.uploadsDir, appItem.pdfFilename);
     if (fs.existsSync(pdfPath)) {
       try { fs.unlinkSync(pdfPath); } catch (e) {}
     }
   }
 
   apps = apps.filter(a => a.id !== id);
-  saveApplications(apps);
+  saveUserApplications(userKey, apps);
 
   res.json({ success: true });
 });
+
+// Initialize background scheduler
+initScheduler();
 
 // --- SERVE PRODUCTION CLIENT ASSETS ---
 const clientDistPath = path.join(__dirname, '../../client/dist');

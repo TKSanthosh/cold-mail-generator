@@ -1,20 +1,53 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
+// Helper to make authenticated, per-user sandbox API calls
+export const apiFetch = (endpoint, options = {}) => {
+  let userKey = '';
+  try {
+    const stored = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+    userKey = stored.userKey || '';
+  } catch (e) {}
+
+  const headers = {
+    ...options.headers,
+    'x-user-key': userKey
+  };
+
+  return fetch(`${BACKEND_URL}${endpoint}`, {
+    ...options,
+    headers
+  });
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('single');
+  const [currentUser, setCurrentUser] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cold_email_user') || 'null');
+    } catch (e) {
+      return null;
+    }
+  });
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [toast, setToast] = useState(null);
 
-  // Check auth status on load
-  const checkAuthStatus = async () => {
+  // Check auth status on load for the active user
+  const checkAuthStatus = async (user = currentUser) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/status`);
+      const res = await apiFetch('/api/auth/status', {
+        headers: { 'x-user-key': user?.userKey || '' }
+      });
       const data = await res.json();
       setIsAuthorized(data.authorized);
+      if (data.user) {
+        const updated = { ...user, ...data.user, userKey: data.userKey || user?.userKey };
+        setCurrentUser(updated);
+        localStorage.setItem('cold_email_user', JSON.stringify(updated));
+      }
     } catch (e) {
       console.error('Failed to check auth status', e);
     } finally {
@@ -23,15 +56,31 @@ export default function App() {
   };
 
   useEffect(() => {
-    checkAuthStatus();
-
     // Check if redirect contains auth=success
     const params = new URLSearchParams(window.location.search);
     if (params.get('auth') === 'success') {
+      const userKey = params.get('userKey');
+      const email = params.get('email');
+      const name = params.get('name');
+      const picture = params.get('picture');
+
+      const userObj = {
+        userKey: userKey || (email ? email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() : 'default_user'),
+        email: email || '',
+        name: name || 'Candidate',
+        picture: picture || ''
+      };
+
+      setCurrentUser(userObj);
+      localStorage.setItem('cold_email_user', JSON.stringify(userObj));
       setIsAuthorized(true);
-      showToast('Successfully connected to Gmail!', 'success');
+      showToast(`Welcome ${userObj.name}! Connected your private Gmail sandbox.`, 'success');
+
       // Clean query parameters
       window.history.replaceState({}, document.title, window.location.pathname);
+      checkAuthStatus(userObj);
+    } else {
+      checkAuthStatus();
     }
   }, []);
 
@@ -42,7 +91,7 @@ export default function App() {
 
   const handleConnectGmail = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/url`);
+      const res = await apiFetch('/api/auth/url');
       const data = await res.json();
       if (data.url) {
         window.location.href = data.url;
@@ -54,11 +103,13 @@ export default function App() {
 
   const handleDisconnectGmail = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/auth/logout`, { method: 'POST' });
+      const res = await apiFetch('/api/auth/logout', { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         setIsAuthorized(false);
-        showToast('Gmail account disconnected.', 'success');
+        setCurrentUser(null);
+        localStorage.removeItem('cold_email_user');
+        showToast('Account disconnected & workspace locked.', 'success');
       }
     } catch (e) {
       showToast('Failed to disconnect Gmail', 'error');
@@ -82,30 +133,45 @@ export default function App() {
 
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-2 rounded-lg text-white">
+        <div className="flex items-center gap-3">
+          <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md">
             <Sparkles className="w-6 h-6" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Cold Email & Resume Tailor</h1>
+            <div className="flex items-center gap-2">
+              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Cold Email & Resume Tailor</h1>
+              <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1 border border-slate-200">
+                <Shield className="w-3 h-3 text-indigo-600" /> Isolated Sandbox
+              </span>
+            </div>
             <p className="text-xs text-slate-500">Google OAuth & NVIDIA NIM Automated Outreach</p>
           </div>
         </div>
 
-        {/* Gmail Auth Status */}
+        {/* Gmail User Profile & Auth Status */}
         <div className="flex items-center gap-3">
           {checkingAuth ? (
             <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Checking connection...
+              <Loader2 className="w-4 h-4 animate-spin" /> Checking session...
             </div>
-          ) : isAuthorized ? (
-            <div className="flex items-center gap-3 bg-emerald-50 border border-emerald-200 rounded-full pl-3 pr-2 py-1">
-              <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
-              <span className="text-emerald-800 text-xs font-semibold">Gmail Connected</span>
+          ) : isAuthorized && currentUser ? (
+            <div className="flex items-center gap-3 bg-emerald-50/80 border border-emerald-200 rounded-full pl-2 pr-3 py-1.5 shadow-sm">
+              {currentUser.picture ? (
+                <img src={currentUser.picture} alt={currentUser.name} className="w-6 h-6 rounded-full border border-emerald-300" />
+              ) : (
+                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
+                  {(currentUser.name || 'C').charAt(0)}
+                </div>
+              )}
+              <div className="flex flex-col text-left leading-none">
+                <span className="text-emerald-900 text-xs font-bold">{currentUser.name || 'Candidate'}</span>
+                <span className="text-emerald-700 text-[10px] font-medium">{currentUser.email}</span>
+              </div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-1"></div>
               <button 
                 onClick={handleDisconnectGmail}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-full transition-colors"
-                title="Disconnect Account"
+                className="text-slate-400 hover:text-rose-600 p-1 rounded-full hover:bg-white transition-colors ml-1"
+                title="Switch / Disconnect Account"
               >
                 <LogOut className="w-3.5 h-3.5" />
               </button>
@@ -113,9 +179,9 @@ export default function App() {
           ) : (
             <button
               onClick={handleConnectGmail}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition-all shadow-md flex items-center gap-2"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-2"
             >
-              <Mail className="w-4 h-4" /> Connect Gmail
+              <Mail className="w-4 h-4" /> Sign in with Gmail
             </button>
           )}
         </div>
@@ -220,7 +286,7 @@ function SingleSender({ isAuthorized, showToast }) {
     if (!hrEmail) return showToast('Please enter an HR email address.', 'error');
     setGenerating(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/generate`, {
+      const res = await apiFetch(`/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: hrEmail, jd })
@@ -250,7 +316,7 @@ function SingleSender({ isAuthorized, showToast }) {
 
     setSending(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/send`, {
+      const res = await apiFetch(`/api/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -283,7 +349,7 @@ function SingleSender({ isAuthorized, showToast }) {
 
     setSending(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/draft`, {
+      const res = await apiFetch(`/api/draft`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -321,7 +387,7 @@ function SingleSender({ isAuthorized, showToast }) {
 
     setSending(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/schedule`, {
+      const res = await apiFetch(`/api/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -354,7 +420,7 @@ function SingleSender({ isAuthorized, showToast }) {
     setSending(true);
     try {
       // Step 1: Generate Tailored Email & Resume
-      const res = await fetch(`${BACKEND_URL}/api/generate`, {
+      const res = await apiFetch(`/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: hrEmail, jd })
@@ -370,7 +436,7 @@ function SingleSender({ isAuthorized, showToast }) {
       setCompanyIntel(data.companyIntel || null);
 
       // Step 2: Send Email Immediately
-      const sendRes = await fetch(`${BACKEND_URL}/api/send`, {
+      const sendRes = await apiFetch(`/api/send`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -631,7 +697,7 @@ function BulkSender({ isAuthorized, showToast }) {
       .filter(e => e.includes('@'));
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/bulk-parse`, {
+      const res = await apiFetch(`/api/bulk-parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ emails: rawEmails })
@@ -662,7 +728,7 @@ function BulkSender({ isAuthorized, showToast }) {
       
       try {
         // Step 1: Generate Email and Resume
-        const genRes = await fetch(`${BACKEND_URL}/api/generate`, {
+        const genRes = await apiFetch(`/api/generate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ email: parsedItems[i].email, jd })
@@ -673,7 +739,7 @@ function BulkSender({ isAuthorized, showToast }) {
         updateItemStatus(i, 'sending');
 
         // Step 2: Send Email with tailored resume PDF
-        const sendRes = await fetch(`${BACKEND_URL}/api/send`, {
+        const sendRes = await apiFetch(`/api/send`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -904,7 +970,7 @@ function LogsViewer({ showToast }) {
 
   const fetchLogs = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/logs`);
+      const res = await apiFetch(`/api/logs`);
       const data = await res.json();
       setLogs(data.logs || []);
     } catch (e) {
@@ -921,7 +987,7 @@ function LogsViewer({ showToast }) {
   const handleClearLogs = async () => {
     if (!window.confirm('Are you sure you want to clear all outreach logs?')) return;
     try {
-      const res = await fetch(`${BACKEND_URL}/api/logs`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/logs`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setLogs([]);
@@ -1201,7 +1267,7 @@ function ResumeEditor({ showToast }) {
 
   const fetchResume = async () => {
     try {
-      const res = await fetch(`${BACKEND_URL}/api/resume`);
+      const res = await apiFetch(`/api/resume`);
       const data = await res.json();
       setResumeData(data);
     } catch (e) {
@@ -1228,7 +1294,7 @@ function ResumeEditor({ showToast }) {
     reader.onload = async () => {
       try {
         const base64 = reader.result;
-        const res = await fetch(`${BACKEND_URL}/api/resume/upload`, {
+        const res = await apiFetch(`/api/resume/upload`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ pdfBase64: base64 })
@@ -1251,7 +1317,7 @@ function ResumeEditor({ showToast }) {
   const handleSave = async () => {
     setSaving(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/resume`, {
+      const res = await apiFetch(`/api/resume`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(resumeData)
@@ -1459,7 +1525,7 @@ function JdResumeTailor({ showToast }) {
   const fetchApplications = async () => {
     setLoadingApps(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/applications`);
+      const res = await apiFetch(`/api/applications`);
       const data = await res.json();
       setApplications(data.applications || []);
     } catch (e) {
@@ -1493,7 +1559,7 @@ function JdResumeTailor({ showToast }) {
 
     setTailoring(true);
     try {
-      const res = await fetch(`${BACKEND_URL}/api/applications/tailor`, {
+      const res = await apiFetch(`/api/applications/tailor`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1523,7 +1589,7 @@ function JdResumeTailor({ showToast }) {
     if (!window.confirm('Delete this tailored resume and application log?')) return;
 
     try {
-      const res = await fetch(`${BACKEND_URL}/api/applications/${id}`, { method: 'DELETE' });
+      const res = await apiFetch(`/api/applications/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         setApplications(prev => prev.filter(a => a.id !== id));
