@@ -1568,7 +1568,7 @@ function ResumeEditor({ showToast }) {
         </div>
       </div>
 
-      <div className="border border-slate-100 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-3 bg-white dark:bg-slate-900">
+      <div className="border border-slate-100 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-3 bg-white dark:bg-slate-900 transition-colors">
         <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center justify-between">
           <span>Full Resume Schema (JSON)</span>
           <span className="text-[10px] text-slate-400 font-normal">Edit here for education, skills categories, experience entries, and projects</span>
@@ -1582,7 +1582,7 @@ function ResumeEditor({ showToast }) {
             } catch (err) {}
           }}
           rows={15}
-          className="w-full bg-slate-50 border rounded p-3 text-[11px] font-mono leading-relaxed focus:outline-none resize-y"
+          className="w-full bg-slate-50 dark:bg-slate-800/90 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-3 text-[11px] font-mono leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-y"
         />
       </div>
     </div>
@@ -1886,7 +1886,7 @@ function JdResumeTailor({ showToast }) {
                   </button>
                   <button
                     onClick={() => handleExportJson(currentTailored.tailoredResume, currentTailored.company, currentTailored.role)}
-                    className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold px-2.5 py-2 rounded-lg transition-colors flex items-center justify-center"
+                    className="bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold px-2.5 py-2 rounded-lg transition-colors flex items-center justify-center"
                     title="Export JSON"
                   >
                     <FileText className="w-3.5 h-3.5" />
@@ -1896,27 +1896,27 @@ function JdResumeTailor({ showToast }) {
 
               {/* Preview Body */}
               {previewTab === 'visual' ? (
-                <div className="flex-1 max-h-[420px] overflow-y-auto bg-slate-50 p-4 rounded-lg border border-slate-200 text-slate-800 flex flex-col gap-3.5 text-xs">
+                <div className="flex-1 max-h-[420px] overflow-y-auto bg-slate-50 dark:bg-slate-800/80 p-4 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 flex flex-col gap-3.5 text-xs transition-colors">
                   {/* Summary */}
                   <div>
-                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1">
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 pb-1 mb-1">
                       Tailored Professional Summary
                     </h5>
-                    <p className="leading-relaxed text-slate-700">
+                    <p className="leading-relaxed text-slate-700 dark:text-slate-300">
                       {currentTailored.tailoredResume?.summary}
                     </p>
                   </div>
 
                   {/* Skills */}
                   <div>
-                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1.5">
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 pb-1 mb-1.5">
                       Prioritized Technical Skills
                     </h5>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {Object.entries(currentTailored.tailoredResume?.skills || {}).map(([cat, list]) => (
-                        <div key={cat} className="bg-white p-2 rounded border border-slate-100">
-                          <span className="font-bold text-slate-800">{cat}: </span>
-                          <span className="text-slate-600">{Array.isArray(list) ? list.join(', ') : list}</span>
+                        <div key={cat} className="bg-white dark:bg-slate-800 p-2 rounded border border-slate-100 dark:border-slate-700">
+                          <span className="font-bold text-slate-800 dark:text-slate-100">{cat}: </span>
+                          <span className="text-slate-600 dark:text-slate-300">{Array.isArray(list) ? list.join(', ') : list}</span>
                         </div>
                       ))}
                     </div>
@@ -1924,27 +1924,27 @@ function JdResumeTailor({ showToast }) {
 
                   {/* Experience */}
                   <div>
-                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1.5">
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 border-b border-slate-200 dark:border-slate-700 pb-1 mb-1.5">
                       Tailored Project Highlights & Experience
                     </h5>
                     <div className="flex flex-col gap-2">
                       {currentTailored.tailoredResume?.experience?.map((job, idx) => (
-                        <div key={idx} className="bg-white p-2.5 rounded border border-slate-100">
-                          <div className="flex justify-between items-center font-bold text-slate-900 mb-1">
+                        <div key={idx} className="bg-white dark:bg-slate-800 p-2.5 rounded border border-slate-100 dark:border-slate-700">
+                          <div className="flex justify-between items-center font-bold text-slate-900 dark:text-slate-100 mb-1">
                             <span>{job.role} - {job.company}</span>
-                            <span className="text-[10px] text-slate-500 font-normal">{job.duration}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-normal">{job.duration}</span>
                           </div>
                           {job.highlights && (
-                            <ul className="list-disc list-inside text-[11px] text-slate-600 flex flex-col gap-0.5">
+                            <ul className="list-disc list-inside text-[11px] text-slate-600 dark:text-slate-300 flex flex-col gap-0.5">
                               {job.highlights.map((hl, hIdx) => (
                                 <li key={hIdx}>{hl}</li>
                               ))}
                             </ul>
                           )}
                           {job.projects && job.projects.map((proj, pIdx) => (
-                            <div key={pIdx} className="mt-1 pl-2 border-l-2 border-indigo-200">
-                              <span className="font-semibold text-slate-800 text-[11px]">{proj.name}</span>
-                              <ul className="list-disc list-inside text-[11px] text-slate-600">
+                            <div key={pIdx} className="mt-1 pl-2 border-l-2 border-indigo-200 dark:border-indigo-700">
+                              <span className="font-semibold text-slate-800 dark:text-slate-200 text-[11px]">{proj.name}</span>
+                              <ul className="list-disc list-inside text-[11px] text-slate-600 dark:text-slate-400">
                                 {proj.highlights?.map((hl, hIdx) => (
                                   <li key={hIdx}>{hl}</li>
                                 ))}
@@ -1970,14 +1970,14 @@ function JdResumeTailor({ showToast }) {
       </div>
 
       {/* Applications Log Table */}
-      <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+      <div className="bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-indigo-600" />
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
               <span>Application History & Tailored Resumes Log</span>
             </h3>
-            <p className="text-xs text-slate-500 mt-0.5">
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               Every job description you tailor is logged here with full metadata, matched skills, and an instant 1-page PDF download link.
             </p>
           </div>
@@ -1990,12 +1990,12 @@ function JdResumeTailor({ showToast }) {
                 placeholder="Search role or company..."
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-full sm:w-48 focus:outline-none focus:bg-white"
+                className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs w-full sm:w-48 focus:outline-none focus:bg-white dark:focus:bg-slate-800"
               />
             </div>
             <button
               onClick={fetchApplications}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
+              className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors border border-slate-200 dark:border-slate-700"
             >
               Refresh
             </button>
@@ -2007,14 +2007,14 @@ function JdResumeTailor({ showToast }) {
             <Loader2 className="w-4 h-4 animate-spin" /> Loading application logs...
           </div>
         ) : filteredApps.length === 0 ? (
-          <div className="p-8 text-center text-slate-400 text-xs border border-dashed rounded-lg">
+          <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
             No application records found. Tailor a resume using the form above to build your history log.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[620px]">
               <thead>
-                <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-bold text-[10px] tracking-wider">
+                <tr className="bg-slate-50 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 border-b border-slate-200 dark:border-slate-700 uppercase font-bold text-[10px] tracking-wider">
                   <th className="p-3">Applied Company & Role</th>
                   <th className="p-3">Matched Skills</th>
                   <th className="p-3">Job Description Preview</th>
@@ -2022,17 +2022,17 @@ function JdResumeTailor({ showToast }) {
                   <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredApps.map(app => (
-                  <tr key={app.id} className="hover:bg-slate-50/70 transition-colors">
+                  <tr key={app.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                     <td className="p-3">
-                      <div className="font-bold text-slate-900">{app.company}</div>
-                      <div className="text-indigo-600 font-semibold text-[11px]">{app.role}</div>
+                      <div className="font-bold text-slate-900 dark:text-slate-100">{app.company}</div>
+                      <div className="text-indigo-600 dark:text-indigo-400 font-semibold text-[11px]">{app.role}</div>
                     </td>
                     <td className="p-3">
                       <div className="flex flex-wrap gap-1 max-w-xs">
                         {app.matchedSkills?.slice(0, 4).map((skill, sIdx) => (
-                          <span key={sIdx} className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded">
+                          <span key={sIdx} className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 text-[10px] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                             {skill}
                           </span>
                         ))}
@@ -2042,18 +2042,18 @@ function JdResumeTailor({ showToast }) {
                       </div>
                     </td>
                     <td className="p-3">
-                      <p className="text-slate-600 text-[11px] line-clamp-2 max-w-md">
+                      <p className="text-slate-600 dark:text-slate-400 text-[11px] line-clamp-2 max-w-md">
                         {app.jdSnippet}
                       </p>
                     </td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap text-[11px]">
+                    <td className="p-3 text-slate-500 dark:text-slate-400 whitespace-nowrap text-[11px]">
                       {new Date(app.timestamp).toLocaleDateString()} {new Date(app.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="p-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
                           onClick={() => handleDownloadPdf(app.id, app.company, app.role)}
-                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1"
+                          className="bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1"
                           title="Download 1-Page Tailored PDF"
                         >
                           <Download className="w-3.5 h-3.5" />
@@ -2064,7 +2064,7 @@ function JdResumeTailor({ showToast }) {
                             setCurrentTailored(app);
                             window.scrollTo({ top: 0, behavior: 'smooth' });
                           }}
-                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                          className="bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1.5 rounded text-xs font-semibold transition-all flex items-center gap-1"
                           title="View Tailored Details"
                         >
                           <Eye className="w-3.5 h-3.5" />
@@ -2072,7 +2072,7 @@ function JdResumeTailor({ showToast }) {
                         </button>
                         <button
                           onClick={(e) => handleDeleteApp(app.id, e)}
-                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 transition-colors"
+                          className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
                           title="Delete Record"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
