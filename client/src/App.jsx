@@ -289,18 +289,25 @@ function SingleSender({ isAuthorized, showToast }) {
       const res = await apiFetch(`/api/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: hrEmail, jd })
+        body: JSON.stringify({
+          hrEmail: hrEmail.trim(),
+          email: hrEmail.trim(),
+          hrName: parsedName,
+          name: parsedName,
+          company: parsedCompany,
+          jd
+        })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      setParsedName(data.name);
-      setParsedCompany(data.company);
-      setEmailSubject(data.email.subject);
-      setEmailBody(data.email.body);
-      setTailoredResume(data.resume);
+      setParsedName(data.name || data.hrName || parsedName);
+      setParsedCompany(data.company || parsedCompany);
+      setEmailSubject(data.subject || data.email?.subject || '');
+      setEmailBody(data.body || data.email?.body || '');
+      setTailoredResume(data.tailoredResume || data.resume);
       setCompanyIntel(data.companyIntel || null);
-      showToast('Scraped company intelligence & tailored templates successfully!', 'success');
+      showToast('Generated cold email & tailored templates successfully!', 'success');
     } catch (e) {
       showToast(e.message || 'Failed to generate tailored items', 'error');
     } finally {
@@ -380,35 +387,37 @@ function SingleSender({ isAuthorized, showToast }) {
       return showToast('Please generate the tailored templates first.', 'error');
     }
 
-    // Calculate tomorrow 8:30 AM
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    tomorrow.setHours(8, 30, 0, 0);
+    // Schedule for next business day at 8:30 AM
+    const scheduledDate = new Date();
+    scheduledDate.setHours(8, 30, 0, 0);
+    if (scheduledDate <= new Date()) {
+      scheduledDate.setDate(scheduledDate.getDate() + 1);
+    }
+    // Skip weekend
+    if (scheduledDate.getDay() === 6) scheduledDate.setDate(scheduledDate.getDate() + 2);
+    if (scheduledDate.getDay() === 0) scheduledDate.setDate(scheduledDate.getDate() + 1);
 
-    setSending(true);
     try {
       const res = await apiFetch(`/api/schedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          email: hrEmail,
+          email: hrEmail.trim(),
           subject: emailSubject,
           body: emailBody,
           resume: tailoredResume,
           hrName: parsedName,
           company: parsedCompany,
-          scheduledAt: tomorrow.toISOString(),
+          scheduledAt: scheduledDate.toISOString(),
           resumeType: jd && jd.trim().length > 0 ? 'Tailored' : 'Standard'
         })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      showToast(`Scheduled for tomorrow morning at 8:30 AM via Gmail!`, 'success');
+      showToast(`Email scheduled for ${scheduledDate.toLocaleDateString()} at 8:30 AM!`, 'success');
     } catch (e) {
       showToast(e.message || 'Failed to schedule email', 'error');
-    } finally {
-      setSending(false);
     }
   };
 

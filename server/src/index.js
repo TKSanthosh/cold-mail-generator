@@ -171,14 +171,16 @@ app.post('/api/resume/upload', (req, res) => {
 // --- SINGLE EMAIL GENERATION & PREVIEW ---
 app.post('/api/generate', async (req, res) => {
   const userKey = resolveUserKey(req);
-  const { hrEmail, hrName, company, jd } = req.body;
-  if (!hrEmail) {
+  const rawEmail = req.body.hrEmail || req.body.email;
+  const { hrName, name, company, jd } = req.body;
+
+  if (!rawEmail) {
     return res.status(400).json({ error: 'HR Email is required' });
   }
 
   try {
-    const parsed = parseHrEmail(hrEmail);
-    const finalHrName = hrName || parsed.name;
+    const parsed = parseHrEmail(rawEmail);
+    const finalHrName = hrName || name || parsed.name;
     const finalCompany = company || parsed.company;
     const targetDomain = parsed.domain;
 
@@ -195,11 +197,17 @@ app.post('/api/generate', async (req, res) => {
 
     res.json({
       hrName: finalHrName,
+      name: finalHrName,
       company: finalCompany,
       companyIntel,
       subject: emailData.subject,
       body: emailData.body,
-      tailoredResume: tailoredResumeData
+      email: {
+        subject: emailData.subject,
+        body: emailData.body
+      },
+      tailoredResume: tailoredResumeData,
+      resume: tailoredResumeData
     });
   } catch (e) {
     console.error('Cold email generation error:', e);
