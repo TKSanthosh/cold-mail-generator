@@ -22,7 +22,7 @@ try {
   
   const importedIcons = new Set(importMatch[1].split(',').map(s => s.trim()).filter(Boolean));
   const jsxTagMatches = [...appCode.matchAll(/<([A-Z][a-zA-Z0-9]+)[\s\/>]/g)];
-  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor']);
+  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot']);
   
   const missingIcons = [];
   for (const m of jsxTagMatches) {
@@ -171,6 +171,38 @@ async function testPdfSinglePage() {
     assert(!updatedJobs.some(j => j.id === job.id), 'Scheduler successfully cancels job');
   } catch (e) {
     assert(false, `Test 8 threw error: ${e.message}`);
+  }
+
+  // TEST 9: LinkedIn Recruiter Harvester & Deduplication Pipeline
+  try {
+    const { harvestRecruiterPosts, getLinkedInConfig, saveLinkedInConfig } = require('./server/src/services/linkedin.service');
+    const leads = await harvestRecruiterPosts(null, 10);
+    assert(Array.isArray(leads), 'LinkedIn harvester returns leads array');
+    assert(leads.length >= 10, `Harvested minimum 10 recruiter leads (Found: ${leads.length})`);
+    
+    const firstLead = leads[0];
+    assert(firstLead.email && firstLead.email.includes('@'), `Extracted valid recruiter email: ${firstLead.email}`);
+    assert(firstLead.company && firstLead.company.length > 0, `Extracted company name: ${firstLead.company}`);
+    assert(firstLead.postSnippet && firstLead.postSnippet.length > 0, 'Extracted recruiter post context snippet');
+
+    const config = getLinkedInConfig();
+    assert(typeof config === 'object' && config.intervalHours === 3, 'LinkedIn 3-hour interval config verified');
+  } catch (e) {
+    assert(false, `Test 9 threw error: ${e.message}`);
+  }
+
+  // TEST 10: Supabase Integration & Schema Integrity
+  try {
+    const supabaseService = require('./server/src/services/supabase.service');
+    assert(typeof supabaseService.isSupabaseConfigured === 'function', 'supabase.service exports isSupabaseConfigured');
+    assert(typeof supabaseService.supabaseUpsertUser === 'function', 'supabase.service exports supabaseUpsertUser');
+    assert(typeof supabaseService.supabaseSaveResume === 'function', 'supabase.service exports supabaseSaveResume');
+    assert(typeof supabaseService.supabaseAppendLog === 'function', 'supabase.service exports supabaseAppendLog');
+    assert(typeof supabaseService.supabaseSaveApplications === 'function', 'supabase.service exports supabaseSaveApplications');
+    
+    assert(fs.existsSync(path.join(__dirname, 'supabase_schema.sql')), 'supabase_schema.sql exists and is ready for 1-click execution');
+  } catch (e) {
+    assert(false, `Test 10 threw error: ${e.message}`);
   }
 
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);

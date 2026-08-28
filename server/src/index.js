@@ -13,6 +13,7 @@ const { generateResumePdf } = require('./services/pdf.service');
 const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
+const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
@@ -523,6 +524,71 @@ app.delete('/api/logs', (req, res) => {
   }
 });
 
+// --- LINKEDIN RECRUITER AUTO-PILOT ENDPOINTS ---
+app.get('/api/linkedin/config', (req, res) => {
+  res.json({ config: getLinkedInConfig() });
+});
+
+app.post('/api/linkedin/config', (req, res) => {
+  const current = getLinkedInConfig();
+  const updated = { ...current, ...req.body };
+  saveLinkedInConfig(updated);
+  res.json({ success: true, config: updated });
+});
+
+app.post('/api/linkedin/harvest', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { query, count } = req.body;
+  try {
+    const leads = await harvestRecruiterPosts(query, count || 10);
+    const pastLogs = getUserLogs(userKey);
+    const contactedEmails = new Set(
+      pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
+    );
+
+    // Annotate leads with alreadyContacted flag
+    const annotated = leads.map(l => ({
+      ...l,
+      alreadyContacted: contactedEmails.has(l.email.toLowerCase())
+    }));
+
+    res.json({ success: true, leads: annotated });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/linkedin/run', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { query, targetCount, mode } = req.body;
+  try {
+    const report = await runLinkedInOutreachJob(userKey, {
+      query,
+      targetCount: targetCount || 10,
+      mode: mode || 'send'
+    });
+    res.json({ success: true, report });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/linkedin/parse-post', (req, res) => {
+  const { text } = req.body;
+  try {
+    const lead = parsePastedLinkedInPost(text);
+    const userKey = resolveUserKey(req, res);
+    const pastLogs = getUserLogs(userKey);
+    const contactedEmails = new Set(
+      pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
+    );
+    lead.alreadyContacted = contactedEmails.has(lead.email.toLowerCase());
+    res.json({ success: true, lead });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
 // --- BULK PREVIEW ENDPOINT ---
 app.post('/api/bulk-parse', (req, res) => {
   const { emails } = req.body;
@@ -674,6 +740,16 @@ app.post('/api/backup/restore', (req, res) => {
   }
 });
 
+// --- SUPABASE CLOUD STATUS ENDPOINT ---
+const { isSupabaseConfigured } = require('./services/supabase.service');
+app.get('/api/supabase/status', (req, res) => {
+  res.json({
+    configured: isSupabaseConfigured(),
+    url: process.env.SUPABASE_URL || null,
+    provider: 'Supabase PostgreSQL (Free Tier)'
+  });
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {
@@ -686,8 +762,9 @@ if (fs.existsSync(seedBackupPath)) {
   }
 }
 
-// Initialize background scheduler
+// Initialize background schedulers
 initScheduler();
+initLinkedInScheduler();
 
 // --- SERVE PRODUCTION CLIENT ASSETS ---
 const clientDistPath = path.join(__dirname, '../../client/dist');

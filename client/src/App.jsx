@@ -279,6 +279,14 @@ export default function App() {
           <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>JD Resume Tailor</span>
         </button>
         <button
+          onClick={() => setActiveTab('linkedin')}
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
+            activeTab === 'linkedin' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+          }`}
+        >
+          <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-500" /> <span>LinkedIn Auto-Pilot</span>
+        </button>
+        <button
           onClick={() => setActiveTab('resume')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'resume' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
@@ -301,6 +309,9 @@ export default function App() {
         </div>
         <div className={activeTab === 'jdtailor' ? 'block' : 'hidden'}>
           <JdResumeTailor showToast={showToast} />
+        </div>
+        <div className={activeTab === 'linkedin' ? 'block' : 'hidden'}>
+          <LinkedInAutoPilot isAuthorized={isAuthorized} showToast={showToast} isActive={activeTab === 'linkedin'} />
         </div>
         <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
           <ResumeEditor showToast={showToast} />
@@ -2182,3 +2193,576 @@ function JdResumeTailor({ showToast }) {
   );
 }
 
+
+
+/* =========================================================================
+   LINKEDIN RECRUITER AUTO-PILOT MODULE
+   ========================================================================= */
+function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
+  const [leads, setLeads] = useState([]);
+  const [scanning, setScanning] = useState(false);
+  const [dispatching, setDispatching] = useState(false);
+  const [pastedPostText, setPastedPostText] = useState('');
+  const [parsingPasted, setParsingPasted] = useState(false);
+  const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentCompany: '', currentEmail: '' });
+  const [batchStatusMap, setBatchStatusMap] = useState({}); // { [leadId]: 'queued' | 'tailoring' | 'sending' | 'success' | 'error' }
+  const [searchQuery, setSearchQuery] = useState('site:linkedin.com/posts "we are hiring" "MERN" "3 years" "email"');
+  const [config, setConfig] = useState({
+    enabled: true,
+    intervalHours: 3,
+    timeWindowDays: 7,
+    mode: 'send',
+    targetPerRun: 10,
+    lastRunAt: null,
+    nextRunAt: null
+  });
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [previewing, setPreviewing] = useState(false);
+  const [tailoredPreview, setTailoredPreview] = useState(null);
+
+  const fetchConfig = async () => {
+    try {
+      const res = await apiFetch('/api/linkedin/config');
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+    } catch (e) {}
+  };
+
+  const handleParsePastedPost = async () => {
+    if (!pastedPostText.trim()) return;
+    setParsingPasted(true);
+    try {
+      const res = await apiFetch('/api/linkedin/parse-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: pastedPostText.trim() })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setLeads(prev => [data.lead, ...prev.filter(l => l.email.toLowerCase() !== data.lead.email.toLowerCase())]);
+      setPastedPostText('');
+      showToast(`Added verified lead: ${data.lead.email} (${data.lead.company}) to queue!`, 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to parse post', 'error');
+    } finally {
+      setParsingPasted(false);
+    }
+  };
+
+  const handleScanLeads = async () => {
+    setScanning(true);
+    try {
+      const res = await apiFetch('/api/linkedin/harvest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: searchQuery, count: 12 })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setLeads(data.leads || []);
+      showToast(`Discovered ${data.leads?.length || 0} recruiter hiring posts from past 1 week!`, 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to scan LinkedIn posts', 'error');
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const handleToggleAutoPilot = async () => {
+    const updated = { ...config, enabled: !config.enabled };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(updated.enabled ? '3-Hour LinkedIn Auto-Pilot is now ACTIVE!' : 'Auto-Pilot paused.', 'info');
+    } catch (e) {
+      showToast('Failed to update config', 'error');
+    }
+  };
+
+  const handleModeChange = async (newMode) => {
+    const updated = { ...config, mode: newMode };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(`Auto-Pilot mode updated to: ${newMode === 'send' ? 'Auto-Send via Gmail' : 'Save Drafts in Gmail'}`, 'success');
+    } catch (e) {}
+  };
+
+  // Continuous sequential one-after-one batch dispatcher
+  const handleRunBatchOutreach = async () => {
+    if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
+    
+    const uncontacted = leads.filter(l => !l.alreadyContacted).slice(0, config.targetPerRun || 10);
+    if (uncontacted.length === 0) {
+      return showToast('No fresh uncontacted leads available in this batch.', 'info');
+    }
+
+    setDispatching(true);
+    const initialStatus = {};
+    uncontacted.forEach(l => { initialStatus[l.id] = 'queued'; });
+    setBatchStatusMap(initialStatus);
+
+    let successCount = 0;
+
+    for (let i = 0; i < uncontacted.length; i++) {
+      const lead = uncontacted[i];
+      setBatchProgress({
+        current: i + 1,
+        total: uncontacted.length,
+        currentCompany: lead.company,
+        currentEmail: lead.email
+      });
+
+      // 1. Step 1: Tailor Resume
+      setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'tailoring' }));
+      try {
+        const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+        const genRes = await apiFetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: lead.email, jd: jdContext, company: lead.company, hrName: lead.recruiterName })
+        });
+        const genData = await genRes.json();
+        if (genData.error) throw new Error(genData.error);
+
+        // 2. Step 2: Send Email via Gmail API (or Draft)
+        setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'sending' }));
+        const endpoint = config.mode === 'draft' ? '/api/draft' : '/api/send';
+        const sendRes = await apiFetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            email: lead.email,
+            subject: genData.email.subject,
+            body: genData.email.body,
+            resume: genData.resume,
+            hrName: lead.recruiterName,
+            company: lead.company,
+            resumeType: 'Tailored (LinkedIn 1-Week Post)',
+            jdSnippet: lead.postSnippet
+          })
+        });
+        const sendData = await sendRes.json();
+        if (sendData.error) throw new Error(sendData.error);
+
+        setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'success' }));
+        successCount++;
+        
+        // 3. Step 3: Gentle 2-second rate-limit pause between consecutive dispatches
+        if (i < uncontacted.length - 1) {
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      } catch (err) {
+        console.error(`Failed sending to ${lead.email}:`, err);
+        setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'error' }));
+      }
+    }
+
+    setDispatching(false);
+    showToast(`Continuous dispatch complete! Successfully processed ${successCount}/${uncontacted.length} emails.`, 'success');
+    handleScanLeads();
+    fetchConfig();
+  };
+
+  const handlePreviewLead = async (lead) => {
+    setSelectedLead(lead);
+    setPreviewing(true);
+    setTailoredPreview(null);
+    try {
+      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+      const res = await apiFetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: lead.email, jd: jdContext, company: lead.company, hrName: lead.recruiterName })
+      });
+      const data = await res.json();
+      setTailoredPreview(data);
+    } catch (e) {
+      showToast('Failed to generate preview for lead', 'error');
+    } finally {
+      setPreviewing(false);
+    }
+  };
+
+  const handleSendSingleLead = async (lead) => {
+    if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
+    try {
+      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+      const genRes = await apiFetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: lead.email, jd: jdContext, company: lead.company, hrName: lead.recruiterName })
+      });
+      const genData = await genRes.json();
+
+      const sendRes = await apiFetch('/api/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: lead.email,
+          subject: genData.email.subject,
+          body: genData.email.body,
+          resume: genData.resume,
+          hrName: lead.recruiterName,
+          company: lead.company,
+          resumeType: 'Tailored (LinkedIn 1-Week Post)',
+          jdSnippet: lead.postSnippet
+        })
+      });
+      const sendData = await sendRes.json();
+      if (sendData.error) throw new Error(sendData.error);
+
+      showToast(`Sent tailored 1-page resume to ${lead.email} (${lead.company})!`, 'success');
+      handleScanLeads();
+      setSelectedLead(null);
+    } catch (e) {
+      showToast(e.message || 'Failed to dispatch email', 'error');
+    }
+  };
+
+  useEffect(() => {
+    if (isActive) {
+      fetchConfig();
+      if (leads.length === 0) {
+        handleScanLeads();
+      }
+    }
+  }, [isActive]);
+
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6">
+      {/* Auto-Pilot Control Center Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <Globe className="w-5 h-5 text-sky-500" />
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">LinkedIn Recruiter Job Hunter & 3-Hour Auto-Pilot</h2>
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                config.enabled 
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}>
+                {config.enabled ? '● 3-HOUR AUTO-PILOT ACTIVE' : '○ PAUSED'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Discovers fresh recruiter hiring posts published strictly within the last 1 week, extracts contact emails, tailors your 1-page resume dynamically, and sends outreach continuously one-by-one.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleToggleAutoPilot}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs border ${
+                config.enabled
+                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent'
+              }`}
+            >
+              {config.enabled ? 'Pause 3-Hr Scheduler' : '▶ Activate 3-Hr Scheduler'}
+            </button>
+
+            <select
+              value={config.mode}
+              onChange={(e) => handleModeChange(e.target.value)}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-3 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
+            >
+              <option value="send">⚡ Auto-Send via Gmail API</option>
+              <option value="draft">📝 Save as Ready Gmail Drafts</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Search Query Filter & Actions */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+          <div className="lg:col-span-2">
+            <div className="flex justify-between items-center mb-1.5">
+              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                LinkedIn Search Dork / Target Stack Filter
+              </label>
+              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                <Clock className="w-3 h-3" /> Past 1 Week Only (Max 7 Days)
+              </span>
+            </div>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="e.g. site:linkedin.com/posts 'we are hiring' 'MERN' '3 years'"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex items-end gap-2">
+            <button
+              onClick={handleScanLeads}
+              disabled={scanning || dispatching}
+              className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+            >
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5 text-sky-500" />}
+              <span>Scan 1-Week Posts</span>
+            </button>
+
+            <button
+              onClick={handleRunBatchOutreach}
+              disabled={dispatching || scanning || leads.length === 0}
+              className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
+              title="Tailors 1-page resumes and sends emails continuously one after another"
+            >
+              {dispatching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+              <span>Continuous Dispatch (10)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Paste Recruiter Post Card */}
+        <div className="bg-slate-50 dark:bg-slate-800/60 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <span>Paste Custom LinkedIn Recruiter Post / Hiring JD</span>
+            </span>
+            <span className="text-[10px] text-slate-400 hidden sm:inline">Auto-extracts verified HR email & queues for continuous sending</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={pastedPostText}
+              onChange={(e) => setPastedPostText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleParsePastedPost(); }}
+              placeholder='e.g. "We are hiring Senior MERN Stack Developer at Swiggy. Please drop your resume to careers@swiggy.in"'
+              className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-indigo-500"
+            />
+            <button
+              onClick={handleParsePastedPost}
+              disabled={parsingPasted || !pastedPostText.trim()}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 shrink-0 disabled:opacity-50"
+            >
+              {parsingPasted ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+              <span>Add to Queue</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Live Continuous Progress Bar Banner */}
+        {dispatching && (
+          <div className="mt-2 p-4 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 rounded-xl flex flex-col gap-2 animate-pulse">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-sky-900 dark:text-sky-200 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-sky-600 dark:text-sky-400" />
+                <span>Sending email {batchProgress.current} of {batchProgress.total}: <strong>{batchProgress.currentCompany}</strong> ({batchProgress.currentEmail})</span>
+              </span>
+              <span className="font-mono text-sky-700 dark:text-sky-300 font-bold">
+                {Math.round((batchProgress.current / (batchProgress.total || 1)) * 100)}%
+              </span>
+            </div>
+            <div className="w-full bg-sky-200 dark:bg-sky-900 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-sky-600 dark:bg-sky-400 h-2 transition-all duration-500 rounded-full"
+                style={{ width: `${(batchProgress.current / (batchProgress.total || 1)) * 100}%` }}
+              ></div>
+            </div>
+            <p className="text-[11px] text-sky-700 dark:text-sky-400 italic">
+              ✨ Tailoring 1-page resume, generating PDF & sending continuously one-after-another with safe pacing...
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Discovered Recruiter Leads Feed */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-sky-500" />
+            <span>Discovered Hiring Posts & Extracted HR Emails ({leads.length})</span>
+          </h3>
+          <span className="text-xs text-slate-400">
+            {leads.filter(l => !l.alreadyContacted).length} fresh uncontacted leads in past 1 week
+          </span>
+        </div>
+
+        {leads.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
+            {scanning ? 'Scanning public LinkedIn recruiter posts from past 7 days...' : 'No leads discovered yet. Click "Scan 1-Week Posts" above to find fresh hiring posts!'}
+          </div>
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[750px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                  <th className="p-3">Company & Recruiter</th>
+                  <th className="p-3">Extracted Contact Email</th>
+                  <th className="p-3">Posted Window</th>
+                  <th className="p-3">Post Hiring Snippet</th>
+                  <th className="p-3">Outreach Status</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {leads.map((lead) => {
+                  const currentStatus = batchStatusMap[lead.id];
+                  return (
+                    <tr key={lead.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                      <td className="p-3">
+                        <div className="font-bold text-slate-900 dark:text-slate-100">{lead.company}</div>
+                        <div className="text-slate-500 text-[11px] font-medium">{lead.recruiterName || 'Hiring Lead'}</div>
+                      </td>
+                      <td className="p-3 font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
+                        {lead.email}
+                      </td>
+                      <td className="p-3 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-semibold px-2 py-0.5 rounded text-[11px] border border-sky-200 dark:border-sky-800">
+                          <Clock className="w-3 h-3 text-sky-500" />
+                          {lead.postedDaysAgo ? `${lead.postedDaysAgo}d ago` : 'Within 1w'}
+                        </span>
+                      </td>
+                      <td className="p-3 max-w-md">
+                        <p className="text-slate-600 dark:text-slate-300 text-[11px] line-clamp-2 leading-relaxed">
+                          {lead.postSnippet}
+                        </p>
+                      </td>
+                      <td className="p-3">
+                        {currentStatus === 'tailoring' ? (
+                          <span className="inline-flex items-center gap-1 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 px-2 py-0.5 rounded font-bold text-[10px] border border-amber-200 dark:border-amber-800 animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" /> Tailoring PDF...
+                          </span>
+                        ) : currentStatus === 'sending' ? (
+                          <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 px-2 py-0.5 rounded font-bold text-[10px] border border-sky-200 dark:border-sky-800 animate-pulse">
+                            <Send className="w-3 h-3" /> Sending Mail...
+                          </span>
+                        ) : currentStatus === 'success' ? (
+                          <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded font-bold text-[10px] border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle className="w-3 h-3 text-emerald-500" /> Sent Just Now
+                          </span>
+                        ) : currentStatus === 'queued' ? (
+                          <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded font-medium text-[10px] border border-slate-200 dark:border-slate-700">
+                            <Clock className="w-3 h-3" /> In Dispatch Queue
+                          </span>
+                        ) : lead.alreadyContacted ? (
+                          <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 text-slate-500 px-2 py-0.5 rounded font-semibold text-[10px] border border-slate-200 dark:border-slate-700">
+                            <ShieldCheck className="w-3 h-3 text-slate-400" /> Already Contacted
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded font-semibold text-[10px] border border-emerald-200 dark:border-emerald-800">
+                            <Sparkles className="w-3 h-3 text-emerald-500" /> Fresh Lead
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handlePreviewLead(lead)}
+                            className="bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                            title="Preview tailored email & resume"
+                          >
+                            <Eye className="w-3.5 h-3.5" /> <span>Preview</span>
+                          </button>
+                          <button
+                            onClick={() => handleSendSingleLead(lead)}
+                            disabled={dispatching || lead.alreadyContacted}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 disabled:opacity-40"
+                            title="Tailor and send 1-page PDF instantly"
+                          >
+                            <Send className="w-3 h-3" /> <span>Send</span>
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Lead Preview Modal */}
+      {selectedLead && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto transition-colors">
+            <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
+                  {selectedLead.company} • {selectedLead.recruiterName || 'Hiring Lead'}
+                </h3>
+                <p className="text-xs text-indigo-600 dark:text-indigo-400 font-mono mt-0.5">{selectedLead.email}</p>
+              </div>
+              <button
+                onClick={() => setSelectedLead(null)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex flex-col gap-3 text-xs">
+              <div>
+                <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1">Recruiter Post Context</span>
+                <p className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 leading-relaxed italic">
+                  "{selectedLead.postSnippet}"
+                </p>
+              </div>
+
+              {previewing ? (
+                <div className="py-8 flex flex-col items-center justify-center gap-2 text-indigo-600 dark:text-indigo-400">
+                  <Loader2 className="w-6 h-6 animate-spin" />
+                  <span className="text-xs font-semibold">Tailoring 1-page resume and cold email with AI...</span>
+                </div>
+              ) : tailoredPreview ? (
+                <>
+                  <div>
+                    <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1">Tailored Cold Email Subject</span>
+                    <p className="p-2.5 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 font-semibold text-slate-900 dark:text-slate-100">
+                      {tailoredPreview.subject}
+                    </p>
+                  </div>
+                  <div>
+                    <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1">Tailored Cold Email Body</span>
+                    <pre className="p-3 bg-slate-50 dark:bg-slate-800 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 whitespace-pre-wrap font-sans leading-relaxed text-xs">
+                      {tailoredPreview.body}
+                    </pre>
+                  </div>
+                  {tailoredPreview.tailoredResume?.summary && (
+                    <div>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider block mb-1">Tailored 1-Page Resume Summary</span>
+                      <p className="p-2.5 bg-emerald-50/50 dark:bg-emerald-950/30 rounded border border-emerald-200 dark:border-emerald-800 text-emerald-900 dark:text-emerald-200 italic">
+                        "{tailoredPreview.tailoredResume.summary}"
+                      </p>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                onClick={() => setSelectedLead(null)}
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+              >
+                Close
+              </button>
+              <button
+                onClick={() => handleSendSingleLead(selectedLead)}
+                disabled={dispatching}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+              >
+                <Send className="w-3.5 h-3.5" />
+                <span>Send Tailored Resume Now</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

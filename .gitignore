@@ -23,3 +23,10 @@ client/dist/
 Thumbs.db
 .vscode/
 .idea/
+
+# User sandboxes & temporary files
+server/users/*/token.json
+server/users/*/uploads/
+server/data/
+*.pdf
+test_*.js

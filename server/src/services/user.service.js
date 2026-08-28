@@ -17,6 +17,17 @@ function getUserKeyFromEmail(email) {
 }
 
 const { readCompressedJson, writeCompressedJson, createFullBackup, restoreFullBackup, appendGlobalLog, getGlobalLogs } = require('./storage.service');
+const {
+  isSupabaseConfigured,
+  supabaseUpsertUser,
+  supabaseGetUser,
+  supabaseSaveResume,
+  supabaseGetResume,
+  supabaseAppendLog,
+  supabaseGetLogs,
+  supabaseSaveApplications,
+  supabaseGetApplications
+} = require('./supabase.service');
 
 function getUserPaths(userKey) {
   const key = userKey || 'default_user';
@@ -124,6 +135,11 @@ function saveUserResume(userKey, data) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   fs.writeFileSync(paths.resumePath, JSON.stringify(data, null, 2), 'utf8');
+
+  // Supabase cloud sync
+  if (isSupabaseConfigured()) {
+    supabaseSaveResume(userKey, data).catch(() => {});
+  }
 }
 
 function getUserApplications(userKey) {
@@ -136,6 +152,11 @@ function saveUserApplications(userKey, apps) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, apps);
+
+  // Supabase cloud sync
+  if (isSupabaseConfigured()) {
+    supabaseSaveApplications(userKey, apps).catch(() => {});
+  }
 }
 
 function getUserLogs(userKey) {
@@ -160,6 +181,11 @@ function addUserLog(userKey, entry) {
 
     // Also persist into global server compressed archive
     appendGlobalLog(logItem);
+
+    // Supabase cloud sync
+    if (isSupabaseConfigured()) {
+      supabaseAppendLog(userKey, logItem).catch(() => {});
+    }
   } catch (e) {
     console.error('Failed to add user log:', e);
   }
