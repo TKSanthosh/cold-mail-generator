@@ -7,9 +7,9 @@ const { getUserOAuthClient } = require('./user.service');
 /**
  * Builds a MIME message string containing headers, HTML body, and a file attachment.
  */
-function buildMimeMessage(to, subject, htmlBody, attachmentPath) {
+function buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentDisplayName = 'santhosh_t_k.pdf') {
   const boundary = 'cold_email_boundary_xxxxxx';
-  const filename = attachmentPath ? path.basename(attachmentPath) : 'Resume.pdf';
+  const filename = attachmentDisplayName || (attachmentPath ? path.basename(attachmentPath) : 'santhosh_t_k.pdf');
 
   const headers = [
     `To: ${to}`,
@@ -65,7 +65,7 @@ function buildMimeMessage(to, subject, htmlBody, attachmentPath) {
 /**
  * Sends a single email with PDF attachment using the authorized Gmail client.
  */
-async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null) {
+async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, attachmentName = 'santhosh_t_k.pdf') {
   let oauth2Client;
   if (userKey) {
     oauth2Client = getUserOAuthClient(userKey);
@@ -74,7 +74,7 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null) 
   }
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-  const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath);
+  const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentName);
 
   const res = await gmail.users.messages.send({
     userId: 'me',
@@ -89,7 +89,7 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null) 
 /**
  * Creates a ready-to-send draft directly in the user's Gmail app with PDF attached.
  */
-async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey = null) {
+async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey = null, attachmentName = 'santhosh_t_k.pdf') {
   let oauth2Client;
   if (userKey) {
     oauth2Client = getUserOAuthClient(userKey);
@@ -98,7 +98,7 @@ async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey =
   }
 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-  const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath);
+  const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentName);
 
   const res = await gmail.users.drafts.create({
     userId: 'me',

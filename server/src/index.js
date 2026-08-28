@@ -564,10 +564,12 @@ app.get('/api/applications/:id/pdf', (req, res) => {
     return res.status(404).json({ error: 'PDF file not found on server' });
   }
 
-  const sanitizedCompany = (appItem.company || 'Company').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const sanitizedRole = (appItem.role || 'SDE2').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const candidateName = (appItem.tailoredResume?.personalInfo?.name || 'Resume').replace(/[^a-zA-Z0-9_-]/g, '_');
-  const downloadName = `${candidateName}_${sanitizedCompany}_${sanitizedRole}_Resume.pdf`;
+  const candidateName = appItem.tailoredResume?.personalInfo?.name || 'Santhosh T K';
+  const downloadName = candidateName
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') + '.pdf';
 
   res.download(pdfPath, downloadName);
 });

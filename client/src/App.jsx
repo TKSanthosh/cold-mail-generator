@@ -1654,11 +1654,11 @@ function JdResumeTailor({ showToast }) {
     const downloadUrl = `${BACKEND_URL}/api/applications/${id}/pdf`;
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = `Santhosh_TK_${(comp || 'Company').replace(/\s+/g, '_')}_${(rol || 'SDE2').replace(/\s+/g, '_')}_Resume.pdf`;
+    link.download = 'santhosh_t_k.pdf';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Downloading 1-Page Tailored Executive PDF...', 'success');
+    showToast('Downloading santhosh_t_k.pdf...', 'success');
   };
 
   const handleExportJson = (resumeData, comp, rol) => {
