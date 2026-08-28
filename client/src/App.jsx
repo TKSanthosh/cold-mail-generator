@@ -270,15 +270,46 @@ function SingleSender({ isAuthorized, showToast }) {
   const [tailoredResume, setTailoredResume] = useState(null);
   const [companyIntel, setCompanyIntel] = useState(null);
 
-  // Auto-parse on blur or typing check
-  const handleEmailBlur = () => {
-    if (hrEmail.includes('@') && !parsedName && !parsedCompany) {
-      const [local, domain] = hrEmail.split('@');
-      let name = local.replace(/[._\-+]/g, ' ').split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
-      if (['hr', 'recruitment', 'jobs', 'careers'].includes(name.toLowerCase())) name = 'Hiring Team';
-      const company = domain.split('.')[0].charAt(0).toUpperCase() + domain.split('.')[0].slice(1).toLowerCase();
-      setParsedName(name);
-      setParsedCompany(company);
+  // Auto-parse instantly as the user types or pastes
+  const handleEmailChange = (val) => {
+    setHrEmail(val);
+    if (val.includes('@')) {
+      const [local, domain] = val.split('@');
+      
+      // Parse HR Name
+      const cleanLocal = (local || '').replace(/\d+/g, '').replace(/[._\-+]/g, ' ').trim();
+      let name = cleanLocal
+        .split(' ')
+        .filter(w => w.length > 0)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(' ');
+
+      const genericKeywords = ['hr', 'recruitment', 'jobs', 'careers', 'talent', 'hiring', 'admin', 'contact', 'info', 'support', 'team', 'apply', 'recruiting'];
+      if (!name || genericKeywords.includes(name.toLowerCase())) {
+        name = 'Hiring Team';
+      }
+      setParsedName(name || 'Hiring Manager');
+
+      // Parse Target Company from Domain
+      if (domain) {
+        const personalDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'protonmail.com', 'mail.com'];
+        const cleanDomain = domain.toLowerCase().trim();
+        if (!personalDomains.includes(cleanDomain)) {
+          const domainParts = cleanDomain.split('.');
+          const subdomains = ['mail', 'email', 'careers', 'jobs', 'recruitment', 'hr', 'www'];
+          let compPart = domainParts[0];
+          if (subdomains.includes(compPart) && domainParts.length > 1) {
+            compPart = domainParts[1];
+          }
+          if (compPart && compPart.length > 0) {
+            // Capitalize company name
+            const compName = compPart.charAt(0).toUpperCase() + compPart.slice(1);
+            setParsedCompany(compName);
+          }
+        } else {
+          setParsedCompany('');
+        }
+      }
     }
   };
 
@@ -484,8 +515,7 @@ function SingleSender({ isAuthorized, showToast }) {
           <input
             type="email"
             value={hrEmail}
-            onChange={(e) => setHrEmail(e.target.value)}
-            onBlur={handleEmailBlur}
+            onChange={(e) => handleEmailChange(e.target.value)}
             placeholder="e.g. santhosh@indi.co"
             className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
