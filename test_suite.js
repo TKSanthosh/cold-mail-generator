@@ -130,5 +130,28 @@ try {
   assert(false, `Test 6 threw error: ${e.message}`);
 }
 
-console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
-if (failedTests > 0) process.exit(1);
+// TEST 7: Strict 1-Page PDF Generation Verification (Zero Spill / No Empty 2nd Page)
+async function testPdfSinglePage() {
+  try {
+    const { generateResumePdf } = require('./server/src/services/pdf.service');
+    const masterResume = JSON.parse(fs.readFileSync(path.join(__dirname, 'server/resume.json'), 'utf8'));
+    masterResume.atsKeywords = ['MERN Stack', 'MongoDB', 'Express.js', 'React.js', 'Node.js', 'JavaScript', 'ES6+', 'REST APIs', 'AWS', 'Docker', 'CI/CD'];
+    
+    const testPdfPath = path.join(__dirname, 'test_single_page_unit.pdf');
+    await generateResumePdf(masterResume, testPdfPath);
+    
+    const pdfContent = fs.readFileSync(testPdfPath, 'binary');
+    const pageCount = (pdfContent.match(/\/Type\s*\/Page\b/g) || []).length;
+    
+    assert(pageCount === 1, `PDF generated strictly on 1 page (Actual page count: ${pageCount})`);
+    
+    if (fs.existsSync(testPdfPath)) fs.unlinkSync(testPdfPath);
+  } catch (e) {
+    assert(false, `Test 7 threw error: ${e.message}`);
+  }
+
+  console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
+  if (failedTests > 0) process.exit(1);
+}
+
+testPdfSinglePage();
