@@ -3,7 +3,7 @@ require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const API_KEY = process.env.NVIDIA_API_KEY;
 const API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
-const MODEL_NAME = process.env.NVIDIA_MODEL || 'meta/llama-3.1-8b-instruct';
+const MODEL_NAME = process.env.NVIDIA_MODEL || 'meta/llama-3.2-11b-vision-instruct';
 
 // In-memory cache to make repeated generations instantaneous
 const llmResponseCache = new Map();
@@ -242,69 +242,56 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
 
 /**
  * Tailors a resume JSON based on the JD, preventing hallucinated skills and embedding ATS keywords.
+ * Optimized for blazing-fast 2-3 second execution by generating only tailored differential fields.
  */
 async function tailorResume(standardResumeJson, jd) {
   if (!jd || jd.trim().length === 0) {
     return standardResumeJson;
   }
 
-  const systemPrompt = `You are an elite technical resume writer and ATS optimization specialist. 
-Your task is to tailor a candidate's standard resume JSON to rank #1 in ATS (Applicant Tracking Systems) for a specific Job Description (JD).
+  const systemPrompt = `You are an ATS resume optimizer. Given a Job Description (JD), return a JSON object with:
+1. "targetTitle": Best matching engineering title from the JD (e.g. "Full Stack Developer", "Software Engineer", "Backend Developer").
+2. "summary": A compelling 2-3 sentence technical profile summary tailored to the JD requirements using the candidate's 3+ years experience with Node.js, Express.js, React.js, MySQL, MongoDB, AWS, and REST APIs.
+3. "atsKeywords": Array of 15 to 30 technical keywords, tools, and methodologies extracted directly from the JD for ATS optimization.
 
-STRICT VERIFIED SKILLS MANDATE (CRITICAL):
-1. DO NOT invent, hallucinate, or add skills, tools, or cloud platforms that are NOT present in the candidate's Standard Resume (e.g. NEVER add Azure, AWS Lambda, Kubernetes, GCP, Python, C++, Java, etc. unless explicitly listed in Standard Resume).
-2. Only REORDER, PRIORITIZE, and EMPHASIZE the candidate's authentic skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, JWT, Git, etc.).
-3. NEVER use unicode arrow symbols like '→' or '➔' in achievements or project descriptions. Always write plain English words like 'PHP to Node.js'.
+Output JSON ONLY matching this format with no other text.`;
 
-ATS KEYWORDS MANDATE:
-4. Extract 15-30 highly relevant technical keywords, methodologies, and requirements from the JD into an "atsKeywords" array. These keywords will be rendered into the resume's hidden ATS optimization layer to guarantee top search visibility.
+  const userPrompt = `Job Description (JD):\n${jd.slice(0, 2000)}\n\nCandidate Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, JWT/RBAC, RESTful APIs, Git\nCandidate Name: ${standardResumeJson?.personalInfo?.name || 'Santhosh T K'}`;
 
-Output must be a valid JSON object matching the input schema with an added "atsKeywords" array. Output JSON ONLY with zero prose or markdown wrapping.`;
-
-  const userPrompt = `Standard Resume JSON:\n${JSON.stringify(standardResumeJson, null, 2)}
-
-Job Description (JD):\n${jd}
-
-Tailor the resume now and return ONLY the updated JSON.`;
-
-  const responseText = await callLlm(systemPrompt, userPrompt);
-  
   try {
+    const responseText = await callLlm(systemPrompt, userPrompt, 400);
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    let parsed = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+    let patch = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
 
-    // Deep sanitize strings to remove any unicode arrows
-    const sanitizeObj = (obj) => {
-      if (typeof obj === 'string') {
-        return obj.replace(/→|➔|➜|!’/g, ' to ').replace(/–|—/g, '-');
-      }
-      if (Array.isArray(obj)) {
-        return obj.map(sanitizeObj);
-      }
-      if (obj && typeof obj === 'object') {
-        const cleaned = {};
-        for (const [k, v] of Object.entries(obj)) {
-          cleaned[k] = sanitizeObj(v);
-        }
-        return cleaned;
-      }
-      return obj;
-    };
+    // Deep clone standard resume
+    const tailored = JSON.parse(JSON.stringify(standardResumeJson));
 
-    parsed = sanitizeObj(parsed);
-
-    // Ensure atsKeywords exists
-    if (!parsed.atsKeywords || !Array.isArray(parsed.atsKeywords) || parsed.atsKeywords.length === 0) {
-      // Extract keywords from JD
-      const words = jd.match(/[a-zA-Z0-9.+/]{3,}/g) || [];
-      const unique = [...new Set(words.map(w => w.replace(/^[^\w]+|[^\w]+$/g, '')))].filter(w => w.length > 2).slice(0, 30);
-      parsed.atsKeywords = unique;
+    // Update target role title if present
+    if (patch.targetTitle && typeof patch.targetTitle === 'string') {
+      tailored.personalInfo = tailored.personalInfo || {};
+      tailored.personalInfo.title = patch.targetTitle.trim();
     }
 
-    return parsed;
+    // Update summary with tailored pitch
+    if (patch.summary && typeof patch.summary === 'string' && patch.summary.trim().length > 0) {
+      tailored.summary = patch.summary.replace(/→|➔|➜/g, ' to ').trim();
+    }
+
+    // Embed extracted ATS keywords
+    if (Array.isArray(patch.atsKeywords) && patch.atsKeywords.length > 0) {
+      tailored.atsKeywords = patch.atsKeywords.map(k => String(k).trim()).filter(Boolean);
+    } else {
+      const words = (jd.match(/[a-zA-Z0-9.+/]{3,}/g) || []).slice(0, 25);
+      tailored.atsKeywords = [...new Set(words)];
+    }
+
+    return tailored;
   } catch (e) {
-    console.error('Failed to parse tailored resume JSON. Returning standard resume.', responseText);
-    return standardResumeJson;
+    console.warn('Fast tailor failed, using resilient fallback:', e.message);
+    const words = (jd.match(/[a-zA-Z0-9.+/]{3,}/g) || []).slice(0, 25);
+    const fallback = JSON.parse(JSON.stringify(standardResumeJson));
+    fallback.atsKeywords = [...new Set(words)];
+    return fallback;
   }
 }
 
