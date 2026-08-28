@@ -3,8 +3,8 @@ services:
     name: cold-mail-generator
     runtime: node
     plan: free
-    buildCommand: npm run build
-    startCommand: npm run start
+    buildCommand: npm install --prefix server && npm install --prefix client && npm run build --prefix client
+    startCommand: node server/src/index.js
     envVars:
       - key: NODE_ENV
         value: production

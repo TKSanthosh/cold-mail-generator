@@ -4,8 +4,8 @@
   "description": "Automated Cold Email & Dynamic Resume Tailor application powered by NVIDIA NIM and Google OAuth2",
   "main": "server/src/index.js",
   "scripts": {
-    "postinstall": "npm install --prefix server && npm install --prefix client",
-    "build": "npm run build --prefix client",
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "build": "npm install --prefix server && npm install --prefix client && npm run build --prefix client",
     "start": "node server/src/index.js",
     "dev:server": "node server/src/index.js",
     "dev:client": "npm run dev --prefix client"
