@@ -1,0 +1,10 @@
+﻿{
+  "enabled": true,
+  "intervalMinutes": 30,
+  "intervalHours": 0.5,
+  "timeWindowDays": 7,
+  "mode": "send",
+  "targetPerRun": 10,
+  "lastRunAt": null,
+  "nextRunAt": null
+}

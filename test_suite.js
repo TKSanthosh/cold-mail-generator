@@ -186,7 +186,7 @@ async function testPdfSinglePage() {
     assert(firstLead.postSnippet && firstLead.postSnippet.length > 0, 'Extracted recruiter post context snippet');
 
     const config = getLinkedInConfig();
-    assert(typeof config === 'object' && config.intervalHours === 3, 'LinkedIn 3-hour interval config verified');
+    assert(typeof config === 'object' && (config.intervalMinutes === 30 || config.intervalHours === 0.5), 'LinkedIn 30-minute automated scheduler verified');
   } catch (e) {
     assert(false, `Test 9 threw error: ${e.message}`);
   }

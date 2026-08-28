@@ -1,4 +1,4 @@
-﻿const fs = require('fs');
+const fs = require('fs');
 const path = require('path');
 const dns = require('dns').promises;
 const { generateResumePdf } = require('./pdf.service');
@@ -394,7 +394,7 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
 }
 
 /**
- * Configuration & 3-Hour Automation Loop
+ * Configuration & 30-Minute (Half-Hour) Automation Loop
  */
 function getLinkedInConfig() {
   if (fs.existsSync(CONFIG_FILE)) {
@@ -404,12 +404,13 @@ function getLinkedInConfig() {
   }
   return {
     enabled: true,
-    intervalHours: 3,
+    intervalMinutes: 30,
+    intervalHours: 0.5,
     timeWindowDays: 7,
     mode: 'send',
     targetPerRun: 10,
     lastRunAt: null,
-    nextRunAt: new Date(Date.now() + 3 * 3600 * 1000).toISOString()
+    nextRunAt: new Date(Date.now() + 30 * 60 * 1000).toISOString()
   };
 }
 
@@ -422,7 +423,7 @@ let schedulerTimer = null;
 function initLinkedInScheduler() {
   if (schedulerTimer) clearInterval(schedulerTimer);
 
-  console.log('[LINKEDIN SCHEDULER] Initialized 3-hour automated 1-week job hunter ticker.');
+  console.log('[LINKEDIN SCHEDULER] Initialized automated 30-minute (half-hour) one-by-one outreach loop.');
 
   schedulerTimer = setInterval(async () => {
     const config = getLinkedInConfig();
@@ -432,7 +433,7 @@ function initLinkedInScheduler() {
     const nextRun = config.nextRunAt ? new Date(config.nextRunAt) : new Date(0);
 
     if (now >= nextRun) {
-      console.log('[LINKEDIN SCHEDULER] 3-Hour interval reached! Running automated 1-week LinkedIn Outreach...');
+      console.log('[LINKEDIN SCHEDULER] 30-Minute interval reached! Running automated 1-week LinkedIn Outreach one-by-one...');
       const defaultUser = 'tksanthosh494_gmail_com';
 
       if (isUserAuthorized(defaultUser)) {
@@ -441,19 +442,20 @@ function initLinkedInScheduler() {
             targetCount: config.targetPerRun || 10,
             mode: config.mode || 'send'
           });
-          console.log(`[LINKEDIN SCHEDULER] Completed 3-hour run. Dispatched: ${runReport.processedCount}`);
+          console.log(`[LINKEDIN SCHEDULER] Completed 30-min run. Dispatched: ${runReport.processedCount} emails sequentially.`);
         } catch (e) {
-          console.error('[LINKEDIN SCHEDULER ERROR] Scheduled run failed:', e.message);
+          console.error('[LINKEDIN SCHEDULER ERROR] Scheduled 30-min run failed:', e.message);
         }
       } else {
         console.log('[LINKEDIN SCHEDULER] User not authorized for Gmail API, skipping automatic send.');
       }
 
+      const intervalMs = (config.intervalMinutes || 30) * 60 * 1000;
       config.lastRunAt = now.toISOString();
-      config.nextRunAt = new Date(now.getTime() + (config.intervalHours || 3) * 3600 * 1000).toISOString();
+      config.nextRunAt = new Date(now.getTime() + intervalMs).toISOString();
       saveLinkedInConfig(config);
     }
-  }, 60000);
+  }, 30000); // Check ticker every 30 seconds
 }
 
 module.exports = {

@@ -2293,8 +2293,31 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast(`Auto-Pilot mode updated to: ${newMode === 'send' ? 'Auto-Send via Gmail' : 'Save Drafts in Gmail'}`, 'success');
-    } catch (e) {}
+      showToast(`Outreach mode set to ${newMode === 'send' ? 'Instant Send' : 'Save Drafts'}`, 'info');
+    } catch (e) {
+      showToast('Failed to update mode', 'error');
+    }
+  };
+
+  const handleIntervalChange = async (newMinutes) => {
+    const mins = parseInt(newMinutes, 10);
+    const updated = {
+      ...config,
+      intervalMinutes: mins,
+      intervalHours: mins / 60,
+      nextRunAt: new Date(Date.now() + mins * 60 * 1000).toISOString()
+    };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(`Auto-Pilot will run every ${mins} minutes!`, 'success');
+    } catch (e) {
+      showToast('Failed to update interval', 'error');
+    }
   };
 
   // Continuous sequential one-after-one batch dispatcher
@@ -2444,19 +2467,19 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <Globe className="w-5 h-5 text-sky-500" />
-              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">LinkedIn Recruiter Job Hunter & 3-Hour Auto-Pilot</h2>
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">LinkedIn Recruiter Job Hunter & Auto-Pilot</h2>
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
                 config.enabled 
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
               }`}>
-                {config.enabled ? '● 3-HOUR AUTO-PILOT ACTIVE' : '○ PAUSED'}
+                {config.enabled ? `● AUTO-PILOT ACTIVE (EVERY ${config.intervalMinutes || 30} MINS)` : '○ PAUSED'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Discovers fresh recruiter hiring posts published strictly within the last 1 week, extracts contact emails, tailors your 1-page resume dynamically, and sends outreach continuously one-by-one.
+              Discovers fresh recruiter hiring posts strictly from the past 1 week, and automatically dispatches tailored 1-page resumes continuously one-after-another every half hour (30 mins).
             </p>
           </div>
 
@@ -2469,16 +2492,28 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent'
               }`}
             >
-              {config.enabled ? 'Pause 3-Hr Scheduler' : '▶ Activate 3-Hr Scheduler'}
+              {config.enabled ? 'Pause Scheduler' : '▶ Activate Scheduler'}
             </button>
+
+            <select
+              value={config.intervalMinutes || 30}
+              onChange={(e) => handleIntervalChange(e.target.value)}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
+              title="Scheduler Execution Frequency"
+            >
+              <option value="30">⏱️ Every 30 Mins (Half-Hour)</option>
+              <option value="60">⏱️ Every 1 Hour</option>
+              <option value="120">⏱️ Every 2 Hours</option>
+              <option value="180">⏱️ Every 3 Hours</option>
+            </select>
 
             <select
               value={config.mode}
               onChange={(e) => handleModeChange(e.target.value)}
               className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-3 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
             >
-              <option value="send">⚡ Auto-Send via Gmail API</option>
-              <option value="draft">📝 Save as Ready Gmail Drafts</option>
+              <option value="send">⚡ Auto-Send via Gmail</option>
+              <option value="draft">📝 Save Drafts in Gmail</option>
             </select>
           </div>
         </div>
