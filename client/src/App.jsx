@@ -112,6 +112,11 @@ export default function App() {
       // Clean query parameters
       window.history.replaceState({}, document.title, window.location.pathname);
       checkAuthStatus(userObj);
+    } else if (params.get('auth') === 'error') {
+      const msg = params.get('msg') || 'Sign-in session expired. Please click Connect Gmail to retry.';
+      showToast(msg, 'error');
+      window.history.replaceState({}, document.title, window.location.pathname);
+      checkAuthStatus();
     } else {
       checkAuthStatus();
     }

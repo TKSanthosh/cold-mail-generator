@@ -107,7 +107,10 @@ ensureUserSandbox('tksanthosh494_gmail_com', {
 // --- AUTH ROUTING (JWT & 30-Day Cookies) ---
 app.get('/api/auth/url', (req, res) => {
   try {
-    const url = getAuthUrl(req.query.state || '');
+    const host = req.get('host');
+    const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const redirectUri = `${protocol}://${host}/api/auth/callback`;
+    const url = getAuthUrl(req.query.state || '', redirectUri);
     res.json({ url });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -117,10 +120,14 @@ app.get('/api/auth/url', (req, res) => {
 app.get('/api/auth/callback', async (req, res) => {
   const { code } = req.query;
   if (!code) {
-    return res.status(400).send('Missing authorization code');
+    return res.redirect('/?auth=error&msg=' + encodeURIComponent('Missing authorization code from Google.'));
   }
   try {
-    const userInfo = await handleCallbackCode(code);
+    const host = req.get('host');
+    const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
+    const redirectUri = `${protocol}://${host}/api/auth/callback`;
+
+    const userInfo = await handleCallbackCode(code, redirectUri);
     
     // Generate 30-Day JWT Tokens
     const { accessToken, refreshToken } = generateTokens(userInfo);
@@ -156,8 +163,12 @@ app.get('/api/auth/callback', async (req, res) => {
     const redirectUrl = `/?auth=success&jwt=${encodeURIComponent(accessToken)}&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
     res.redirect(redirectUrl);
   } catch (e) {
-    console.error('OAuth callback exchange error:', e);
-    res.status(500).send(`Authentication failed: ${e.message}`);
+    console.error('OAuth callback exchange error:', e.message);
+    const { userKey } = resolveUserContext(req, res);
+    if (isUserAuthorized(userKey)) {
+      return res.redirect(`/?auth=success&userKey=${encodeURIComponent(userKey)}`);
+    }
+    res.redirect(`/?auth=error&msg=${encodeURIComponent('Authentication session expired or code was already used. Please click Connect Gmail to sign in.')}`);
   }
 });
 

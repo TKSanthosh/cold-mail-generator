@@ -51,15 +51,11 @@ function getGoogleCredentials() {
   throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET or GOOGLE_CLIENT_SECRET_PATH.');
 }
 
-function getOAuth2Client() {
-  if (globalOAuth2ClientInstance) {
-    return globalOAuth2ClientInstance;
-  }
-
+function getOAuth2Client(customRedirectUri = null) {
   const { client_id, client_secret } = getGoogleCredentials();
-  const redirectUri = getRedirectUri();
+  const redirectUri = customRedirectUri || getRedirectUri();
 
-  globalOAuth2ClientInstance = new google.auth.OAuth2(
+  const o2Client = new google.auth.OAuth2(
     client_id,
     client_secret,
     redirectUri
@@ -68,15 +64,15 @@ function getOAuth2Client() {
   if (fs.existsSync(TOKEN_PATH)) {
     try {
       const token = JSON.parse(fs.readFileSync(TOKEN_PATH, 'utf8'));
-      globalOAuth2ClientInstance.setCredentials(token);
+      o2Client.setCredentials(token);
     } catch (e) {}
   }
 
-  return globalOAuth2ClientInstance;
+  return o2Client;
 }
 
-function getAuthUrl(state = '') {
-  const o2Client = getOAuth2Client();
+function getAuthUrl(state = '', customRedirectUri = null) {
+  const o2Client = getOAuth2Client(customRedirectUri);
   return o2Client.generateAuthUrl({
     access_type: 'offline',
     scope: SCOPES,
@@ -85,8 +81,8 @@ function getAuthUrl(state = '') {
   });
 }
 
-async function handleCallbackCode(code) {
-  const o2Client = getOAuth2Client();
+async function handleCallbackCode(code, customRedirectUri = null) {
+  const o2Client = getOAuth2Client(customRedirectUri);
   const { tokens } = await o2Client.getToken(code);
   o2Client.setCredentials(tokens);
   
