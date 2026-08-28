@@ -470,9 +470,9 @@ function SingleSender({ isAuthorized, showToast }) {
       return showToast('Please generate the tailored templates first.', 'error');
     }
 
-    // Schedule for next business day at 8:30 AM
+    // Schedule for next available 10:00 AM morning dispatch (skips weekends if scheduling on Fri/Sat)
     const scheduledDate = new Date();
-    scheduledDate.setHours(8, 30, 0, 0);
+    scheduledDate.setHours(10, 0, 0, 0);
     if (scheduledDate <= new Date()) {
       scheduledDate.setDate(scheduledDate.getDate() + 1);
     }
@@ -498,7 +498,7 @@ function SingleSender({ isAuthorized, showToast }) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      showToast(`Email scheduled for ${scheduledDate.toLocaleDateString()} at 8:30 AM!`, 'success');
+      showToast(`Email scheduled for ${scheduledDate.toLocaleDateString()} at 10:00 AM!`, 'success');
     } catch (e) {
       showToast(e.message || 'Failed to schedule email', 'error');
     }
@@ -700,10 +700,10 @@ function SingleSender({ isAuthorized, showToast }) {
                 onClick={handleScheduleMorning}
                 disabled={sending || !emailBody}
                 className="bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
-                title="Schedules email dispatch for tomorrow morning at 8:30 AM"
+                title="Schedules email dispatch for the next business morning at 10:00 AM (peak HR inbox opening time)"
               >
                 <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-                🌅 Schedule Morning (8:30 AM)
+                🌅 Schedule (10:00 AM)
               </button>
 
               <button

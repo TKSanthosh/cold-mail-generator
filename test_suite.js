@@ -150,6 +150,27 @@ async function testPdfSinglePage() {
     assert(false, `Test 7 threw error: ${e.message}`);
   }
 
+  // TEST 8: Email Scheduler Integrity
+  try {
+    const { addScheduledJob, getScheduledJobs, cancelScheduledJob } = require('./server/src/services/schedule.service');
+    const job = addScheduledJob({
+      userKey: 'tksanthosh494_gmail_com',
+      email: 'test@hr.com',
+      subject: 'Test Schedule',
+      scheduledAt: new Date(Date.now() + 100000).toISOString()
+    });
+    assert(job && job.id.startsWith('sched_'), 'Job added to scheduler with unique ID');
+    
+    const jobs = getScheduledJobs();
+    assert(jobs.some(j => j.id === job.id), 'Scheduler retrieves active scheduled jobs');
+    
+    cancelScheduledJob(job.id);
+    const updatedJobs = getScheduledJobs();
+    assert(!updatedJobs.some(j => j.id === job.id), 'Scheduler successfully cancels job');
+  } catch (e) {
+    assert(false, `Test 8 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }

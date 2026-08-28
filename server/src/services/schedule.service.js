@@ -2,9 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
 const { sendGmail } = require('./mail.service');
+const { addUserLog, getUserPaths } = require('./user.service');
 
 const SCHEDULE_FILE = path.join(__dirname, '../../scheduled.json');
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
+
+if (!fs.existsSync(UPLOADS_DIR)) {
+  try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch (e) {}
+}
 
 if (!fs.existsSync(SCHEDULE_FILE)) {
   fs.writeFileSync(SCHEDULE_FILE, JSON.stringify([], null, 2), 'utf8');
@@ -41,11 +46,11 @@ function cancelScheduledJob(id) {
   return true;
 }
 
-// Background scheduler ticker (runs every 20 seconds)
-function initScheduler(addLogCallback) {
+// Background scheduler ticker (runs every 15 seconds)
+function initScheduler() {
   setInterval(async () => {
     const jobs = getScheduledJobs();
-    if (jobs.length === 0) return;
+    if (!jobs || jobs.length === 0) return;
 
     const now = new Date();
     const remainingJobs = [];
@@ -53,46 +58,50 @@ function initScheduler(addLogCallback) {
     for (const job of jobs) {
       const targetTime = new Date(job.scheduledAt);
       if (targetTime <= now) {
-        console.log(`[SCHEDULER] Triggering scheduled morning dispatch to: ${job.email}`);
-        const tempPdfPath = path.join(UPLOADS_DIR, `Scheduled_Resume_${Date.now()}.pdf`);
+        console.log(`[SCHEDULER] Triggering scheduled 10:00 AM dispatch for: ${job.email} (User: ${job.userKey || 'default'})`);
+        const userKey = job.userKey || 'tksanthosh494_gmail_com';
+        const userPaths = getUserPaths(userKey);
+        const tempPdfPath = path.join(userPaths.uploadsDir || UPLOADS_DIR, `Scheduled_Resume_${Date.now()}.pdf`);
+
         try {
-          // 1. Generate PDF
+          // 1. Generate 1-page PDF
           await generateResumePdf(job.resume, tempPdfPath);
 
-          // 2. Send via Gmail
-          await sendGmail(job.email, job.subject, job.body, tempPdfPath);
+          // 2. Send via Gmail using user's OAuth tokens
+          await sendGmail(job.email, job.subject, job.body, tempPdfPath, userKey);
 
-          // 3. Cleanup
+          // 3. Cleanup temp file
           if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
 
-          // 4. Log
-          if (addLogCallback) {
-            addLogCallback({
-              hrEmail: job.email,
-              hrName: job.hrName || 'Hiring Manager',
-              company: job.company || 'Company',
-              subject: job.subject,
-              body: job.body,
-              resumeType: job.resumeType || 'Tailored',
-              tailoredSummary: job.resume?.summary || '',
-              status: 'Success (Scheduled Morning Dispatch)'
-            });
-          }
+          // 4. Record to user outreach logs
+          addUserLog(userKey, {
+            hrEmail: job.email,
+            email: job.email,
+            hrName: job.hrName || 'Hiring Manager',
+            company: job.company || 'Company',
+            subject: job.subject,
+            body: job.body,
+            resumeType: job.resumeType || 'Tailored',
+            tailoredSummary: job.resume?.summary || '',
+            status: 'Sent (10:00 AM Scheduled Dispatch)'
+          });
+
+          console.log(`[SCHEDULER] Successfully dispatched scheduled email to ${job.email}`);
         } catch (err) {
-          console.error(`[SCHEDULER ERROR] Failed to send scheduled email to ${job.email}:`, err);
+          console.error(`[SCHEDULER ERROR] Failed to send scheduled email to ${job.email}:`, err.message);
           if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
-          if (addLogCallback) {
-            addLogCallback({
-              hrEmail: job.email,
-              hrName: job.hrName || 'Hiring Manager',
-              company: job.company || 'Company',
-              subject: job.subject,
-              body: job.body,
-              resumeType: job.resumeType || 'Tailored',
-              tailoredSummary: job.resume?.summary || '',
-              status: `Failed: ${err.message}`
-            });
-          }
+
+          addUserLog(userKey, {
+            hrEmail: job.email,
+            email: job.email,
+            hrName: job.hrName || 'Hiring Manager',
+            company: job.company || 'Company',
+            subject: job.subject,
+            body: job.body,
+            resumeType: job.resumeType || 'Tailored',
+            tailoredSummary: job.resume?.summary || '',
+            status: `Failed (Scheduled): ${err.message}`
+          });
         }
       } else {
         remainingJobs.push(job);
@@ -102,7 +111,7 @@ function initScheduler(addLogCallback) {
     if (remainingJobs.length !== jobs.length) {
       saveScheduledJobs(remainingJobs);
     }
-  }, 20000);
+  }, 15000);
 }
 
 module.exports = {
