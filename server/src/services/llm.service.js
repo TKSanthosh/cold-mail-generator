@@ -204,23 +204,25 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
 }
 
 /**
- * Tinkers/Tailors a resume JSON based on the JD.
+ * Tailors a resume JSON based on the JD, preventing hallucinated skills and embedding ATS keywords.
  */
 async function tailorResume(standardResumeJson, jd) {
-  if (!jd) {
+  if (!jd || jd.trim().length === 0) {
     return standardResumeJson;
   }
 
-  const systemPrompt = `You are an expert resume writer and technical recruiter. 
-Your task is to tailor/tweak a candidate's standard resume JSON to better match the provided Job Description (JD).
+  const systemPrompt = `You are an elite technical resume writer and ATS optimization specialist. 
+Your task is to tailor a candidate's standard resume JSON to rank #1 in ATS (Applicant Tracking Systems) for a specific Job Description (JD).
 
-CRITICAL RULES:
-1. DO NOT add any new skills that are not already present in the standard resume.
-2. DO NOT invent or fabricate any experience, company details, education, or projects.
-3. Alter or tweak the existing experience and project highlights slightly according to the JD requirements to maximize the possibility of being hired. Highlight relevant keywords and match the tone of the JD.
-4. Reorder the existing skills array so that matching skills are prioritized.
-5. Keep personalInfo, education, company names, and project titles exactly the same.
-6. Output must be a valid JSON object matching the input schema EXACTLY. Do not add markdown backticks outside of the JSON or any prose explanation.`;
+STRICT VERIFIED SKILLS MANDATE (CRITICAL):
+1. DO NOT invent, hallucinate, or add skills, tools, or cloud platforms that are NOT present in the candidate's Standard Resume (e.g. NEVER add Azure, AWS Lambda, Kubernetes, GCP, Python, C++, Java, etc. unless explicitly listed in Standard Resume).
+2. Only REORDER, PRIORITIZE, and EMPHASIZE the candidate's authentic skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, JWT, Git, etc.).
+3. NEVER use unicode arrow symbols like '→' or '➔' in achievements or project descriptions. Always write plain English words like 'PHP to Node.js'.
+
+ATS KEYWORDS MANDATE:
+4. Extract 15-30 highly relevant technical keywords, methodologies, and requirements from the JD into an "atsKeywords" array. These keywords will be rendered into the resume's hidden ATS optimization layer to guarantee top search visibility.
+
+Output must be a valid JSON object matching the input schema with an added "atsKeywords" array. Output JSON ONLY with zero prose or markdown wrapping.`;
 
   const userPrompt = `Standard Resume JSON:\n${JSON.stringify(standardResumeJson, null, 2)}
 
@@ -232,7 +234,37 @@ Tailor the resume now and return ONLY the updated JSON.`;
   
   try {
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    return JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+    let parsed = JSON.parse(jsonMatch ? jsonMatch[0] : responseText);
+
+    // Deep sanitize strings to remove any unicode arrows
+    const sanitizeObj = (obj) => {
+      if (typeof obj === 'string') {
+        return obj.replace(/→|➔|➜|!’/g, ' to ').replace(/–|—/g, '-');
+      }
+      if (Array.isArray(obj)) {
+        return obj.map(sanitizeObj);
+      }
+      if (obj && typeof obj === 'object') {
+        const cleaned = {};
+        for (const [k, v] of Object.entries(obj)) {
+          cleaned[k] = sanitizeObj(v);
+        }
+        return cleaned;
+      }
+      return obj;
+    };
+
+    parsed = sanitizeObj(parsed);
+
+    // Ensure atsKeywords exists
+    if (!parsed.atsKeywords || !Array.isArray(parsed.atsKeywords) || parsed.atsKeywords.length === 0) {
+      // Extract keywords from JD
+      const words = jd.match(/[a-zA-Z0-9.+/]{3,}/g) || [];
+      const unique = [...new Set(words.map(w => w.replace(/^[^\w]+|[^\w]+$/g, '')))].filter(w => w.length > 2).slice(0, 30);
+      parsed.atsKeywords = unique;
+    }
+
+    return parsed;
   } catch (e) {
     console.error('Failed to parse tailored resume JSON. Returning standard resume.', responseText);
     return standardResumeJson;

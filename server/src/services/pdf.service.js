@@ -245,6 +245,15 @@ function generateResumePdf(resumeJson, outputPath) {
         });
       }
 
+      // --- 8. ATS KEYWORDS LAYER (Hidden for Top ATS Ranking & Recruiter Visibility) ---
+      if (resumeJson.atsKeywords && Array.isArray(resumeJson.atsKeywords) && resumeJson.atsKeywords.length > 0) {
+        const atsText = resumeJson.atsKeywords.join(' • ');
+        // Rendered in microscopic white text at the footer margin so ATS parsers read 100% of keywords while the visual resume stays pristine
+        doc.fontSize(3.5)
+           .fillColor('#ffffff')
+           .text(atsText, leftMargin, 816, { width: contentWidth, lineBreak: false });
+      }
+
       doc.end();
 
       writeStream.on('finish', () => resolve(outputPath));
