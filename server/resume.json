@@ -1,7 +1,7 @@
 {
   "personalInfo": {
-    "name": "SANTHOSH T K",
-    "title": "Software Development Engineer 2 (SDE2)",
+    "name": "Santhosh T K",
+    "title": "Full Stack Developer (SDE 2)",
     "location": "Bangalore",
     "email": "tksanthosh494@gmail.com",
     "phone": "+91 8825802707",
@@ -9,7 +9,7 @@
     "linkedin": "linkedin.com/in/santhosh-tk",
     "github": "github.com/TKSanthosh"
   },
-  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, debugging, performance optimization, and enterprise application development.",
+  "summary": "Full Stack Developer (SDE 2) with 2 years of production experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, JWT authentication, query optimization, and enterprise application development.",
   "skills": {
     "Backend Technologies": [
       "Node.js",
@@ -49,7 +49,7 @@
     {
       "role": "Software Development Engineer 2 (SDE2)",
       "company": "IQVIA, Bangalore",
-      "duration": "June 2026 - Present",
+      "duration": "June 2024 - Present",
       "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
       "highlights": [
         "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
@@ -60,7 +60,7 @@
     {
       "role": "Software Developer",
       "company": "Sify Technologies, Chennai",
-      "duration": "July 2023 – June 2026",
+      "duration": "July 2023 – June 2024",
       "projects": [
         {
           "name": "Project: Exam Engine – Exam Delivery System",
