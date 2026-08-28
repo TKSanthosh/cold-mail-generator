@@ -160,6 +160,45 @@ function addUserLog(userKey, entry) {
   }
 }
 
+function syncUserLogs(userKey, clientLogs = []) {
+  const serverLogs = getUserLogs(userKey);
+  const logMap = new Map();
+
+  // Combine client and server records by unique ID or timestamp+email
+  [...clientLogs, ...serverLogs].forEach(log => {
+    if (!log) return;
+    const key = log.id || `${log.timestamp}_${log.email || log.hrEmail || ''}`;
+    if (!logMap.has(key)) {
+      logMap.set(key, log);
+    }
+  });
+
+  const mergedLogs = Array.from(logMap.values()).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  const paths = getUserPaths(userKey);
+  ensureUserSandbox(userKey);
+  writeCompressedJson(paths.logsPathGz, paths.logsPath, mergedLogs);
+  return mergedLogs;
+}
+
+function syncUserApplications(userKey, clientApps = []) {
+  const serverApps = getUserApplications(userKey);
+  const appMap = new Map();
+
+  [...clientApps, ...serverApps].forEach(app => {
+    if (!app) return;
+    const key = app.id || `${app.timestamp}_${app.company || ''}_${app.role || ''}`;
+    if (!appMap.has(key)) {
+      appMap.set(key, app);
+    }
+  });
+
+  const mergedApps = Array.from(appMap.values()).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  const paths = getUserPaths(userKey);
+  ensureUserSandbox(userKey);
+  writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, mergedApps);
+  return mergedApps;
+}
+
 function getUserOAuthClient(userKey) {
   let clientId = process.env.GOOGLE_CLIENT_ID;
   let clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -259,8 +298,10 @@ module.exports = {
   saveUserResume,
   getUserApplications,
   saveUserApplications,
+  syncUserApplications,
   getUserLogs,
   addUserLog,
+  syncUserLogs,
   getUserOAuthClient,
   isUserAuthorized,
   listAllProfiles,

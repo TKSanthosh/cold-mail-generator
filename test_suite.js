@@ -44,6 +44,8 @@ try {
   assert(typeof userService.isUserAuthorized === 'function', 'user.service exports isUserAuthorized');
   assert(typeof userService.getUserApplications === 'function', 'user.service exports getUserApplications');
   assert(typeof userService.getUserLogs === 'function', 'user.service exports getUserLogs');
+  assert(typeof userService.syncUserLogs === 'function', 'user.service exports syncUserLogs');
+  assert(typeof userService.syncUserApplications === 'function', 'user.service exports syncUserApplications');
 
   const storageService = require('./server/src/services/storage.service');
   assert(typeof storageService.readCompressedJson === 'function', 'storage.service exports readCompressedJson');

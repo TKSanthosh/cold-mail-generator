@@ -23,8 +23,10 @@ const {
   saveUserResume,
   getUserApplications,
   saveUserApplications,
+  syncUserApplications,
   getUserLogs,
   addUserLog,
+  syncUserLogs,
   isUserAuthorized,
   listAllProfiles,
   USERS_DIR,
@@ -472,6 +474,17 @@ app.get('/api/logs', (req, res) => {
   }
 });
 
+app.post('/api/logs/sync', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const clientLogs = req.body?.logs || [];
+  try {
+    const mergedLogs = syncUserLogs(userKey, clientLogs);
+    res.json({ logs: mergedLogs, success: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.delete('/api/logs', (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
@@ -552,6 +565,17 @@ app.get('/api/applications', (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
     res.json({ applications: getUserApplications(userKey) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/applications/sync', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const clientApps = req.body?.applications || [];
+  try {
+    const mergedApps = syncUserApplications(userKey, clientApps);
+    res.json({ applications: mergedApps, success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

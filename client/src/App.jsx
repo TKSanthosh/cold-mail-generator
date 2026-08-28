@@ -1059,13 +1059,44 @@ function LogsViewer({ showToast, isActive }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLog, setSelectedLog] = useState(null);
 
-  const fetchLogs = async () => {
+  const getCachedLogs = () => {
     try {
-      const res = await apiFetch(`/api/logs`);
-      const data = await res.json();
-      setLogs(data.logs || []);
+      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const key = `cold_email_logs_${user.userKey || 'default'}`;
+      return JSON.parse(localStorage.getItem(key) || '[]');
     } catch (e) {
-      showToast('Failed to load outreach history', 'error');
+      return [];
+    }
+  };
+
+  const setCachedLogs = (data) => {
+    try {
+      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const key = `cold_email_logs_${user.userKey || 'default'}`;
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {}
+  };
+
+  const fetchLogs = async () => {
+    const cached = getCachedLogs();
+    if (cached.length > 0) {
+      setLogs(cached);
+    }
+    try {
+      const res = await apiFetch(`/api/logs/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logs: cached })
+      });
+      const data = await res.json();
+      if (data.logs) {
+        setLogs(data.logs);
+        setCachedLogs(data.logs);
+      }
+    } catch (e) {
+      if (cached.length === 0) {
+        showToast('Failed to load outreach history', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -1082,6 +1113,7 @@ function LogsViewer({ showToast, isActive }) {
       const data = await res.json();
       if (data.success) {
         setLogs([]);
+        setCachedLogs([]);
         showToast('All outreach logs cleared.', 'success');
       }
     } catch (e) {
@@ -1618,12 +1650,41 @@ function JdResumeTailor({ showToast }) {
   const [viewingApp, setViewingApp] = useState(null);
   const [previewTab, setPreviewTab] = useState('visual'); // 'visual' | 'json'
 
+  const getCachedApps = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const key = `cold_email_apps_${user.userKey || 'default'}`;
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    } catch (e) {
+      return [];
+    }
+  };
+
+  const setCachedApps = (data) => {
+    try {
+      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const key = `cold_email_apps_${user.userKey || 'default'}`;
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (e) {}
+  };
+
   const fetchApplications = async () => {
     setLoadingApps(true);
+    const cached = getCachedApps();
+    if (cached.length > 0) {
+      setApplications(cached);
+    }
     try {
-      const res = await apiFetch(`/api/applications`);
+      const res = await apiFetch(`/api/applications/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applications: cached })
+      });
       const data = await res.json();
-      setApplications(data.applications || []);
+      if (data.applications) {
+        setApplications(data.applications);
+        setCachedApps(data.applications);
+      }
     } catch (e) {
       console.error('Failed to fetch applications', e);
     } finally {
@@ -1688,7 +1749,11 @@ function JdResumeTailor({ showToast }) {
       const res = await apiFetch(`/api/applications/${id}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
-        setApplications(prev => prev.filter(a => a.id !== id));
+        setApplications(prev => {
+          const updated = prev.filter(a => a.id !== id);
+          setCachedApps(updated);
+          return updated;
+        });
         if (currentTailored?.id === id) setCurrentTailored(null);
         if (viewingApp?.id === id) setViewingApp(null);
         showToast('Application record removed.', 'success');
