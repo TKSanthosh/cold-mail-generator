@@ -81,8 +81,11 @@ function createFullBackup(usersDir) {
     const resumeJson = path.join(userDir, 'resume.json');
     const profileJson = path.join(userDir, 'profile.json');
 
+    const tokenJson = path.join(userDir, 'token.json');
+
     backup.users[userKey] = {
       profile: fs.existsSync(profileJson) ? JSON.parse(fs.readFileSync(profileJson, 'utf8')) : null,
+      token: fs.existsSync(tokenJson) ? JSON.parse(fs.readFileSync(tokenJson, 'utf8')) : null,
       resume: fs.existsSync(resumeJson) ? JSON.parse(fs.readFileSync(resumeJson, 'utf8')) : null,
       logs: readCompressedJson(logsGz, logsJson, []),
       applications: readCompressedJson(appsGz, appsJson, [])
@@ -106,6 +109,13 @@ function restoreFullBackup(usersDir, backupData) {
 
     if (userData.profile) {
       fs.writeFileSync(path.join(userDir, 'profile.json'), JSON.stringify(userData.profile, null, 2), 'utf8');
+    }
+    if (userData.token) {
+      fs.writeFileSync(path.join(userDir, 'token.json'), JSON.stringify(userData.token, null, 2), 'utf8');
+      const globalToken = path.join(usersDir, '../token.json');
+      try {
+        fs.writeFileSync(globalToken, JSON.stringify(userData.token, null, 2), 'utf8');
+      } catch (e) {}
     }
     if (userData.resume) {
       fs.writeFileSync(path.join(userDir, 'resume.json'), JSON.stringify(userData.resume, null, 2), 'utf8');

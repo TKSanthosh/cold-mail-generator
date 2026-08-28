@@ -69,9 +69,7 @@ export default function App() {
         headers: { 'x-user-key': user?.userKey || '' }
       });
       const data = await res.json();
-      if (data.authorized) {
-        setIsAuthorized(true);
-      }
+      setIsAuthorized(Boolean(data.authorized));
       if (data.user) {
         const updated = { ...user, ...data.user, userKey: data.userKey || user?.userKey };
         setCurrentUser(updated);
@@ -79,6 +77,7 @@ export default function App() {
       }
     } catch (e) {
       console.error('Failed to check auth status', e);
+      setIsAuthorized(false);
     } finally {
       setCheckingAuth(false);
     }
@@ -108,7 +107,7 @@ export default function App() {
       setCurrentUser(userObj);
       localStorage.setItem('cold_email_user', JSON.stringify(userObj));
       setIsAuthorized(true);
-      showToast(`Welcome ${userObj.name}! Logged in with 30-day persistent session.`, 'success');
+      showToast(`Welcome ${userObj.name}! Gmail connected successfully.`, 'success');
 
       // Clean query parameters
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -162,19 +161,19 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-40 transition-colors">
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-          <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-xl text-white shadow-md shrink-0">
-            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between shadow-xs sticky top-0 z-30 transition-colors">
+        <div className="flex items-center gap-2 sm:gap-3">
+          <div className="bg-indigo-600 text-white p-1.5 sm:p-2 rounded-xl shadow-md shrink-0">
+            <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div className="min-w-0">
+          <div>
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">Cold Reach AI</h1>
-              <span className="hidden sm:inline-flex bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
-                <Shield className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> Isolated Sandbox
+              <h1 className="text-sm sm:text-lg font-bold tracking-tight text-slate-900 dark:text-white leading-tight">Cold Reach AI</h1>
+              <span className="hidden sm:inline-flex items-center gap-1 text-[10px] bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 font-semibold px-2 py-0.5 rounded-full border border-indigo-100 dark:border-indigo-800">
+                <ShieldCheck className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> ISOLATED SANDBOX
               </span>
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 hidden sm:block truncate">Google OAuth & NVIDIA NIM Automated Outreach</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 hidden xs:block">Google OAuth & NVIDIA NIM Automated Outreach</p>
           </div>
         </div>
 
@@ -195,33 +194,46 @@ export default function App() {
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> <span className="hidden sm:inline">Checking...</span>
             </div>
           ) : currentUser ? (
-            <div className="flex items-center gap-2 sm:gap-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-full pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-1 sm:py-1.5 shadow-sm max-w-[180px] sm:max-w-none">
-              {currentUser.picture ? (
-                <img src={currentUser.picture} alt={currentUser.name} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-emerald-300 dark:border-emerald-700 shrink-0" />
-              ) : (
-                <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
-                  {(currentUser.name || 'C').charAt(0)}
+            isAuthorized ? (
+              <div className="flex items-center gap-2 sm:gap-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-full pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-1 sm:py-1.5 shadow-sm max-w-[180px] sm:max-w-none">
+                {currentUser.picture ? (
+                  <img src={currentUser.picture} alt={currentUser.name} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-emerald-300 dark:border-emerald-700 shrink-0" />
+                ) : (
+                  <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
+                    {(currentUser.name || 'C').charAt(0)}
+                  </div>
+                )}
+                <div className="flex flex-col text-left leading-none min-w-0">
+                  <span className="text-emerald-900 dark:text-emerald-300 text-[11px] sm:text-xs font-bold truncate">{currentUser.name || 'Candidate'}</span>
+                  <span className="text-emerald-700 dark:text-emerald-400 text-[9px] sm:text-[10px] font-medium hidden sm:block truncate">{currentUser.email}</span>
                 </div>
-              )}
-              <div className="flex flex-col text-left leading-none min-w-0">
-                <span className="text-emerald-900 dark:text-emerald-300 text-[11px] sm:text-xs font-bold truncate">{currentUser.name || 'Candidate'}</span>
-                <span className="text-emerald-700 dark:text-emerald-400 text-[9px] sm:text-[10px] font-medium hidden sm:block truncate">{currentUser.email}</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0" title="Gmail Sandbox Connected"></div>
+                <button 
+                  onClick={handleDisconnectGmail}
+                  className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-full hover:bg-white dark:hover:bg-slate-800 transition-colors shrink-0"
+                  title="Switch / Disconnect Account"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
               </div>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0" title="Gmail Sandbox Connected"></div>
-              <button 
-                onClick={handleDisconnectGmail}
-                className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-full hover:bg-white dark:hover:bg-slate-800 transition-colors shrink-0"
-                title="Switch / Disconnect Account"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 bg-amber-50/90 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 rounded-full pl-2.5 pr-1.5 py-1 shadow-sm">
+                <span className="text-amber-900 dark:text-amber-300 text-xs font-bold truncate max-w-[100px] sm:max-w-none">{currentUser.name || 'Candidate'}</span>
+                <button
+                  onClick={handleConnectGmail}
+                  className="bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold px-3 py-1 rounded-full flex items-center gap-1 transition-all shadow-xs"
+                  title="Connect Gmail permissions to send emails and save drafts"
+                >
+                  <Mail className="w-3 h-3" /> Connect Gmail
+                </button>
+              </div>
+            )
           ) : (
             <button
               onClick={handleConnectGmail}
               className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-1.5"
             >
-              <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Sign in</span>
+              <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Sign in with Google</span>
             </button>
           )}
         </div>
