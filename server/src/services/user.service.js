@@ -16,7 +16,7 @@ function getUserKeyFromEmail(email) {
   return email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 }
 
-const { readCompressedJson, writeCompressedJson, createFullBackup, restoreFullBackup } = require('./storage.service');
+const { readCompressedJson, writeCompressedJson, createFullBackup, restoreFullBackup, appendGlobalLog, getGlobalLogs } = require('./storage.service');
 
 function getUserPaths(userKey) {
   const key = userKey || 'default_user';
@@ -148,13 +148,18 @@ function addUserLog(userKey, entry) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   try {
-    const logs = getUserLogs(userKey);
-    logs.unshift({
+    const logItem = {
       id: Date.now().toString(),
       timestamp: new Date().toISOString(),
+      userKey: userKey || 'default',
       ...entry
-    });
+    };
+    const logs = getUserLogs(userKey);
+    logs.unshift(logItem);
     writeCompressedJson(paths.logsPathGz, paths.logsPath, logs);
+
+    // Also persist into global server compressed archive
+    appendGlobalLog(logItem);
   } catch (e) {
     console.error('Failed to add user log:', e);
   }

@@ -1243,9 +1243,19 @@ function LogsViewer({ showToast, isActive }) {
               onClick={handleExportCSV}
               disabled={logs.length === 0}
               className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 border border-slate-200 dark:border-slate-700"
+              title="Download outreach history as an Excel CSV file"
             >
               <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> <span className="hidden sm:inline">Export</span> CSV
             </button>
+
+            <a
+              href="/api/logs/download"
+              download
+              className={`bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 shrink-0 border border-indigo-200 dark:border-indigo-800 ${logs.length === 0 ? 'opacity-50 pointer-events-none' : ''}`}
+              title="Download full compressed gzip backup file stored permanently on the server"
+            >
+              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> <span className="hidden sm:inline">Compressed</span> .gz
+            </a>
 
             {logs.length > 0 && (
               <button

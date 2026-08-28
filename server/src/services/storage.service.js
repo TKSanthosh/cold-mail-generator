@@ -131,9 +131,40 @@ function restoreFullBackup(usersDir, backupData) {
   return true;
 }
 
+/**
+ * Global compressed archive storage for all outreach history.
+ */
+const DATA_DIR = path.join(__dirname, '../../data');
+const GLOBAL_LOGS_GZ = path.join(DATA_DIR, 'global_outreach_logs.json.gz');
+
+if (!fs.existsSync(DATA_DIR)) {
+  try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch (e) {}
+}
+
+function getGlobalLogs() {
+  return readCompressedJson(GLOBAL_LOGS_GZ, null, []);
+}
+
+function appendGlobalLog(entry) {
+  try {
+    const logs = getGlobalLogs();
+    logs.unshift({
+      id: Date.now().toString(),
+      timestamp: new Date().toISOString(),
+      ...entry
+    });
+    writeCompressedJson(GLOBAL_LOGS_GZ, null, logs);
+  } catch (e) {
+    console.error('[STORAGE] Failed to append global log:', e.message);
+  }
+}
+
 module.exports = {
   readCompressedJson,
   writeCompressedJson,
   createFullBackup,
-  restoreFullBackup
+  restoreFullBackup,
+  getGlobalLogs,
+  appendGlobalLog,
+  GLOBAL_LOGS_GZ
 };

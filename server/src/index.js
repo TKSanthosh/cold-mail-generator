@@ -483,6 +483,24 @@ app.get('/api/logs', (req, res) => {
   }
 });
 
+app.get('/api/logs/download', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const userPaths = getUserPaths(userKey);
+    if (fs.existsSync(userPaths.logsPathGz)) {
+      res.setHeader('Content-Type', 'application/gzip');
+      res.setHeader('Content-Disposition', `attachment; filename="outreach_logs_${userKey}.json.gz"`);
+      return res.sendFile(userPaths.logsPathGz);
+    }
+    const logs = getUserLogs(userKey);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="outreach_logs_${userKey}.json"`);
+    res.send(JSON.stringify(logs, null, 2));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/logs/sync', (req, res) => {
   const userKey = resolveUserKey(req, res);
   const clientLogs = req.body?.logs || [];
@@ -498,7 +516,7 @@ app.delete('/api/logs', (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
     const userPaths = getUserPaths(userKey);
-    fs.writeFileSync(userPaths.logsPath, JSON.stringify([], null, 2), 'utf8');
+    writeCompressedJson(userPaths.logsPathGz, userPaths.logsPath, []);
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

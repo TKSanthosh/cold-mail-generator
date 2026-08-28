@@ -52,6 +52,8 @@ try {
   assert(typeof storageService.writeCompressedJson === 'function', 'storage.service exports writeCompressedJson');
   assert(typeof storageService.createFullBackup === 'function', 'storage.service exports createFullBackup');
   assert(typeof storageService.restoreFullBackup === 'function', 'storage.service exports restoreFullBackup');
+  assert(typeof storageService.appendGlobalLog === 'function', 'storage.service exports appendGlobalLog');
+  assert(typeof storageService.getGlobalLogs === 'function', 'storage.service exports getGlobalLogs');
 
   const llmService = require('./server/src/services/llm.service');
   assert(typeof llmService.tailorResume === 'function', 'llm.service exports tailorResume');
