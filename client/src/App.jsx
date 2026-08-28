@@ -141,45 +141,45 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-6 py-4 flex items-center justify-between shadow-sm">
-        <div className="flex items-center gap-3">
-          <div className="bg-indigo-600 p-2 rounded-xl text-white shadow-md">
-            <Sparkles className="w-6 h-6" />
+      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-40">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-xl text-white shadow-md shrink-0">
+            <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900 tracking-tight">Cold Email & Resume Tailor</h1>
-              <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider flex items-center gap-1 border border-slate-200">
+          <div className="min-w-0">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">Cold Reach AI</h1>
+              <span className="hidden sm:inline-flex bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider items-center gap-1 border border-slate-200 shrink-0">
                 <Shield className="w-3 h-3 text-indigo-600" /> Isolated Sandbox
               </span>
             </div>
-            <p className="text-xs text-slate-500">Google OAuth & NVIDIA NIM Automated Outreach</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 hidden sm:block truncate">Google OAuth & NVIDIA NIM Automated Outreach</p>
           </div>
         </div>
 
         {/* Gmail User Profile & Auth Status */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {checkingAuth ? (
-            <div className="flex items-center gap-2 text-slate-400 text-sm">
-              <Loader2 className="w-4 h-4 animate-spin" /> Checking session...
+            <div className="flex items-center gap-1.5 text-slate-400 text-xs">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> <span className="hidden sm:inline">Checking...</span>
             </div>
           ) : isAuthorized && currentUser ? (
-            <div className="flex items-center gap-3 bg-emerald-50/80 border border-emerald-200 rounded-full pl-2 pr-3 py-1.5 shadow-sm">
+            <div className="flex items-center gap-2 sm:gap-3 bg-emerald-50/80 border border-emerald-200 rounded-full pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-1 sm:py-1.5 shadow-sm max-w-[180px] sm:max-w-none">
               {currentUser.picture ? (
-                <img src={currentUser.picture} alt={currentUser.name} className="w-6 h-6 rounded-full border border-emerald-300" />
+                <img src={currentUser.picture} alt={currentUser.name} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-emerald-300 shrink-0" />
               ) : (
-                <div className="w-6 h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold">
+                <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {(currentUser.name || 'C').charAt(0)}
                 </div>
               )}
-              <div className="flex flex-col text-left leading-none">
-                <span className="text-emerald-900 text-xs font-bold">{currentUser.name || 'Candidate'}</span>
-                <span className="text-emerald-700 text-[10px] font-medium">{currentUser.email}</span>
+              <div className="flex flex-col text-left leading-none min-w-0">
+                <span className="text-emerald-900 text-[11px] sm:text-xs font-bold truncate">{currentUser.name || 'Candidate'}</span>
+                <span className="text-emerald-700 text-[9px] sm:text-[10px] font-medium hidden sm:block truncate">{currentUser.email}</span>
               </div>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-1"></div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0"></div>
               <button 
                 onClick={handleDisconnectGmail}
-                className="text-slate-400 hover:text-rose-600 p-1 rounded-full hover:bg-white transition-colors ml-1"
+                className="text-slate-400 hover:text-rose-600 p-1 rounded-full hover:bg-white transition-colors shrink-0"
                 title="Switch / Disconnect Account"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -188,60 +188,60 @@ export default function App() {
           ) : (
             <button
               onClick={handleConnectGmail}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-2"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md hover:shadow-lg flex items-center gap-1.5"
             >
-              <Mail className="w-4 h-4" /> Sign in with Gmail
+              <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Sign in</span>
             </button>
           )}
         </div>
       </header>
 
-      {/* Navigation tabs */}
-      <div className="bg-white border-b border-slate-200 px-6 flex gap-6">
+      {/* Navigation tabs with Horizontal Touch Scrolling */}
+      <div className="bg-white border-b border-slate-200 px-2 sm:px-6 flex gap-1 sm:gap-6 overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap shadow-xs">
         <button
           onClick={() => setActiveTab('single')}
-          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'single' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <Send className="w-4 h-4" /> Single Email
+          <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Single Email</span>
         </button>
         <button
           onClick={() => setActiveTab('bulk')}
-          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'bulk' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <Mail className="w-4 h-4" /> Bulk Campaign
+          <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Bulk Campaign</span>
         </button>
         <button
           onClick={() => setActiveTab('logs')}
-          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'logs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <History className="w-4 h-4" /> Outreach History / Logs
+          <History className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Outreach Logs</span>
         </button>
         <button
           onClick={() => setActiveTab('jdtailor')}
-          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'jdtailor' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <Sparkles className="w-4 h-4" /> JD Resume Tailor & Log
+          <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>JD Resume Tailor</span>
         </button>
         <button
           onClick={() => setActiveTab('resume')}
-          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'resume' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <FileText className="w-4 h-4" /> Base Resume Template
+          <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Base Template</span>
         </button>
       </div>
 
       {/* Main Content (Preserved in Memory) */}
-      <main className="flex-1 p-6 overflow-y-auto max-w-7xl w-full mx-auto">
+      <main className="flex-1 p-3 sm:p-6 overflow-y-auto max-w-7xl w-full mx-auto touch-scroll">
         <div className={activeTab === 'single' ? 'block' : 'hidden'}>
           <SingleSender isAuthorized={isAuthorized} showToast={showToast} />
         </div>
@@ -512,44 +512,44 @@ function SingleSender({ isAuthorized, showToast }) {
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
       {/* Inputs Column */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-5">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Sparkles className="w-5 h-5 text-indigo-600" /> Target Outreach Details
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5">
+        <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Target Outreach Details</span>
         </h2>
 
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">HR Email Address</label>
+          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 sm:mb-2">HR Email Address</label>
           <input
             type="email"
             value={hrEmail}
             onChange={(e) => handleEmailChange(e.target.value)}
             placeholder="e.g. santhosh@indi.co"
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
         </div>
 
         {/* Parsed Fields (Editable) */}
-        <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-100">
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed HR Name</label>
+            <label className="block text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed HR Name</label>
             <input
               type="text"
               value={parsedName}
               onChange={(e) => setParsedName(e.target.value)}
               placeholder="Hiring Manager"
-              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div>
-            <label className="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed Company</label>
+            <label className="block text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed Company</label>
             <input
               type="text"
               value={parsedCompany}
               onChange={(e) => setParsedCompany(e.target.value)}
               placeholder="Target Company"
-              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
         </div>
@@ -880,22 +880,22 @@ function BulkSender({ isAuthorized, showToast }) {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Mail className="w-5 h-5 text-indigo-600" /> Bulk Outreach Campaign
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+        <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+          <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Bulk Outreach Campaign</span>
         </h2>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <button
             onClick={handleExportHrExcel}
             disabled={!emailsText && parsedItems.length === 0}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5 border border-slate-200 disabled:opacity-50"
+            className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 border border-slate-200 disabled:opacity-50"
             title="Download HR names, company names, and emails as an Excel CSV file"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-600" /> Download HR Emails (Excel)
+            <Download className="w-3.5 h-3.5 text-indigo-600" /> <span>Download HR Emails</span>
           </button>
           {parsedItems.length > 0 && (
-            <button onClick={handleReset} className="text-xs text-rose-600 hover:text-rose-800 font-semibold">
+            <button onClick={handleReset} className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1">
               Reset List
             </button>
           )}
@@ -903,10 +903,10 @@ function BulkSender({ isAuthorized, showToast }) {
       </div>
 
       {campaignState === 'idle' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="flex flex-col gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
+          <div className="flex flex-col gap-3 sm:gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Recipient Emails <span className="text-slate-400 font-normal">(One per line)</span></label>
+              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 sm:mb-2">Recipient Emails <span className="text-slate-400 font-normal">(One per line)</span></label>
               <textarea
                 value={emailsText}
                 onChange={(e) => setEmailsText(e.target.value)}
@@ -961,8 +961,8 @@ function BulkSender({ isAuthorized, showToast }) {
       )}
 
       {parsedItems.length > 0 && (
-        <div className="border border-slate-200 rounded-lg overflow-hidden mt-2">
-          <table className="w-full text-left border-collapse text-xs">
+        <div className="border border-slate-200 rounded-lg overflow-x-auto touch-scroll mt-2">
+          <table className="w-full text-left border-collapse text-xs min-w-[500px]">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                 <th className="p-3">Email Address</th>
@@ -1094,77 +1094,77 @@ function LogsViewer({ showToast, isActive }) {
   }
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       {/* Metric Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Emails Sent</p>
-            <p className="text-2xl font-black text-slate-800 mt-1">{totalSent}</p>
+            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Total Sent</p>
+            <p className="text-lg sm:text-2xl font-black text-slate-800 mt-0.5 sm:mt-1">{totalSent}</p>
           </div>
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
-            <Mail className="w-6 h-6" />
+          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+            <Mail className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Tailored Resumes</p>
-            <p className="text-2xl font-black text-emerald-600 mt-1">{tailoredCount}</p>
+            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Tailored</p>
+            <p className="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5 sm:mt-1">{tailoredCount}</p>
           </div>
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-lg">
-            <Sparkles className="w-6 h-6" />
+          <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+            <Sparkles className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Standard Resumes</p>
-            <p className="text-2xl font-black text-slate-700 mt-1">{totalSent - tailoredCount}</p>
+            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Standard</p>
+            <p className="text-lg sm:text-2xl font-black text-slate-700 mt-0.5 sm:mt-1">{totalSent - tailoredCount}</p>
           </div>
-          <div className="p-3 bg-slate-100 text-slate-600 rounded-lg">
-            <FileText className="w-6 h-6" />
+          <div className="p-2 sm:p-3 bg-slate-100 text-slate-600 rounded-lg shrink-0">
+            <FileText className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Companies Reached</p>
-            <p className="text-2xl font-black text-indigo-600 mt-1">{uniqueCompanies}</p>
+            <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Companies</p>
+            <p className="text-lg sm:text-2xl font-black text-indigo-600 mt-0.5 sm:mt-1">{uniqueCompanies}</p>
           </div>
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-lg">
-            <History className="w-6 h-6" />
+          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+            <History className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
       </div>
 
       {/* Main Logs Table Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
-            <History className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-lg font-bold text-slate-800">Outreach Records & History Log</h2>
+            <History className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" />
+            <h2 className="text-base sm:text-lg font-bold text-slate-800">Outreach Records & History Log</h2>
           </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             {/* Search Input */}
             <div className="relative flex-1 sm:w-64">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
                 type="text"
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search company, HR, email..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                placeholder="Search logs..."
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <button
               onClick={handleExportCSV}
               disabled={logs.length === 0}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
             >
-              <Download className="w-3.5 h-3.5" /> Export CSV
+              <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span> CSV
             </button>
 
             {logs.length > 0 && (
@@ -1180,12 +1180,12 @@ function LogsViewer({ showToast, isActive }) {
 
         {/* Table */}
         {filteredLogs.length === 0 ? (
-          <div className="py-16 text-center text-slate-400 text-xs italic border border-slate-100 rounded-lg">
+          <div className="py-12 sm:py-16 text-center text-slate-400 text-xs italic border border-slate-100 rounded-lg">
             {logs.length === 0 ? 'No emails sent yet. Sent emails will be automatically tracked here!' : 'No records match your search query.'}
           </div>
         ) : (
-          <div className="border border-slate-200 rounded-lg overflow-x-auto">
-            <table className="w-full text-left border-collapse text-xs">
+          <div className="border border-slate-200 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left border-collapse text-xs min-w-[620px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
                   <th className="p-3">Date & Time</th>
@@ -1405,15 +1405,15 @@ function ResumeEditor({ showToast }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" /> Base Resume Template Editor
+          <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Base Resume Template Editor</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
+          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <input
             type="file"
             ref={fileInputRef}
@@ -1424,18 +1424,18 @@ function ResumeEditor({ showToast }) {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2 px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center gap-1.5 border border-slate-200"
+            className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 border border-slate-200"
           >
             {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" /> : <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />}
-            {uploading ? 'Parsing with AI...' : 'Upload Updated Resume (PDF)'}
+            <span>{uploading ? 'Parsing...' : 'Upload PDF'}</span>
           </button>
           <button
             onClick={handleSave}
             disabled={saving || uploading}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-2 px-4 rounded-lg text-xs shadow transition-all disabled:opacity-50 flex items-center gap-1.5"
+            className="flex-1 sm:flex-none bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs shadow transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
             {saving && <Loader2 className="w-3 h-3 animate-spin" />}
-            Save Changes
+            <span>Save Changes</span>
           </button>
         </div>
       </div>
@@ -1443,7 +1443,7 @@ function ResumeEditor({ showToast }) {
       {/* Upload Banner */}
       <div 
         onClick={() => fileInputRef.current?.click()}
-        className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 rounded-xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center"
+        className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center"
       >
         <div className="p-3 bg-white text-indigo-600 rounded-full shadow-sm">
           {uploading ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <UploadCloud className="w-6 h-6" />}
@@ -1686,45 +1686,45 @@ function JdResumeTailor({ showToast }) {
   });
 
   return (
-    <div className="flex flex-col gap-6">
+    <div className="flex flex-col gap-4 sm:gap-6">
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-6 rounded-2xl shadow-lg border border-indigo-700/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-4 sm:p-6 rounded-xl sm:rounded-2xl shadow-lg border border-indigo-700/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 sm:gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <span className="bg-indigo-500/30 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-indigo-400/30">
+            <span className="bg-indigo-500/30 text-indigo-200 text-[10px] sm:text-xs px-2 sm:px-2.5 py-0.5 rounded-full font-semibold border border-indigo-400/30">
               AI Job-Matched Resume Compiler
             </span>
           </div>
-          <h2 className="text-2xl font-black tracking-tight">Dedicated JD Resume Tailor & Application Log</h2>
-          <p className="text-sm text-indigo-200/90 mt-1 max-w-2xl">
+          <h2 className="text-lg sm:text-2xl font-black tracking-tight">Dedicated JD Resume Tailor & Log</h2>
+          <p className="text-xs sm:text-sm text-indigo-200/90 mt-1 max-w-2xl leading-relaxed">
             Paste any target Job Description (JD). Our AI engine intelligently aligns your real technical stack, projects, and achievements to match the job requirements, compiles an executive 1-page PDF, and stores the application in your persistent history log.
           </p>
         </div>
-        <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-xl border border-white/10 text-center min-w-[140px]">
-          <div className="text-2xl font-black text-white">{applications.length}</div>
-          <div className="text-xs text-indigo-200 font-medium">Logged Resumes</div>
+        <div className="bg-white/10 backdrop-blur-md px-3 sm:px-4 py-2 sm:py-3 rounded-xl border border-white/10 text-center min-w-[110px] sm:min-w-[140px] shrink-0">
+          <div className="text-xl sm:text-2xl font-black text-white">{applications.length}</div>
+          <div className="text-[10px] sm:text-xs text-indigo-200 font-medium">Logged Resumes</div>
         </div>
       </div>
 
       {/* Input Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Left: Input Form (5 cols) */}
-        <div className="lg:col-span-5 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
-          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-600" />
+        <div className="lg:col-span-5 bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-3.5 sm:gap-4">
+          <div className="border-b border-slate-100 pb-2.5 sm:pb-3 flex items-center justify-between">
+            <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
               <span>Target Role & Job Description</span>
             </h3>
             <button
               type="button"
               onClick={handlePasteClipboard}
-              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded transition-colors"
+              className="text-[11px] sm:text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 sm:px-2.5 py-1 rounded transition-colors"
             >
               📋 Paste JD
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">Target Company</label>
               <input
