@@ -46,7 +46,7 @@ async function callLlm(systemPrompt, userPrompt) {
  */
 async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
   const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
-  const candidateTitle = 'Software Development Engineer | Full Stack Developer';
+  const candidateTitle = 'Full Stack Developer';
   const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
   const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
@@ -66,23 +66,26 @@ STRICT RULES:
 - Do not truncate sentences. Every sentence must be grammatically complete.
 - Do not fabricate or round up years of experience. Use EXACTLY "3+ years" of experience as provided in the input data.
 - Do not use the word "seasoned" or similar inflated language.
-- MULTI-ROLE POSITIONING: Mention the relevant roles (Full Stack Developer, Software Development Engineer / SDE, MERN Stack Developer, Backend Developer / Backend Engineer) directly in the Subject line and the opening paragraph so the recruiter immediately sees the breadth of opportunities you can fill.
-- NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
+
+ROLE TITLE RULES:
+1. Check the company and Job Description (JD): If a specific role name is provided (e.g. "Full Stack Engineer", "Backend Developer", "Software Engineer", "MERN Stack Developer", "Software Development Engineer"), tailor the subject line and opening pitch to use their exact role title naming.
+2. If it is a general cold outreach with no JD, use "Full Stack Developer" as the primary role title in the subject line and opening body.
+3. NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
 
 OUTPUT FORMAT (plain text, in this exact structure):
-Subject: Full Stack Developer / SDE / Backend Developer Opportunities - ${candidateName} (3+ Yrs Exp)
+Subject: <Targeted subject line: e.g. "Full Stack Developer Opportunities at ${company} - ${candidateName}" or "Exploring <Role Title> Opportunities at ${company} - ${candidateName}">
 
 Hi ${cleanHrName},
 
-<Paragraph 1: 2-3 sentences. I am writing to express my interest in Full Stack Developer, Software Development Engineer (SDE), MERN Stack, or Backend Developer opportunities at ${company}. Highlight 3+ years of experience building scalable web applications and RESTful APIs using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS.>
+<Paragraph 1: 2-3 sentences. Express strong interest in Full Stack Developer opportunities (or the specific role title if JD is provided) at ${company}. Highlight 3+ years of experience building scalable web applications and RESTful APIs using Node.js, Express.js, React.js (MERN stack), MySQL, MongoDB, and AWS.>
 
-<Paragraph 2: 2-3 sentences. Specific achievement from input: reduced API response time by 20% and eliminated ~30% of production issues migrating PHP backend to Node.js & MongoDB at Sify Technologies; built clinical event platform at IQVIA; maintained 95%+ first-pass code review approval rate. Do not invent metrics not present in input.>
+<Paragraph 2: 2-3 sentences. Specific achievements from input: reduced API response time by 20% and eliminated ~30% of production issues migrating PHP backend to Node.js & MongoDB at Sify Technologies; built clinical event platform at IQVIA; maintained 95%+ first-pass code review approval rate. Connect with the company's tech focus if company context is available. Do not invent metrics not present in input.>
 
 <Paragraph 3: 1-2 sentences. Clear call to action requesting a 15-minute intro call this week to discuss how I can contribute to your engineering team, mention attached resume.>
 
 Best regards,
 ${candidateName}
-${candidateTitle}
+Full Stack Developer
 ${candidatePhone} | ${candidateEmail}
 ${candidateLinkedin} | ${candidateGithub}
 
@@ -91,9 +94,8 @@ Before finalizing, re-check: no JSON syntax, no level numbers like SDE2, no trun
   let userPrompt = `Target Recruiter: ${cleanHrName}
 Target Company: ${company}
 Candidate: ${candidateName} (${candidateTitle})
-Total Experience: 3+ years (full-stack & enterprise development)
-Relevant Roles: Full Stack Developer / Full Stack Engineer / MERN Stack Developer / SDE / Software Developer / Software Engineer / Backend Developer / Backend Engineer
-Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, JWT/RBAC, REST APIs
+Total Experience: 3+ years (full-stack & backend web application development)
+Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, JWT/RBAC, REST APIs
 Experience & Achievements:
 - Software Development Engineer at IQVIA, Bangalore (Clinical Event & Engagement Management Platform)
 - Software Developer at Sify Technologies (Exam Engine: migrated PHP backend to Node.js/MongoDB, cutting production issues by ~30%; QPTool: built RESTful APIs + React.js, improved API response time by ~20%)
@@ -101,10 +103,14 @@ Experience & Achievements:
 Call to Action: Request a 15-minute intro call this week; resume attached.
 `;
 
+  if (companyIntel && companyIntel.summary) {
+    userPrompt += `\nCompany Context: ${companyIntel.summary}\n`;
+  }
+
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align your opening and technical pitch with the provided JD role requirements while emphasizing full-stack/backend capabilities without fabricating metrics.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Check how the company names the role in this JD and align your subject line, role title, and technical pitch to their exact role requirements.`;
   } else {
-    userPrompt += `\nTask: Draft a concise, high-impact plain text cold email to ${company} highlighting open Full Stack / SDE / Backend Developer opportunities.`;
+    userPrompt += `\nTask: Draft a concise, high-impact cold email to ${company} for Full Stack Developer opportunities.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
@@ -123,7 +129,7 @@ Call to Action: Request a 15-minute intro call this week; resume attached.
  */
 function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   const name = candidateInfo?.name || 'Santhosh T K';
-  const title = candidateInfo?.title || 'Software Development Engineer | Full Stack Developer';
+  const title = candidateInfo?.title || 'Full Stack Developer';
   const phone = candidateInfo?.phone || '+91 8825802707';
   const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
   const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
@@ -138,7 +144,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     try {
       const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const obj = JSON.parse(cleanJson);
-      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Full Stack Developer / SDE / Backend Developer Opportunities - ${name}`;
+      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Full Stack Developer Opportunities at ${company} - ${name}`;
       
       const paragraphs = [
         obj.greeting || `Hi ${hrName || 'Hiring Team'},`,
@@ -157,7 +163,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   }
 
   // 2. Extract Subject Line if present
-  let subject = `Full Stack Developer / SDE / Backend Developer Opportunities - ${name}`;
+  let subject = `Full Stack Developer Opportunities at ${company} - ${name}`;
   const subjectMatch = text.match(/^Subject:\s*(.+)$/im);
   if (subjectMatch) {
     subject = subjectMatch[1].replace(/["']/g, '').trim();
