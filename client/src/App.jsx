@@ -148,6 +148,14 @@ export default function App() {
           <History className="w-4 h-4" /> Outreach History / Logs
         </button>
         <button
+          onClick={() => setActiveTab('jdtailor')}
+          className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
+            activeTab === 'jdtailor' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Sparkles className="w-4 h-4" /> JD Resume Tailor & Log
+        </button>
+        <button
           onClick={() => setActiveTab('resume')}
           className={`py-3 text-sm font-semibold border-b-2 transition-all flex items-center gap-2 ${
             activeTab === 'resume' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
@@ -167,6 +175,9 @@ export default function App() {
         </div>
         <div className={activeTab === 'logs' ? 'block' : 'hidden'}>
           <LogsViewer showToast={showToast} />
+        </div>
+        <div className={activeTab === 'jdtailor' ? 'block' : 'hidden'}>
+          <JdResumeTailor showToast={showToast} />
         </div>
         <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
           <ResumeEditor showToast={showToast} />
@@ -1427,3 +1438,505 @@ function ResumeEditor({ showToast }) {
     </div>
   );
 }
+
+/* =========================================================================
+   DEDICATED JD RESUME TAILOR & APPLICATION LOG MODULE
+   ========================================================================= */
+function JdResumeTailor({ showToast }) {
+  const [role, setRole] = useState('');
+  const [company, setCompany] = useState('');
+  const [jd, setJd] = useState('');
+  const [tailoring, setTailoring] = useState(false);
+  const [currentTailored, setCurrentTailored] = useState(null);
+
+  // Application logs
+  const [applications, setApplications] = useState([]);
+  const [loadingApps, setLoadingApps] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [viewingApp, setViewingApp] = useState(null);
+  const [previewTab, setPreviewTab] = useState('visual'); // 'visual' | 'json'
+
+  const fetchApplications = async () => {
+    setLoadingApps(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/applications`);
+      const data = await res.json();
+      setApplications(data.applications || []);
+    } catch (e) {
+      console.error('Failed to fetch applications', e);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchApplications();
+  }, []);
+
+  const handlePasteClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      if (text) {
+        setJd(text);
+        showToast('Pasted Job Description from clipboard!', 'success');
+      }
+    } catch (err) {
+      showToast('Please paste manually into the box', 'info');
+    }
+  };
+
+  const handleTailor = async () => {
+    if (!jd || jd.trim().length === 0) {
+      showToast('Please paste a Job Description (JD) to tailor your resume.', 'error');
+      return;
+    }
+
+    setTailoring(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/applications/tailor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: role.trim() || 'Software Development Engineer 2 (SDE2)',
+          company: company.trim() || 'Target Company',
+          jd: jd.trim()
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to tailor resume');
+      }
+
+      setCurrentTailored(data.application);
+      showToast(`Resume tailored successfully for ${data.application.role} at ${data.application.company}!`, 'success');
+      fetchApplications();
+    } catch (e) {
+      showToast(`Tailoring failed: ${e.message}`, 'error');
+    } finally {
+      setTailoring(false);
+    }
+  };
+
+  const handleDeleteApp = async (id, e) => {
+    e.stopPropagation();
+    if (!window.confirm('Delete this tailored resume and application log?')) return;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/applications/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        setApplications(prev => prev.filter(a => a.id !== id));
+        if (currentTailored?.id === id) setCurrentTailored(null);
+        if (viewingApp?.id === id) setViewingApp(null);
+        showToast('Application record removed.', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to delete application', 'error');
+    }
+  };
+
+  const handleDownloadPdf = (id, comp, rol) => {
+    const downloadUrl = `${BACKEND_URL}/api/applications/${id}/pdf`;
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = `Santhosh_TK_${(comp || 'Company').replace(/\s+/g, '_')}_${(rol || 'SDE2').replace(/\s+/g, '_')}_Resume.pdf`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showToast('Downloading 1-Page Tailored Executive PDF...', 'success');
+  };
+
+  const handleExportJson = (resumeData, comp, rol) => {
+    const blob = new Blob([JSON.stringify(resumeData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Santhosh_TK_${(comp || 'Company').replace(/\s+/g, '_')}_Tailored_Resume.json`;
+    link.click();
+    URL.revokeObjectURL(url);
+    showToast('Tailored Resume JSON exported.', 'success');
+  };
+
+  const filteredApps = applications.filter(app => {
+    if (!searchFilter) return true;
+    const q = searchFilter.toLowerCase();
+    return (app.role || '').toLowerCase().includes(q) ||
+           (app.company || '').toLowerCase().includes(q) ||
+           (app.jd || '').toLowerCase().includes(q);
+  });
+
+  return (
+    <div className="flex flex-col gap-6">
+      {/* Top Banner */}
+      <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white p-6 rounded-2xl shadow-lg border border-indigo-700/50 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="bg-indigo-500/30 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-indigo-400/30">
+              AI Job-Matched Resume Compiler
+            </span>
+          </div>
+          <h2 className="text-2xl font-black tracking-tight">Dedicated JD Resume Tailor & Application Log</h2>
+          <p className="text-sm text-indigo-200/90 mt-1 max-w-2xl">
+            Paste any target Job Description (JD). Our AI engine intelligently aligns your real technical stack, projects, and achievements to match the job requirements, compiles an executive 1-page PDF, and stores the application in your persistent history log.
+          </p>
+        </div>
+        <div className="bg-white/10 backdrop-blur-md px-4 py-3 rounded-xl border border-white/10 text-center min-w-[140px]">
+          <div className="text-2xl font-black text-white">{applications.length}</div>
+          <div className="text-xs text-indigo-200 font-medium">Logged Resumes</div>
+        </div>
+      </div>
+
+      {/* Input Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+        {/* Left: Input Form (5 cols) */}
+        <div className="lg:col-span-5 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
+          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600" />
+              <span>Target Role & Job Description</span>
+            </h3>
+            <button
+              type="button"
+              onClick={handlePasteClipboard}
+              className="text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded transition-colors"
+            >
+              📋 Paste JD
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Target Company</label>
+              <input
+                type="text"
+                placeholder="e.g. Amazon, Google, Uber"
+                value={company}
+                onChange={(e) => setCompany(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">Target Role / Title</label>
+              <input
+                type="text"
+                placeholder="e.g. Full Stack Engineer (SDE2)"
+                value={role}
+                onChange={(e) => setRole(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex-1 flex flex-col">
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-bold text-slate-700">Paste Job Description (JD) *</label>
+              <span className="text-[11px] text-slate-400">{jd.length} chars</span>
+            </div>
+            <textarea
+              rows={10}
+              placeholder="Paste the complete Job Description here (key skills, responsibilities, required backend/frontend stack)..."
+              value={jd}
+              onChange={(e) => setJd(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs leading-relaxed text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y font-sans"
+            />
+          </div>
+
+          <button
+            onClick={handleTailor}
+            disabled={tailoring || !jd.trim()}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm"
+          >
+            {tailoring ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Tailoring Resume & Compiling 1-Page PDF...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4" />
+                <span>✨ Tailor Resume for this JD</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        {/* Right: Active Tailored Preview (7 cols) */}
+        <div className="lg:col-span-7 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
+          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-600" />
+              <span>Tailored Resume Result</span>
+            </h3>
+            {currentTailored && (
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setPreviewTab('visual')}
+                  className={`text-xs px-2.5 py-1 rounded font-semibold transition-all ${
+                    previewTab === 'visual' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  Visual Preview
+                </button>
+                <button
+                  onClick={() => setPreviewTab('json')}
+                  className={`text-xs px-2.5 py-1 rounded font-semibold transition-all ${
+                    previewTab === 'json' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  JSON Schema
+                </button>
+              </div>
+            )}
+          </div>
+
+          {!currentTailored ? (
+            <div className="flex-1 flex flex-col items-center justify-center p-8 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+              <div className="bg-slate-100 p-4 rounded-full mb-3 text-slate-400">
+                <FileText className="w-8 h-8" />
+              </div>
+              <h4 className="text-sm font-bold text-slate-600 mb-1">No Tailored Resume Generated Yet</h4>
+              <p className="text-xs max-w-sm">
+                Paste a Job Description on the left and click "Tailor Resume". The job-aligned 1-page PDF and JSON will appear here with one-click download buttons.
+              </p>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col gap-4">
+              {/* Application Details Header */}
+              <div className="bg-indigo-50/70 border border-indigo-100 p-3.5 rounded-lg flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                    <span className="bg-indigo-600 text-white text-xs px-2 py-0.5 rounded font-bold">
+                      {currentTailored.company}
+                    </span>
+                    <span className="bg-white border border-indigo-200 text-indigo-900 text-xs px-2 py-0.5 rounded font-semibold">
+                      {currentTailored.role}
+                    </span>
+                    <span className="text-[11px] text-slate-500">
+                      {new Date(currentTailored.timestamp).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-wrap mt-1">
+                    <span className="text-[11px] font-bold text-slate-600">Top Matched Skills:</span>
+                    {currentTailored.matchedSkills?.map((skill, idx) => (
+                      <span key={idx} className="bg-emerald-100 text-emerald-800 text-[10px] px-1.5 py-0.5 rounded font-medium">
+                        {skill}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <button
+                    onClick={() => handleDownloadPdf(currentTailored.id, currentTailored.company, currentTailored.role)}
+                    className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow transition-all flex items-center justify-center gap-1.5"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Download PDF</span>
+                  </button>
+                  <button
+                    onClick={() => handleExportJson(currentTailored.tailoredResume, currentTailored.company, currentTailored.role)}
+                    className="bg-white hover:bg-slate-50 border border-slate-300 text-slate-700 text-xs font-semibold px-2.5 py-2 rounded-lg transition-colors flex items-center justify-center"
+                    title="Export JSON"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Preview Body */}
+              {previewTab === 'visual' ? (
+                <div className="flex-1 max-h-[420px] overflow-y-auto bg-slate-50 p-4 rounded-lg border border-slate-200 text-slate-800 flex flex-col gap-3.5 text-xs">
+                  {/* Summary */}
+                  <div>
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1">
+                      Tailored Professional Summary
+                    </h5>
+                    <p className="leading-relaxed text-slate-700">
+                      {currentTailored.tailoredResume?.summary}
+                    </p>
+                  </div>
+
+                  {/* Skills */}
+                  <div>
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1.5">
+                      Prioritized Technical Skills
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {Object.entries(currentTailored.tailoredResume?.skills || {}).map(([cat, list]) => (
+                        <div key={cat} className="bg-white p-2 rounded border border-slate-100">
+                          <span className="font-bold text-slate-800">{cat}: </span>
+                          <span className="text-slate-600">{Array.isArray(list) ? list.join(', ') : list}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Experience */}
+                  <div>
+                    <h5 className="text-[11px] font-bold uppercase tracking-wider text-slate-500 border-b pb-1 mb-1.5">
+                      Tailored Project Highlights & Experience
+                    </h5>
+                    <div className="flex flex-col gap-2">
+                      {currentTailored.tailoredResume?.experience?.map((job, idx) => (
+                        <div key={idx} className="bg-white p-2.5 rounded border border-slate-100">
+                          <div className="flex justify-between items-center font-bold text-slate-900 mb-1">
+                            <span>{job.role} - {job.company}</span>
+                            <span className="text-[10px] text-slate-500 font-normal">{job.duration}</span>
+                          </div>
+                          {job.highlights && (
+                            <ul className="list-disc list-inside text-[11px] text-slate-600 flex flex-col gap-0.5">
+                              {job.highlights.map((hl, hIdx) => (
+                                <li key={hIdx}>{hl}</li>
+                              ))}
+                            </ul>
+                          )}
+                          {job.projects && job.projects.map((proj, pIdx) => (
+                            <div key={pIdx} className="mt-1 pl-2 border-l-2 border-indigo-200">
+                              <span className="font-semibold text-slate-800 text-[11px]">{proj.name}</span>
+                              <ul className="list-disc list-inside text-[11px] text-slate-600">
+                                {proj.highlights?.map((hl, hIdx) => (
+                                  <li key={hIdx}>{hl}</li>
+                                ))}
+                              </ul>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <textarea
+                  readOnly
+                  rows={14}
+                  value={JSON.stringify(currentTailored.tailoredResume, null, 2)}
+                  className="w-full bg-slate-900 text-emerald-400 p-3 rounded-lg font-mono text-[11px] leading-relaxed resize-none focus:outline-none"
+                />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Applications Log Table */}
+      <div className="bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-indigo-600" />
+              <span>Application History & Tailored Resumes Log</span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Every job description you tailor is logged here with full metadata, matched skills, and an instant 1-page PDF download link.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="relative flex-1 sm:flex-initial">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search role or company..."
+                value={searchFilter}
+                onChange={(e) => setSearchFilter(e.target.value)}
+                className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs w-full sm:w-48 focus:outline-none focus:bg-white"
+              />
+            </div>
+            <button
+              onClick={fetchApplications}
+              className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs px-3 py-1.5 rounded-lg font-semibold transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {loadingApps ? (
+          <div className="flex items-center justify-center p-8 text-slate-400 text-xs gap-2">
+            <Loader2 className="w-4 h-4 animate-spin" /> Loading application logs...
+          </div>
+        ) : filteredApps.length === 0 ? (
+          <div className="p-8 text-center text-slate-400 text-xs border border-dashed rounded-lg">
+            No application records found. Tailor a resume using the form above to build your history log.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50 text-slate-600 border-b border-slate-200 uppercase font-bold text-[10px] tracking-wider">
+                  <th className="p-3">Applied Company & Role</th>
+                  <th className="p-3">Matched Skills</th>
+                  <th className="p-3">Job Description Preview</th>
+                  <th className="p-3">Date</th>
+                  <th className="p-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredApps.map(app => (
+                  <tr key={app.id} className="hover:bg-slate-50/70 transition-colors">
+                    <td className="p-3">
+                      <div className="font-bold text-slate-900">{app.company}</div>
+                      <div className="text-indigo-600 font-semibold text-[11px]">{app.role}</div>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-1 max-w-xs">
+                        {app.matchedSkills?.slice(0, 4).map((skill, sIdx) => (
+                          <span key={sIdx} className="bg-slate-100 text-slate-700 text-[10px] px-1.5 py-0.5 rounded">
+                            {skill}
+                          </span>
+                        ))}
+                        {(app.matchedSkills?.length || 0) > 4 && (
+                          <span className="text-[10px] text-slate-400 font-medium">+{app.matchedSkills.length - 4} more</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="p-3">
+                      <p className="text-slate-600 text-[11px] line-clamp-2 max-w-md">
+                        {app.jdSnippet}
+                      </p>
+                    </td>
+                    <td className="p-3 text-slate-500 whitespace-nowrap text-[11px]">
+                      {new Date(app.timestamp).toLocaleDateString()} {new Date(app.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td className="p-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end gap-1.5">
+                        <button
+                          onClick={() => handleDownloadPdf(app.id, app.company, app.role)}
+                          className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 px-2.5 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1"
+                          title="Download 1-Page Tailored PDF"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          <span>PDF</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setCurrentTailored(app);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                          title="View Tailored Details"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>View</span>
+                        </button>
+                        <button
+                          onClick={(e) => handleDeleteApp(app.id, e)}
+                          className="text-slate-400 hover:text-rose-600 p-1.5 rounded hover:bg-rose-50 transition-colors"
+                          title="Delete Record"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+

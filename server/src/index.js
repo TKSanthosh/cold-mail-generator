@@ -428,6 +428,134 @@ app.post('/api/bulk-parse', (req, res) => {
   res.json({ parsed });
 });
 
+// --- DEDICATED JD RESUME TAILOR & APPLICATION LOGS ENDPOINTS ---
+const APPLICATIONS_PATH = process.env.APPLICATIONS_PATH || path.join(__dirname, '../applications.json');
+
+if (!fs.existsSync(APPLICATIONS_PATH)) {
+  fs.writeFileSync(APPLICATIONS_PATH, JSON.stringify([], null, 2), 'utf8');
+}
+
+function getApplications() {
+  try {
+    if (fs.existsSync(APPLICATIONS_PATH)) {
+      return JSON.parse(fs.readFileSync(APPLICATIONS_PATH, 'utf8'));
+    }
+  } catch (e) {
+    console.error('Failed to read applications.json:', e);
+  }
+  return [];
+}
+
+function saveApplications(apps) {
+  try {
+    fs.writeFileSync(APPLICATIONS_PATH, JSON.stringify(apps, null, 2), 'utf8');
+  } catch (e) {
+    console.error('Failed to save applications.json:', e);
+  }
+}
+
+app.post('/api/applications/tailor', async (req, res) => {
+  const { role, company, jd } = req.body;
+  if (!jd || jd.trim().length === 0) {
+    return res.status(400).json({ error: 'Job description (JD) is required.' });
+  }
+
+  try {
+    let standardResume = {};
+    if (fs.existsSync(RESUME_PATH)) {
+      standardResume = JSON.parse(fs.readFileSync(RESUME_PATH, 'utf8'));
+    }
+
+    // Call LLM to tailor the resume
+    const tailoredResume = await tailorResume(standardResume, jd);
+
+    // If role is provided, align the title in personalInfo
+    if (role && role.trim().length > 0) {
+      tailoredResume.personalInfo = tailoredResume.personalInfo || {};
+      tailoredResume.personalInfo.title = role.trim();
+    }
+
+    const appId = `app_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
+    const pdfFilename = `tailored_resume_${appId}.pdf`;
+    const pdfPath = path.join(UPLOADS_DIR, pdfFilename);
+
+    // Compile 1-Page PDF
+    await generateResumePdf(tailoredResume, pdfPath);
+
+    // Extract matched skills from tailored resume
+    const matchedSkills = Object.values(tailoredResume.skills || {}).flat().slice(0, 8);
+
+    const newApplication = {
+      id: appId,
+      timestamp: new Date().toISOString(),
+      role: role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer 2'),
+      company: company ? company.trim() : 'Target Company',
+      jd: jd.trim(),
+      jdSnippet: jd.trim().slice(0, 180) + (jd.trim().length > 180 ? '...' : ''),
+      matchedSkills,
+      tailoredResume,
+      pdfFilename,
+      status: 'Tailored & Ready'
+    };
+
+    const apps = getApplications();
+    apps.unshift(newApplication);
+    saveApplications(apps);
+
+    res.json({ success: true, application: newApplication });
+  } catch (e) {
+    console.error('Failed to tailor resume for JD:', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/applications', (req, res) => {
+  try {
+    res.json({ applications: getApplications() });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/applications/:id/pdf', (req, res) => {
+  const { id } = req.params;
+  const apps = getApplications();
+  const appItem = apps.find(a => a.id === id);
+
+  if (!appItem || !appItem.pdfFilename) {
+    return res.status(404).json({ error: 'Application record or PDF not found' });
+  }
+
+  const pdfPath = path.join(UPLOADS_DIR, appItem.pdfFilename);
+  if (!fs.existsSync(pdfPath)) {
+    return res.status(404).json({ error: 'PDF file not found on server' });
+  }
+
+  const sanitizedCompany = (appItem.company || 'Company').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const sanitizedRole = (appItem.role || 'SDE2').replace(/[^a-zA-Z0-9_-]/g, '_');
+  const downloadName = `Santhosh_TK_${sanitizedCompany}_${sanitizedRole}_Resume.pdf`;
+
+  res.download(pdfPath, downloadName);
+});
+
+app.delete('/api/applications/:id', (req, res) => {
+  const { id } = req.params;
+  let apps = getApplications();
+  const appItem = apps.find(a => a.id === id);
+
+  if (appItem && appItem.pdfFilename) {
+    const pdfPath = path.join(UPLOADS_DIR, appItem.pdfFilename);
+    if (fs.existsSync(pdfPath)) {
+      try { fs.unlinkSync(pdfPath); } catch (e) {}
+    }
+  }
+
+  apps = apps.filter(a => a.id !== id);
+  saveApplications(apps);
+
+  res.json({ success: true });
+});
+
 // --- SERVE PRODUCTION CLIENT ASSETS ---
 const clientDistPath = path.join(__dirname, '../../client/dist');
 if (fs.existsSync(clientDistPath)) {
