@@ -183,16 +183,33 @@ function addUserLog(userKey, entry) {
 }
 
 function getUserOAuthClient(userKey) {
-  if (!SECRET_PATH || !fs.existsSync(SECRET_PATH)) {
-    throw new Error(`Google Client Secret JSON not found at: ${SECRET_PATH}`);
+  let clientId = process.env.GOOGLE_CLIENT_ID;
+  let clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+
+  if (!clientId || !clientSecret) {
+    if (process.env.GOOGLE_CLIENT_SECRET_JSON) {
+      try {
+        const parsed = JSON.parse(process.env.GOOGLE_CLIENT_SECRET_JSON);
+        const keyType = parsed.installed ? 'installed' : 'web';
+        clientId = parsed[keyType].client_id;
+        clientSecret = parsed[keyType].client_secret;
+      } catch (e) {}
+    } else if (SECRET_PATH && fs.existsSync(SECRET_PATH)) {
+      const credentials = JSON.parse(fs.readFileSync(SECRET_PATH, 'utf8'));
+      const keyType = credentials.installed ? 'installed' : 'web';
+      clientId = credentials[keyType].client_id;
+      clientSecret = credentials[keyType].client_secret;
+    }
   }
 
-  const credentials = JSON.parse(fs.readFileSync(SECRET_PATH, 'utf8'));
-  const keyType = credentials.installed ? 'installed' : 'web';
-  const { client_id, client_secret } = credentials[keyType];
-  const redirectUri = 'http://localhost:5001/api/auth/callback';
+  if (!clientId || !clientSecret) {
+    throw new Error('Google OAuth credentials not configured.');
+  }
 
-  const client = new google.auth.OAuth2(client_id, client_secret, redirectUri);
+  const base = process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5001';
+  const redirectUri = `${base.replace(/\/$/, '')}/api/auth/callback`;
+
+  const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   const paths = getUserPaths(userKey);
 
   if (fs.existsSync(paths.tokenPath)) {

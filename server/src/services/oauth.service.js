@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-const { getUserKeyFromEmail, ensureUserSandbox, getUserPaths, getUserOAuthClient, isUserAuthorized } = require('./user.service');
+const { getUserKeyFromEmail, ensureUserSandbox, getUserPaths, isUserAuthorized } = require('./user.service');
 
 const SECRET_PATH = process.env.GOOGLE_CLIENT_SECRET_PATH;
 const TOKEN_PATH = process.env.TOKEN_PATH || path.join(__dirname, '../../token.json');
@@ -18,19 +18,46 @@ const SCOPES = [
 
 let globalOAuth2ClientInstance = null;
 
+function getRedirectUri() {
+  const base = process.env.APP_BASE_URL || process.env.RENDER_EXTERNAL_URL || 'http://localhost:5001';
+  return `${base.replace(/\/$/, '')}/api/auth/callback`;
+}
+
+function getGoogleCredentials() {
+  // Option 1: Direct env variables
+  if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+    return {
+      client_id: process.env.GOOGLE_CLIENT_ID,
+      client_secret: process.env.GOOGLE_CLIENT_SECRET
+    };
+  }
+
+  // Option 2: Full JSON in env variable
+  if (process.env.GOOGLE_CLIENT_SECRET_JSON) {
+    try {
+      const parsed = JSON.parse(process.env.GOOGLE_CLIENT_SECRET_JSON);
+      const keyType = parsed.installed ? 'installed' : 'web';
+      return parsed[keyType];
+    } catch (e) {}
+  }
+
+  // Option 3: Local file path
+  if (SECRET_PATH && fs.existsSync(SECRET_PATH)) {
+    const credentials = JSON.parse(fs.readFileSync(SECRET_PATH, 'utf8'));
+    const keyType = credentials.installed ? 'installed' : 'web';
+    return credentials[keyType];
+  }
+
+  throw new Error('Google OAuth credentials not configured. Please set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET or GOOGLE_CLIENT_SECRET_PATH.');
+}
+
 function getOAuth2Client() {
   if (globalOAuth2ClientInstance) {
     return globalOAuth2ClientInstance;
   }
 
-  if (!SECRET_PATH || !fs.existsSync(SECRET_PATH)) {
-    throw new Error(`Google Client Secret JSON not found at: ${SECRET_PATH}`);
-  }
-
-  const credentials = JSON.parse(fs.readFileSync(SECRET_PATH, 'utf8'));
-  const keyType = credentials.installed ? 'installed' : 'web';
-  const { client_id, client_secret } = credentials[keyType];
-  const redirectUri = 'http://localhost:5001/api/auth/callback';
+  const { client_id, client_secret } = getGoogleCredentials();
+  const redirectUri = getRedirectUri();
 
   globalOAuth2ClientInstance = new google.auth.OAuth2(
     client_id,
@@ -64,7 +91,9 @@ async function handleCallbackCode(code) {
   o2Client.setCredentials(tokens);
   
   // Also save to global token for backward compatibility
-  fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), 'utf8');
+  try {
+    fs.writeFileSync(TOKEN_PATH, JSON.stringify(tokens, null, 2), 'utf8');
+  } catch (e) {}
 
   // Fetch Google User Profile (email, name, picture)
   const oauth2 = google.oauth2({ version: 'v2', auth: o2Client });
@@ -117,6 +146,8 @@ function logout(userKey) {
 
 module.exports = {
   getOAuth2Client,
+  getGoogleCredentials,
+  getRedirectUri,
   getAuthUrl,
   handleCallbackCode,
   isAuthorized,

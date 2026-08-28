@@ -1,0 +1,114 @@
+{
+  "personalInfo": {
+    "name": "Santhosh T K",
+    "title": "Software Development Engineer 2 (SDE2)",
+    "location": "Bangalore",
+    "email": "tksanthosh494@gmail.com",
+    "phone": "+91 8825802707",
+    "portfolio": "https://santhoshtk-portfolio.netlify.app/",
+    "linkedin": "linkedin.com/in/santhosh-tk",
+    "github": "github.com/TKSanthosh"
+  },
+  "summary": "Software Development Engineer 2 (SDE2) with 3+ years of full-time experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, performance optimization, and enterprise application development.",
+  "skills": {
+    "Backend Technologies": [
+      "Node.js",
+      "Express.js",
+      "RESTful APIs",
+      "JWT Authentication",
+      "Middleware",
+      "MVC Architecture",
+      "Async/Await",
+      "WebSockets"
+    ],
+    "Frontend Technologies": [
+      "React.js",
+      "JavaScript (ES6+)",
+      "React Hooks",
+      "HTML5",
+      "CSS3",
+      "Reusable Components"
+    ],
+    "Databases": [
+      "MySQL",
+      "MongoDB",
+      "Joins",
+      "Indexing",
+      "Query Optimization"
+    ],
+    "Tools & Platforms": [
+      "Git",
+      "GitHub",
+      "Postman",
+      "npm",
+      "VS Code",
+      "JSON"
+    ]
+  },
+  "experience": [
+    {
+      "role": "Software Development Engineer 2 (SDE2)",
+      "company": "IQVIA, Bangalore",
+      "duration": "June 2026 - Present",
+      "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+      "highlights": [
+        "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
+        "Involved in application enhancements and feature modifications based on client and business requirements.",
+        "Collaborating with team members to resolve issues and support ongoing application development."
+      ]
+    },
+    {
+      "role": "Software Developer",
+      "company": "Sify Technologies, Chennai",
+      "duration": "July 2023 – June 2026",
+      "projects": [
+        {
+          "name": "Project: Exam Engine – Exam Delivery System",
+          "highlights": [
+            "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
+            "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
+            "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
+            "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+            "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
+          ]
+        },
+        {
+          "name": "Project: QPTool – Exam Configuration Platform",
+          "highlights": [
+            "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
+            "Built reusable React.js components and handled frontend API integration and UI logic.",
+            "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
+            "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
+            "Enhanced API validation, security, and centralized error handling to improve system stability."
+          ]
+        }
+      ]
+    }
+  ],
+  "achievements": [
+    "Migrated PHP backend to Node.js/MongoDB, reduced recurring production issues ~30%",
+    "Implemented JWT authentication + RBAC for exam workflows",
+    "Improved API response time by ~20% via RESTful API design + React.js integration",
+    "Shipped 8+ major features ahead of deadline across 2 production systems",
+    "Maintained 95%+ code review approval rate; set coding standards for 5-member team",
+    "Led PHP→Node.js migration; mentored 2 junior developers"
+  ],
+  "internship": {
+    "role": "Full Stack Intern",
+    "company": "Sify Technologies – CHIP 2023 Program",
+    "duration": "February 2023 – June 2023",
+    "highlights": [
+      "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
+      "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+      "Built internal tools and modules used by engineering teams in real projects."
+    ]
+  },
+  "education": [
+    {
+      "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
+      "institution": "Velammal College of Engineering & Technology, Madurai",
+      "duration": "2023",
+      "details": "CGPA: 9.15 / 10"
+    }
+  ]
+}
