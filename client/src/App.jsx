@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, Sun, Moon } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -35,9 +35,32 @@ export default function App() {
       return null;
     }
   });
-  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [isAuthorized, setIsAuthorized] = useState(() => {
+    return !!localStorage.getItem('cold_email_jwt') || !!localStorage.getItem('cold_email_user');
+  });
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [toast, setToast] = useState(null);
+
+  // Dark / Light Mode State
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    try {
+      const saved = localStorage.getItem('cold_email_theme');
+      if (saved) return saved === 'dark';
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch (e) {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('cold_email_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('cold_email_theme', 'light');
+    }
+  }, [isDarkMode]);
 
   // Check auth status on load for the active user
   const checkAuthStatus = async (user = currentUser) => {
@@ -46,7 +69,9 @@ export default function App() {
         headers: { 'x-user-key': user?.userKey || '' }
       });
       const data = await res.json();
-      setIsAuthorized(data.authorized);
+      if (data.authorized) {
+        setIsAuthorized(true);
+      }
       if (data.user) {
         const updated = { ...user, ...data.user, userKey: data.userKey || user?.userKey };
         setCurrentUser(updated);
@@ -112,27 +137,23 @@ export default function App() {
 
   const handleDisconnectGmail = async () => {
     try {
-      const res = await apiFetch('/api/auth/logout', { method: 'POST' });
-      const data = await res.json();
-      if (data.success) {
-        setIsAuthorized(false);
-        setCurrentUser(null);
-        localStorage.removeItem('cold_email_user');
-        showToast('Account disconnected & workspace locked.', 'success');
-      }
-    } catch (e) {
-      showToast('Failed to disconnect Gmail', 'error');
-    }
+      await apiFetch('/api/auth/logout', { method: 'POST' });
+    } catch (e) {}
+    setIsAuthorized(false);
+    setCurrentUser(null);
+    localStorage.removeItem('cold_email_user');
+    localStorage.removeItem('cold_email_jwt');
+    showToast('Account disconnected & workspace locked.', 'success');
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 flex flex-col font-sans transition-colors duration-200">
       {/* Toast Notification */}
       {toast && (
         <div className={`fixed top-4 right-4 z-50 px-4 py-3 rounded-lg shadow-lg border flex items-center gap-2 transition-all ${
-          toast.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-          toast.type === 'error' ? 'bg-rose-50 text-rose-800 border-rose-200' :
-          'bg-blue-50 text-blue-800 border-blue-200'
+          toast.type === 'success' ? 'bg-emerald-50 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-200 border-emerald-200 dark:border-emerald-800' :
+          toast.type === 'error' ? 'bg-rose-50 dark:bg-rose-950/80 text-rose-800 dark:text-rose-200 border-rose-200 dark:border-rose-800' :
+          'bg-blue-50 dark:bg-blue-950/80 text-blue-800 dark:text-blue-200 border-blue-200 dark:border-blue-800'
         }`}>
           {toast.type === 'success' ? <CheckCircle className="w-5 h-5 text-emerald-600" /> :
            toast.type === 'error' ? <XCircle className="w-5 h-5 text-rose-600" /> : null}
@@ -141,45 +162,55 @@ export default function App() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b border-slate-200 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-40">
+      <header className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-3 sm:px-6 py-2.5 sm:py-3.5 flex items-center justify-between shadow-sm sticky top-0 z-40 transition-colors">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <div className="bg-indigo-600 p-1.5 sm:p-2 rounded-xl text-white shadow-md shrink-0">
             <Sparkles className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-slate-900 tracking-tight truncate">Cold Reach AI</h1>
-              <span className="hidden sm:inline-flex bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider items-center gap-1 border border-slate-200 shrink-0">
-                <Shield className="w-3 h-3 text-indigo-600" /> Isolated Sandbox
+              <h1 className="text-sm sm:text-lg md:text-xl font-bold text-slate-900 dark:text-white tracking-tight truncate">Cold Reach AI</h1>
+              <span className="hidden sm:inline-flex bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] px-2 py-0.5 rounded font-bold uppercase tracking-wider items-center gap-1 border border-slate-200 dark:border-slate-700 shrink-0">
+                <Shield className="w-3 h-3 text-indigo-600 dark:text-indigo-400" /> Isolated Sandbox
               </span>
             </div>
-            <p className="text-[10px] sm:text-xs text-slate-500 hidden sm:block truncate">Google OAuth & NVIDIA NIM Automated Outreach</p>
+            <p className="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 hidden sm:block truncate">Google OAuth & NVIDIA NIM Automated Outreach</p>
           </div>
         </div>
 
-        {/* Gmail User Profile & Auth Status */}
+        {/* Right Section: Dark Mode Toggle + Gmail User Profile */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-          {checkingAuth ? (
+          {/* Dark / Light Mode Toggle Button */}
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-1.5 sm:p-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-amber-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition-all shrink-0"
+            title={isDarkMode ? "Switch to Light Mode" : "Switch to Dark Mode"}
+            aria-label="Toggle theme"
+          >
+            {isDarkMode ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+          </button>
+
+          {checkingAuth && !currentUser ? (
             <div className="flex items-center gap-1.5 text-slate-400 text-xs">
               <Loader2 className="w-3.5 h-3.5 animate-spin" /> <span className="hidden sm:inline">Checking...</span>
             </div>
-          ) : isAuthorized && currentUser ? (
-            <div className="flex items-center gap-2 sm:gap-3 bg-emerald-50/80 border border-emerald-200 rounded-full pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-1 sm:py-1.5 shadow-sm max-w-[180px] sm:max-w-none">
+          ) : currentUser ? (
+            <div className="flex items-center gap-2 sm:gap-3 bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-full pl-1.5 sm:pl-2 pr-2 sm:pr-3 py-1 sm:py-1.5 shadow-sm max-w-[180px] sm:max-w-none">
               {currentUser.picture ? (
-                <img src={currentUser.picture} alt={currentUser.name} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-emerald-300 shrink-0" />
+                <img src={currentUser.picture} alt={currentUser.name} className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-emerald-300 dark:border-emerald-700 shrink-0" />
               ) : (
                 <div className="w-5 h-5 sm:w-6 sm:h-6 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold shrink-0">
                   {(currentUser.name || 'C').charAt(0)}
                 </div>
               )}
               <div className="flex flex-col text-left leading-none min-w-0">
-                <span className="text-emerald-900 text-[11px] sm:text-xs font-bold truncate">{currentUser.name || 'Candidate'}</span>
-                <span className="text-emerald-700 text-[9px] sm:text-[10px] font-medium hidden sm:block truncate">{currentUser.email}</span>
+                <span className="text-emerald-900 dark:text-emerald-300 text-[11px] sm:text-xs font-bold truncate">{currentUser.name || 'Candidate'}</span>
+                <span className="text-emerald-700 dark:text-emerald-400 text-[9px] sm:text-[10px] font-medium hidden sm:block truncate">{currentUser.email}</span>
               </div>
-              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0"></div>
+              <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse ml-0.5 shrink-0" title="Gmail Sandbox Connected"></div>
               <button 
                 onClick={handleDisconnectGmail}
-                className="text-slate-400 hover:text-rose-600 p-1 rounded-full hover:bg-white transition-colors shrink-0"
+                className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1 rounded-full hover:bg-white dark:hover:bg-slate-800 transition-colors shrink-0"
                 title="Switch / Disconnect Account"
               >
                 <LogOut className="w-3.5 h-3.5" />
@@ -197,11 +228,11 @@ export default function App() {
       </header>
 
       {/* Navigation tabs with Horizontal Touch Scrolling */}
-      <div className="bg-white border-b border-slate-200 px-2 sm:px-6 flex gap-1 sm:gap-6 overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap shadow-xs">
+      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2 sm:px-6 flex gap-1 sm:gap-6 overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap shadow-xs transition-colors">
         <button
           onClick={() => setActiveTab('single')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
-            activeTab === 'single' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+            activeTab === 'single' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
           <Send className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Single Email</span>
@@ -209,7 +240,7 @@ export default function App() {
         <button
           onClick={() => setActiveTab('bulk')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
-            activeTab === 'bulk' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+            activeTab === 'bulk' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
           <Mail className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Bulk Campaign</span>
@@ -217,7 +248,7 @@ export default function App() {
         <button
           onClick={() => setActiveTab('logs')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
-            activeTab === 'logs' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+            activeTab === 'logs' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
           <History className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Outreach Logs</span>
@@ -225,7 +256,7 @@ export default function App() {
         <button
           onClick={() => setActiveTab('jdtailor')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
-            activeTab === 'jdtailor' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+            activeTab === 'jdtailor' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
           <Sparkles className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>JD Resume Tailor</span>
@@ -233,7 +264,7 @@ export default function App() {
         <button
           onClick={() => setActiveTab('resume')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
-            activeTab === 'resume' ? 'border-indigo-600 text-indigo-600' : 'border-transparent text-slate-500 hover:text-slate-900'
+            activeTab === 'resume' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
           }`}
         >
           <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4" /> <span>Base Template</span>
@@ -514,24 +545,24 @@ function SingleSender({ isAuthorized, showToast }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 items-start">
       {/* Inputs Column */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5">
-        <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Target Outreach Details</span>
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-5 transition-colors">
+        <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> <span>Target Outreach Details</span>
         </h2>
 
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 sm:mb-2">HR Email Address</label>
+          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 sm:mb-2">HR Email Address</label>
           <input
             type="email"
             value={hrEmail}
             onChange={(e) => handleEmailChange(e.target.value)}
             placeholder="e.g. santhosh@indi.co"
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
         </div>
 
         {/* Parsed Fields (Editable) */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 bg-slate-50 p-3 sm:p-4 rounded-lg border border-slate-100">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-4 bg-slate-50 dark:bg-slate-800/60 p-3 sm:p-4 rounded-lg border border-slate-100 dark:border-slate-800">
           <div>
             <label className="block text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed HR Name</label>
             <input
@@ -539,7 +570,7 @@ function SingleSender({ isAuthorized, showToast }) {
               value={parsedName}
               onChange={(e) => setParsedName(e.target.value)}
               placeholder="Hiring Manager"
-              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
           <div>
@@ -549,29 +580,29 @@ function SingleSender({ isAuthorized, showToast }) {
               value={parsedCompany}
               onChange={(e) => setParsedCompany(e.target.value)}
               placeholder="Target Company"
-              className="w-full bg-white border border-slate-200 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
+              className="w-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded px-3 py-1.5 text-xs sm:text-sm focus:outline-none focus:border-indigo-500"
             />
           </div>
         </div>
 
         {/* Scraped Company Intelligence Card */}
         {companyIntel && (
-          <div className="bg-indigo-50/70 border border-indigo-100 rounded-lg p-3 text-xs text-indigo-950 flex flex-col gap-1">
-            <span className="font-bold flex items-center gap-1.5 text-indigo-700">
+          <div className="bg-indigo-50/70 dark:bg-indigo-950/40 border border-indigo-100 dark:border-indigo-900 rounded-lg p-3 text-xs text-indigo-950 dark:text-indigo-200 flex flex-col gap-1">
+            <span className="font-bold flex items-center gap-1.5 text-indigo-700 dark:text-indigo-400">
               <Globe className="w-3.5 h-3.5" /> Scraped Company Intelligence ({companyIntel.source || 'Online'})
             </span>
-            <p className="leading-relaxed text-slate-700 italic">{companyIntel.summary}</p>
+            <p className="leading-relaxed text-slate-700 dark:text-slate-300 italic">{companyIntel.summary}</p>
           </div>
         )}
 
         <div>
-          <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Job Description (JD) <span className="text-slate-400 font-normal">(Optional)</span></label>
+          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Job Description (JD) <span className="text-slate-400 font-normal">(Optional)</span></label>
           <textarea
             value={jd}
             onChange={(e) => setJd(e.target.value)}
             placeholder="Paste the job description here to tailor your resume & email to this specific role..."
             rows={5}
-            className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs"
           />
           <p className="text-slate-400 text-xs mt-1">If left blank, a standard cold email template and default resume PDF will be used.</p>
         </div>
@@ -603,10 +634,10 @@ function SingleSender({ isAuthorized, showToast }) {
       {/* Previews Column */}
       <div className="flex flex-col gap-6">
         {/* Email Preview */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
           <div className="flex items-center justify-between">
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <Mail className="w-5 h-5 text-indigo-600" /> Customized Cold Email
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Mail className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> Customized Cold Email
             </h3>
             {emailBody && (
               <button
@@ -614,22 +645,22 @@ function SingleSender({ isAuthorized, showToast }) {
                   navigator.clipboard.writeText(`Subject: ${emailSubject}\n\n${emailBody}`);
                   showToast('Copied to clipboard!', 'success');
                 }}
-                className="text-xs text-indigo-600 hover:text-indigo-800 font-semibold"
+                className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 font-semibold"
               >
                 Copy Content
               </button>
             )}
           </div>
 
-          <div className="border border-slate-100 rounded-lg overflow-hidden text-sm">
-            <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-100 flex items-center gap-2">
+          <div className="border border-slate-100 dark:border-slate-800 rounded-lg overflow-hidden text-sm">
+            <div className="bg-slate-50 dark:bg-slate-800 px-4 py-2.5 border-b border-slate-100 dark:border-slate-700 flex items-center gap-2">
               <span className="text-slate-400 font-semibold">Subject:</span>
               <input
                 type="text"
                 value={emailSubject}
                 onChange={(e) => setEmailSubject(e.target.value)}
                 placeholder="Subject line will generate here..."
-                className="bg-transparent border-none focus:outline-none w-full text-slate-800 font-semibold"
+                className="bg-transparent border-none focus:outline-none w-full text-slate-800 dark:text-slate-100 font-semibold"
               />
             </div>
             <textarea
@@ -637,7 +668,7 @@ function SingleSender({ isAuthorized, showToast }) {
               onChange={(e) => setEmailBody(e.target.value)}
               placeholder="Email body will generate here..."
               rows={10}
-              className="w-full p-4 bg-white border-none focus:outline-none font-sans text-slate-700 resize-none whitespace-pre-wrap text-sm leading-relaxed"
+              className="w-full p-4 bg-white dark:bg-slate-900 border-none focus:outline-none font-sans text-slate-700 dark:text-slate-200 resize-none whitespace-pre-wrap text-sm leading-relaxed"
             />
           </div>
 
@@ -646,7 +677,7 @@ function SingleSender({ isAuthorized, showToast }) {
             <button
               onClick={handleSendEmail}
               disabled={sending || !emailBody}
-              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2.5 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none"
             >
               {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               Send Email Now to {parsedName || 'HR'}
@@ -656,20 +687,20 @@ function SingleSender({ isAuthorized, showToast }) {
               <button
                 onClick={handleScheduleMorning}
                 disabled={sending || !emailBody}
-                className="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-950/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                 title="Schedules email dispatch for tomorrow morning at 8:30 AM"
               >
-                <Clock className="w-3.5 h-3.5 text-amber-600" />
+                <Clock className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
                 🌅 Schedule Morning (8:30 AM)
               </button>
 
               <button
                 onClick={handleCreateDraft}
                 disabled={sending || !emailBody}
-                className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                className="bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 dark:hover:bg-indigo-950/50 text-indigo-800 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-semibold py-2.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
                 title="Creates a ready draft in your Gmail app with the 1-page PDF attached so you can schedule send in Gmail"
               >
-                <Bookmark className="w-3.5 h-3.5 text-indigo-600" />
+                <Bookmark className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
                 📝 Save Draft in Gmail App
               </button>
             </div>
@@ -677,23 +708,23 @@ function SingleSender({ isAuthorized, showToast }) {
         </div>
 
         {/* Resume Preview */}
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm flex flex-col gap-4">
-          <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-5 h-5 text-indigo-600" /> Tailored Resume Highlights
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+          <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <FileText className="w-5 h-5 text-indigo-600 dark:text-indigo-400" /> Tailored Resume Highlights
           </h3>
 
           {tailoredResume ? (
             <div className="flex flex-col gap-4">
-              <div className="bg-slate-50 p-4 rounded-lg border border-slate-100">
-                <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider block mb-1">Tailored Summary</span>
-                <p className="text-xs text-slate-600 italic leading-relaxed">"{tailoredResume.summary}"</p>
+              <div className="bg-slate-50 dark:bg-slate-800/70 p-4 rounded-lg border border-slate-100 dark:border-slate-800">
+                <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider block mb-1">Tailored Summary</span>
+                <p className="text-xs text-slate-600 dark:text-slate-300 italic leading-relaxed">"{tailoredResume.summary}"</p>
               </div>
 
-              <div className="border border-slate-100 rounded-lg p-4">
-                <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block mb-2">Technical Skill Alignment</span>
+              <div className="border border-slate-100 dark:border-slate-800 rounded-lg p-4 bg-slate-50/50 dark:bg-slate-800/40">
+                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider block mb-2">Technical Skill Alignment</span>
                 <div className="flex flex-wrap gap-1">
                   {Object.values(tailoredResume.skills || {}).flat().slice(0, 10).map((skill, i) => (
-                    <span key={i} className="bg-slate-100 text-slate-800 text-[10px] px-2 py-0.5 rounded font-semibold border border-slate-200">
+                    <span key={i} className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 text-[10px] px-2 py-0.5 rounded font-semibold border border-slate-200 dark:border-slate-700">
                       {skill}
                     </span>
                   ))}
@@ -701,11 +732,11 @@ function SingleSender({ isAuthorized, showToast }) {
                 </div>
               </div>
 
-              <div className="bg-indigo-50/50 border border-indigo-100 p-4 rounded-lg flex items-center gap-3 text-xs text-indigo-800">
-                <CheckCircle className="w-5 h-5 text-indigo-600 shrink-0" />
+              <div className="bg-indigo-50/50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900 p-4 rounded-lg flex items-center gap-3 text-xs text-indigo-800 dark:text-indigo-300">
+                <CheckCircle className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                 <div>
                   <p className="font-semibold">Tailored PDF Attached Automatically</p>
-                  <p className="text-indigo-600">The resume experience bullet points have been aligned to target JD keywords.</p>
+                  <p className="text-indigo-600 dark:text-indigo-400">The resume experience bullet points have been aligned to target JD keywords.</p>
                 </div>
               </div>
             </div>
@@ -716,7 +747,7 @@ function SingleSender({ isAuthorized, showToast }) {
           <button
             onClick={handleSendEmail}
             disabled={sending || !emailBody}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none"
+            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3 px-4 rounded-lg text-sm transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400 disabled:shadow-none"
           >
             {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             Send Cold Email to {parsedName || 'HR'}
@@ -880,19 +911,19 @@ function BulkSender({ isAuthorized, showToast }) {
   };
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6 transition-colors">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-          <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Bulk Outreach Campaign</span>
+        <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+          <Mail className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> <span>Bulk Outreach Campaign</span>
         </h2>
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <button
             onClick={handleExportHrExcel}
             disabled={!emailsText && parsedItems.length === 0}
-            className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 border border-slate-200 disabled:opacity-50"
+            className="flex-1 sm:flex-none bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700 disabled:opacity-50"
             title="Download HR names, company names, and emails as an Excel CSV file"
           >
-            <Download className="w-3.5 h-3.5 text-indigo-600" /> <span>Download HR Emails</span>
+            <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> <span>Download HR Emails</span>
           </button>
           {parsedItems.length > 0 && (
             <button onClick={handleReset} className="text-xs text-rose-600 hover:text-rose-800 font-semibold px-2 py-1">
@@ -906,13 +937,13 @@ function BulkSender({ isAuthorized, showToast }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
           <div className="flex flex-col gap-3 sm:gap-4">
             <div>
-              <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 sm:mb-2">Recipient Emails <span className="text-slate-400 font-normal">(One per line)</span></label>
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 sm:mb-2">Recipient Emails <span className="text-slate-400 font-normal">(One per line)</span></label>
               <textarea
                 value={emailsText}
                 onChange={(e) => setEmailsText(e.target.value)}
                 placeholder="santhosh@indi.co&#10;hr.manager@google.com&#10;recruitment@amazon.in"
                 rows={10}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono"
               />
             </div>
             <div className="flex gap-2">
@@ -926,34 +957,34 @@ function BulkSender({ isAuthorized, showToast }) {
               <button
                 onClick={handleExportHrExcel}
                 disabled={!emailsText}
-                className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-4 py-2.5 rounded-lg text-xs transition-all border border-slate-200 disabled:opacity-50 flex items-center gap-1.5"
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold px-4 py-2.5 rounded-lg text-xs transition-all border border-slate-200 dark:border-slate-700 disabled:opacity-50 flex items-center gap-1.5"
               >
-                <Download className="w-4 h-4 text-emerald-600" /> Export Excel
+                <Download className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Export Excel
               </button>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Common Job Description (JD)</label>
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Common Job Description (JD)</label>
             <textarea
               value={jd}
               onChange={(e) => setJd(e.target.value)}
               placeholder="Paste the job description here. Every outgoing resume and cold email in the campaign will be tailored dynamically using this JD as context..."
               rows={10}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs resize-y"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs resize-y"
             />
           </div>
         </div>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="flex justify-between items-center text-sm font-semibold text-slate-600">
+          <div className="flex justify-between items-center text-sm font-semibold text-slate-600 dark:text-slate-300">
             <span>Campaign progress ({currentIndex + 1} / {parsedItems.length})</span>
             <span>{campaignState === 'sending' ? 'Sending...' : 'Campaign Complete!'}</span>
           </div>
           
-          <div className="w-full bg-slate-100 rounded-full h-2">
+          <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-2">
             <div 
-              className="bg-indigo-600 h-2 rounded-full transition-all duration-300"
+              className="bg-indigo-600 dark:bg-indigo-500 h-2 rounded-full transition-all duration-300"
               style={{ width: `${((currentIndex + 1) / parsedItems.length) * 100}%` }}
             ></div>
           </div>
@@ -961,29 +992,29 @@ function BulkSender({ isAuthorized, showToast }) {
       )}
 
       {parsedItems.length > 0 && (
-        <div className="border border-slate-200 rounded-lg overflow-x-auto touch-scroll mt-2">
+        <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll mt-2">
           <table className="w-full text-left border-collapse text-xs min-w-[500px]">
             <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+              <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
                 <th className="p-3">Email Address</th>
                 <th className="p-3">HR Name</th>
                 <th className="p-3">Company</th>
                 <th className="p-3">Campaign Status</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
               {parsedItems.map((item, index) => (
-                <tr key={index} className="border-b border-slate-100 hover:bg-slate-50">
-                  <td className="p-3 font-mono text-slate-700">{item.email}</td>
-                  <td className="p-3 font-semibold text-slate-800">{item.name}</td>
-                  <td className="p-3 text-slate-600">{item.company}</td>
+                <tr key={index} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                  <td className="p-3 font-mono text-slate-700 dark:text-slate-300">{item.email}</td>
+                  <td className="p-3 font-semibold text-slate-800 dark:text-slate-100">{item.name}</td>
+                  <td className="p-3 text-slate-600 dark:text-slate-400">{item.company}</td>
                   <td className="p-3 flex items-center gap-2">
                     {item.status === 'pending' && <span className="text-slate-400">Waiting</span>}
-                    {item.status === 'generating' && <span className="text-indigo-600 font-medium flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Tailoring...</span>}
-                    {item.status === 'sending' && <span className="text-amber-600 font-medium flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Emailing...</span>}
-                    {item.status === 'success' && <span className="text-emerald-600 font-semibold flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> Sent</span>}
+                    {item.status === 'generating' && <span className="text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Tailoring...</span>}
+                    {item.status === 'sending' && <span className="text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Emailing...</span>}
+                    {item.status === 'success' && <span className="text-emerald-600 dark:text-emerald-400 font-semibold flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> Sent</span>}
                     {item.status === 'error' && (
-                      <span className="text-rose-600 font-semibold flex items-center gap-1" title={item.errorMsg}>
+                      <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1" title={item.errorMsg}>
                         <XCircle className="w-3.5 h-3.5 text-rose-500" /> Error
                       </span>
                     )}
@@ -1097,53 +1128,53 @@ function LogsViewer({ showToast, isActive }) {
     <div className="flex flex-col gap-4 sm:gap-6">
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
-        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between transition-colors">
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Total Sent</p>
-            <p className="text-lg sm:text-2xl font-black text-slate-800 mt-0.5 sm:mt-1">{totalSent}</p>
+            <p className="text-lg sm:text-2xl font-black text-slate-800 dark:text-slate-100 mt-0.5 sm:mt-1">{totalSent}</p>
           </div>
-          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+          <div className="p-2 sm:p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg shrink-0">
             <Mail className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between transition-colors">
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Tailored</p>
-            <p className="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5 sm:mt-1">{tailoredCount}</p>
+            <p className="text-lg sm:text-2xl font-black text-emerald-600 dark:text-emerald-400 mt-0.5 sm:mt-1">{tailoredCount}</p>
           </div>
-          <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-lg shrink-0">
+          <div className="p-2 sm:p-3 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-lg shrink-0">
             <Sparkles className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between transition-colors">
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Standard</p>
-            <p className="text-lg sm:text-2xl font-black text-slate-700 mt-0.5 sm:mt-1">{totalSent - tailoredCount}</p>
+            <p className="text-lg sm:text-2xl font-black text-slate-700 dark:text-slate-300 mt-0.5 sm:mt-1">{totalSent - tailoredCount}</p>
           </div>
-          <div className="p-2 sm:p-3 bg-slate-100 text-slate-600 rounded-lg shrink-0">
+          <div className="p-2 sm:p-3 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg shrink-0">
             <FileText className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+        <div className="bg-white dark:bg-slate-900 p-3.5 sm:p-5 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm flex items-center justify-between transition-colors">
           <div>
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">Companies</p>
-            <p className="text-lg sm:text-2xl font-black text-indigo-600 mt-0.5 sm:mt-1">{uniqueCompanies}</p>
+            <p className="text-lg sm:text-2xl font-black text-indigo-600 dark:text-indigo-400 mt-0.5 sm:mt-1">{uniqueCompanies}</p>
           </div>
-          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+          <div className="p-2 sm:p-3 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-lg shrink-0">
             <History className="w-4 h-4 sm:w-6 sm:h-6" />
           </div>
         </div>
       </div>
 
       {/* Main Logs Table Card */}
-      <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
           <div className="flex items-center gap-2">
-            <History className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" />
-            <h2 className="text-base sm:text-lg font-bold text-slate-800">Outreach Records & History Log</h2>
+            <History className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+            <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">Outreach Records & History Log</h2>
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
@@ -1155,16 +1186,16 @@ function LogsViewer({ showToast, isActive }) {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search logs..."
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>
 
             <button
               onClick={handleExportCSV}
               disabled={logs.length === 0}
-              className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0"
+              className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold px-2.5 sm:px-3 py-1.5 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 shrink-0 border border-slate-200 dark:border-slate-700"
             >
-              <Download className="w-3.5 h-3.5" /> <span className="hidden sm:inline">Export</span> CSV
+              <Download className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" /> <span className="hidden sm:inline">Export</span> CSV
             </button>
 
             {logs.length > 0 && (
@@ -1180,14 +1211,14 @@ function LogsViewer({ showToast, isActive }) {
 
         {/* Table */}
         {filteredLogs.length === 0 ? (
-          <div className="py-12 sm:py-16 text-center text-slate-400 text-xs italic border border-slate-100 rounded-lg">
+          <div className="py-12 sm:py-16 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
             {logs.length === 0 ? 'No emails sent yet. Sent emails will be automatically tracked here!' : 'No records match your search query.'}
           </div>
         ) : (
-          <div className="border border-slate-200 rounded-lg overflow-x-auto touch-scroll">
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
             <table className="w-full text-left border-collapse text-xs min-w-[620px]">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold">
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
                   <th className="p-3">Date & Time</th>
                   <th className="p-3">Company</th>
                   <th className="p-3">HR Name & Email</th>
@@ -1196,51 +1227,51 @@ function LogsViewer({ showToast, isActive }) {
                   <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {filteredLogs.map((log) => (
-                  <tr key={log.id} className="border-b border-slate-100 hover:bg-slate-50/80 transition-colors">
-                    <td className="p-3 text-slate-500 font-mono whitespace-nowrap">
+                  <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
+                    <td className="p-3 text-slate-500 dark:text-slate-400 font-mono whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td className="p-3 font-semibold text-slate-900">
-                      <span className="bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                    <td className="p-3 font-semibold text-slate-900 dark:text-slate-100">
+                      <span className="bg-slate-100 dark:bg-slate-800 text-slate-800 dark:text-slate-200 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700">
                         {log.company || 'Unknown'}
                       </span>
                     </td>
                     <td className="p-3">
-                      <div className="font-semibold text-slate-800">{log.hrName || 'Hiring Manager'}</div>
-                      <div className="text-[11px] text-slate-500 font-mono">{log.hrEmail || log.email}</div>
+                      <div className="font-semibold text-slate-800 dark:text-slate-200">{log.hrName || 'Hiring Manager'}</div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono">{log.hrEmail || log.email}</div>
                     </td>
                     <td className="p-3">
                       {(log.resumeType || '').includes('Tailored') ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded font-semibold text-[11px]">
-                          <Sparkles className="w-3 h-3 text-emerald-600" /> Tailored with JD
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2 py-0.5 rounded font-semibold text-[11px]">
+                          <Sparkles className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Tailored with JD
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded font-medium text-[11px]">
-                          <FileText className="w-3 h-3 text-slate-400" /> Standard Baseline
+                        <span className="inline-flex items-center gap-1 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded font-medium text-[11px]">
+                          <FileText className="w-3 h-3" /> Standard Master
                         </span>
                       )}
                     </td>
                     <td className="p-3">
-                      {(log.status === 'Sent' || log.status === 'Sent Successfully' || log.status?.includes('Sent')) ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-600 font-bold">
-                          <CheckCircle className="w-3.5 h-3.5 text-emerald-500" /> Sent
+                      {log.status === 'Sent' || log.status === 'Sent Successfully' || log.status?.includes('Sent') ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                          <CheckCircle className="w-3.5 h-3.5" /> Sent
                         </span>
-                      ) : log.status?.includes('Draft') ? (
-                        <span className="inline-flex items-center gap-1 text-indigo-600 font-bold">
-                          <Bookmark className="w-3.5 h-3.5 text-indigo-500" /> Draft Saved
+                      ) : log.status === 'Draft Saved' ? (
+                        <span className="inline-flex items-center gap-1 text-indigo-600 dark:text-indigo-400 font-semibold">
+                          <Bookmark className="w-3.5 h-3.5" /> Draft Saved
                         </span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-rose-600 font-bold" title={log.error || log.status}>
-                          <XCircle className="w-3.5 h-3.5 text-rose-500" /> Failed
+                        <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400 font-semibold">
+                          <XCircle className="w-3.5 h-3.5" /> Failed
                         </span>
                       )}
                     </td>
                     <td className="p-3 text-right">
                       <button
                         onClick={() => setSelectedLog(log)}
-                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 px-2.5 py-1 rounded text-xs font-semibold transition-colors inline-flex items-center gap-1"
+                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 font-semibold flex items-center gap-1 ml-auto"
                       >
                         <Eye className="w-3.5 h-3.5" /> View
                       </button>
@@ -1253,13 +1284,13 @@ function LogsViewer({ showToast, isActive }) {
         )}
       </div>
 
-      {/* Details Modal */}
+      {/* Log Details Modal */}
       {selectedLog && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl border border-slate-200 shadow-2xl max-w-2xl w-full p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto">
-            <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl max-w-2xl w-full p-6 shadow-2xl flex flex-col gap-4 max-h-[90vh] overflow-y-auto transition-colors">
+            <div className="flex justify-between items-start border-b border-slate-100 dark:border-slate-800 pb-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900">Outreach Record Details</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-slate-100">Outreach Record Details</h3>
                 <p className="text-xs text-slate-500">Sent to {selectedLog.hrName} ({selectedLog.hrEmail}) at {selectedLog.company}</p>
               </div>
               <button
@@ -1405,13 +1436,13 @@ function ResumeEditor({ showToast }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 sm:gap-6 transition-colors">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h2 className="text-base sm:text-lg font-bold text-slate-800 flex items-center gap-2">
-            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 shrink-0" /> <span>Base Resume Template Editor</span>
+          <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <FileText className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> <span>Base Resume Template Editor</span>
           </h2>
-          <p className="text-[11px] sm:text-xs text-slate-500 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
+          <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
         </div>
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           <input
@@ -1424,9 +1455,9 @@ function ResumeEditor({ showToast }) {
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex-1 sm:flex-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 border border-slate-200"
+            className="flex-1 sm:flex-none bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
           >
-            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600" /> : <UploadCloud className="w-3.5 h-3.5 text-indigo-600" />}
+            {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" /> : <UploadCloud className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />}
             <span>{uploading ? 'Parsing...' : 'Upload PDF'}</span>
           </button>
           <button
@@ -1443,102 +1474,102 @@ function ResumeEditor({ showToast }) {
       {/* Upload Banner */}
       <div 
         onClick={() => fileInputRef.current?.click()}
-        className="border-2 border-dashed border-indigo-200 hover:border-indigo-400 bg-indigo-50/40 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center"
+        className="border-2 border-dashed border-indigo-200 dark:border-indigo-800 hover:border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 rounded-xl p-4 sm:p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-colors text-center"
       >
-        <div className="p-3 bg-white text-indigo-600 rounded-full shadow-sm">
-          {uploading ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600" /> : <UploadCloud className="w-6 h-6" />}
+        <div className="p-3 bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-400 rounded-full shadow-sm">
+          {uploading ? <Loader2 className="w-6 h-6 animate-spin text-indigo-600 dark:text-indigo-400" /> : <UploadCloud className="w-6 h-6" />}
         </div>
         <div>
-          <p className="text-xs font-bold text-slate-800">
+          <p className="text-xs font-bold text-slate-800 dark:text-slate-200">
             {uploading ? 'Extracting text and parsing details using AI...' : 'Click to Upload your Updated Resume PDF'}
           </p>
-          <p className="text-[11px] text-slate-500 mt-0.5">The system will automatically extract your experience, skills, projects, and education into your baseline template.</p>
+          <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">The system will automatically extract your experience, skills, projects, and education into your baseline template.</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="flex flex-col gap-4 border border-slate-100 p-4 rounded-lg">
-          <h3 className="text-sm font-bold text-slate-700 border-b pb-1">Personal Details</h3>
+        <div className="flex flex-col gap-4 border border-slate-100 dark:border-slate-800 p-4 rounded-lg bg-white dark:bg-slate-900">
+          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-1">Personal Details</h3>
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div>
-              <label className="block text-slate-500 mb-1">Full Name</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">Full Name</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.name || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'name', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-slate-500 mb-1">Job Title</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">Job Title</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.title || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'title', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-slate-500 mb-1">Email</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">Email</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.email || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'email', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-slate-500 mb-1">Phone</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">Phone</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.phone || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'phone', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-slate-500 mb-1">Location</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">Location</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.location || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'location', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-slate-500 mb-1">GitHub URL</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">GitHub URL</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.github || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'github', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-slate-500 mb-1">LinkedIn URL</label>
+              <label className="block text-slate-500 dark:text-slate-400 mb-1">LinkedIn URL</label>
               <input
                 type="text"
                 value={resumeData.personalInfo?.linkedin || ''}
                 onChange={(e) => handleNestedChange('personalInfo', 'linkedin', e.target.value)}
-                className="w-full bg-slate-50 border rounded p-2 focus:outline-none"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-2 focus:outline-none focus:border-indigo-500"
               />
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 border border-slate-100 p-4 rounded-lg">
-          <h3 className="text-sm font-bold text-slate-700 border-b pb-1">Professional Summary</h3>
+        <div className="flex flex-col gap-4 border border-slate-100 dark:border-slate-800 p-4 rounded-lg bg-white dark:bg-slate-900">
+          <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-1">Professional Summary</h3>
           <textarea
             value={resumeData.summary || ''}
             onChange={(e) => setResumeData(prev => ({ ...prev, summary: e.target.value }))}
             rows={8}
-            className="w-full bg-slate-50 border rounded p-3 text-xs leading-relaxed focus:outline-none resize-none"
+            className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded p-3 text-xs leading-relaxed focus:outline-none resize-none"
           />
         </div>
       </div>
 
-      <div className="border border-slate-100 p-4 rounded-lg flex flex-col gap-3">
-        <h3 className="text-sm font-bold text-slate-700 border-b pb-1 flex items-center justify-between">
+      <div className="border border-slate-100 dark:border-slate-800 p-4 rounded-lg flex flex-col gap-3 bg-white dark:bg-slate-900">
+        <h3 className="text-sm font-bold text-slate-700 dark:text-slate-200 border-b border-slate-100 dark:border-slate-800 pb-1 flex items-center justify-between">
           <span>Full Resume Schema (JSON)</span>
           <span className="text-[10px] text-slate-400 font-normal">Edit here for education, skills categories, experience entries, and projects</span>
         </h3>
@@ -1709,16 +1740,16 @@ function JdResumeTailor({ showToast }) {
       {/* Input Section */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-6">
         {/* Left: Input Form (5 cols) */}
-        <div className="lg:col-span-5 bg-white p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-3.5 sm:gap-4">
-          <div className="border-b border-slate-100 pb-2.5 sm:pb-3 flex items-center justify-between">
-            <h3 className="text-sm sm:text-base font-bold text-slate-800 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+        <div className="lg:col-span-5 bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-3.5 sm:gap-4 transition-colors">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-2.5 sm:pb-3 flex items-center justify-between">
+            <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <span>Target Role & Job Description</span>
             </h3>
             <button
               type="button"
               onClick={handlePasteClipboard}
-              className="text-[11px] sm:text-xs font-semibold text-indigo-600 hover:text-indigo-800 bg-indigo-50 hover:bg-indigo-100 px-2 sm:px-2.5 py-1 rounded transition-colors"
+              className="text-[11px] sm:text-xs font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 px-2 sm:px-2.5 py-1 rounded transition-colors"
             >
               📋 Paste JD
             </button>
@@ -1726,30 +1757,30 @@ function JdResumeTailor({ showToast }) {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 sm:gap-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Target Company</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Target Company</label>
               <input
                 type="text"
                 placeholder="e.g. Amazon, Google, Uber"
                 value={company}
                 onChange={(e) => setCompany(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
             <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Target Role / Title</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">Target Role / Title</label>
               <input
                 type="text"
                 placeholder="e.g. Software Development Engineer / Full Stack Developer"
                 value={role}
                 onChange={(e) => setRole(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
               />
             </div>
           </div>
 
           <div className="flex-1 flex flex-col">
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700">Paste Job Description (JD) *</label>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Paste Job Description (JD) *</label>
               <span className="text-[11px] text-slate-400">{jd.length} chars</span>
             </div>
             <textarea
@@ -1757,14 +1788,14 @@ function JdResumeTailor({ showToast }) {
               placeholder="Paste the complete Job Description here (key skills, responsibilities, required backend/frontend stack)..."
               value={jd}
               onChange={(e) => setJd(e.target.value)}
-              className="w-full bg-slate-50 border border-slate-200 rounded-lg p-3 text-xs leading-relaxed text-slate-800 focus:bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y font-sans"
+              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-xs leading-relaxed text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y font-sans"
             />
           </div>
 
           <button
             onClick={handleTailor}
             disabled={tailoring || !jd.trim()}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm"
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 dark:disabled:bg-slate-800 text-white font-bold py-3 px-4 rounded-lg shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 text-sm"
           >
             {tailoring ? (
               <>
@@ -1781,10 +1812,10 @@ function JdResumeTailor({ showToast }) {
         </div>
 
         {/* Right: Active Tailored Preview (7 cols) */}
-        <div className="lg:col-span-7 bg-white p-5 rounded-xl shadow-sm border border-slate-200 flex flex-col gap-4">
-          <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-            <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
-              <FileText className="w-4 h-4 text-emerald-600" />
+        <div className="lg:col-span-7 bg-white dark:bg-slate-900 p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4 transition-colors">
+          <div className="border-b border-slate-100 dark:border-slate-800 pb-3 flex items-center justify-between">
+            <h3 className="text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <FileText className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
               <span>Tailored Resume Result</span>
             </h3>
             {currentTailored && (
@@ -1792,7 +1823,7 @@ function JdResumeTailor({ showToast }) {
                 <button
                   onClick={() => setPreviewTab('visual')}
                   className={`text-xs px-2.5 py-1 rounded font-semibold transition-all ${
-                    previewTab === 'visual' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    previewTab === 'visual' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                   }`}
                 >
                   Visual Preview
@@ -1800,7 +1831,7 @@ function JdResumeTailor({ showToast }) {
                 <button
                   onClick={() => setPreviewTab('json')}
                   className={`text-xs px-2.5 py-1 rounded font-semibold transition-all ${
-                    previewTab === 'json' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    previewTab === 'json' ? 'bg-indigo-600 text-white' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200'
                   }`}
                 >
                   JSON Schema

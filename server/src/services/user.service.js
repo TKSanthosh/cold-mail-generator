@@ -189,11 +189,18 @@ function getUserOAuthClient(userKey) {
 
   const client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   const paths = getUserPaths(userKey);
+  const globalTokenPath = path.join(__dirname, '../../token.json');
 
   if (fs.existsSync(paths.tokenPath)) {
     try {
       const tokens = JSON.parse(fs.readFileSync(paths.tokenPath, 'utf8'));
       client.setCredentials(tokens);
+    } catch (e) {}
+  } else if (fs.existsSync(globalTokenPath)) {
+    try {
+      const tokens = JSON.parse(fs.readFileSync(globalTokenPath, 'utf8'));
+      client.setCredentials(tokens);
+      fs.copyFileSync(globalTokenPath, paths.tokenPath);
     } catch (e) {}
   }
 
@@ -203,7 +210,18 @@ function getUserOAuthClient(userKey) {
 function isUserAuthorized(userKey) {
   try {
     const paths = getUserPaths(userKey);
-    if (!fs.existsSync(paths.tokenPath)) return false;
+    const globalTokenPath = path.join(__dirname, '../../token.json');
+
+    if (!fs.existsSync(paths.tokenPath)) {
+      if (fs.existsSync(globalTokenPath)) {
+        try {
+          fs.copyFileSync(globalTokenPath, paths.tokenPath);
+          const tokens = JSON.parse(fs.readFileSync(paths.tokenPath, 'utf8'));
+          return !!(tokens && (tokens.access_token || tokens.refresh_token));
+        } catch (e) {}
+      }
+      return false;
+    }
     const tokens = JSON.parse(fs.readFileSync(paths.tokenPath, 'utf8'));
     return !!(tokens && (tokens.access_token || tokens.refresh_token));
   } catch (e) {
