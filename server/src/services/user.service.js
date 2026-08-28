@@ -16,6 +16,8 @@ function getUserKeyFromEmail(email) {
   return email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 }
 
+const { readCompressedJson, writeCompressedJson, createFullBackup, restoreFullBackup } = require('./storage.service');
+
 function getUserPaths(userKey) {
   const key = userKey || 'default_user';
   const userDir = path.join(USERS_DIR, key);
@@ -28,7 +30,9 @@ function getUserPaths(userKey) {
     profilePath: path.join(userDir, 'profile.json'),
     resumePath: path.join(userDir, 'resume.json'),
     applicationsPath: path.join(userDir, 'applications.json'),
+    applicationsPathGz: path.join(userDir, 'applications.json.gz'),
     logsPath: path.join(userDir, 'logs.json'),
+    logsPathGz: path.join(userDir, 'logs.json.gz'),
     scheduledPath: path.join(userDir, 'scheduled.json')
   };
 }
@@ -93,21 +97,6 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
     }
   }
 
-  // 3. Applications Log
-  if (!fs.existsSync(paths.applicationsPath)) {
-    fs.writeFileSync(paths.applicationsPath, JSON.stringify([], null, 2), 'utf8');
-  }
-
-  // 4. Outreach Logs
-  if (!fs.existsSync(paths.logsPath)) {
-    fs.writeFileSync(paths.logsPath, JSON.stringify([], null, 2), 'utf8');
-  }
-
-  // 5. Scheduled Jobs
-  if (!fs.existsSync(paths.scheduledPath)) {
-    fs.writeFileSync(paths.scheduledPath, JSON.stringify([], null, 2), 'utf8');
-  }
-
   return paths;
 }
 
@@ -140,43 +129,32 @@ function saveUserResume(userKey, data) {
 function getUserApplications(userKey) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  try {
-    return JSON.parse(fs.readFileSync(paths.applicationsPath, 'utf8'));
-  } catch (e) {
-    return [];
-  }
+  return readCompressedJson(paths.applicationsPathGz, paths.applicationsPath, []);
 }
 
 function saveUserApplications(userKey, apps) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  fs.writeFileSync(paths.applicationsPath, JSON.stringify(apps, null, 2), 'utf8');
+  writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, apps);
 }
 
 function getUserLogs(userKey) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  try {
-    return JSON.parse(fs.readFileSync(paths.logsPath, 'utf8'));
-  } catch (e) {
-    return [];
-  }
+  return readCompressedJson(paths.logsPathGz, paths.logsPath, []);
 }
 
 function addUserLog(userKey, entry) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   try {
-    let logs = [];
-    if (fs.existsSync(paths.logsPath)) {
-      logs = JSON.parse(fs.readFileSync(paths.logsPath, 'utf8'));
-    }
+    const logs = getUserLogs(userKey);
     logs.unshift({
       id: Date.now().toString(),
       timestamp: new Date().toISOString(),
       ...entry
     });
-    fs.writeFileSync(paths.logsPath, JSON.stringify(logs, null, 2), 'utf8');
+    writeCompressedJson(paths.logsPathGz, paths.logsPath, logs);
   } catch (e) {
     console.error('Failed to add user log:', e);
   }
@@ -267,5 +245,8 @@ module.exports = {
   addUserLog,
   getUserOAuthClient,
   isUserAuthorized,
-  listAllProfiles
+  listAllProfiles,
+  USERS_DIR,
+  createFullBackup,
+  restoreFullBackup
 };

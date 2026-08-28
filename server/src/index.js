@@ -26,7 +26,10 @@ const {
   getUserLogs,
   addUserLog,
   isUserAuthorized,
-  listAllProfiles
+  listAllProfiles,
+  USERS_DIR,
+  createFullBackup,
+  restoreFullBackup
 } = require('./services/user.service');
 
 const app = express();
@@ -599,6 +602,38 @@ app.delete('/api/applications/:id', (req, res) => {
 
   res.json({ success: true });
 });
+
+// --- COMPRESSED PERSISTENT STORAGE & BACKUP ENDPOINTS ---
+app.get('/api/backup/export', (req, res) => {
+  try {
+    const backup = createFullBackup(USERS_DIR);
+    res.json(backup);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/backup/restore', (req, res) => {
+  try {
+    const backupData = req.body;
+    const ok = restoreFullBackup(USERS_DIR, backupData);
+    res.json({ success: ok });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Auto-restore from committed seed backup if present on cold deploy
+const seedBackupPath = path.join(__dirname, '../seed_backup.json');
+if (fs.existsSync(seedBackupPath)) {
+  try {
+    const seedData = JSON.parse(fs.readFileSync(seedBackupPath, 'utf8'));
+    restoreFullBackup(USERS_DIR, seedData);
+    console.log('[INFO] Restored persistent user logs and applications from seed archive.');
+  } catch (e) {
+    console.warn('[WARN] Failed to auto-restore from seed backup:', e.message);
+  }
+}
 
 // Initialize background scheduler
 initScheduler();
