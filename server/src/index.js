@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
@@ -12,6 +13,7 @@ const { generateResumePdf } = require('./services/pdf.service');
 const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
+const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
   getUserPaths,
@@ -30,25 +32,65 @@ const {
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:5174'] }));
+app.use(cors({
+  origin: true, // Reflect request origin for cookies & credentials
+  credentials: true
+}));
+app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
 
-// Helper to resolve active user key
-function resolveUserKey(req) {
-  const headerKey = req.headers['x-user-key'];
+// Helper to resolve active user key from JWT Cookie, Authorization Header, or custom headers
+function resolveUserContext(req, res = null) {
+  // 1. Try JWT from Cookie
+  const cookieToken = req.cookies?.auth_token;
+  if (cookieToken) {
+    const decoded = verifyAccessToken(cookieToken);
+    if (decoded && decoded.userKey) {
+      return { userKey: decoded.userKey, user: decoded };
+    }
+  }
+
+  // 2. Try Refresh Token from Cookie if Access Token is expired
+  const refreshToken = req.cookies?.refresh_token;
+  if (refreshToken && res) {
+    const refreshDecoded = verifyRefreshToken(refreshToken);
+    if (refreshDecoded && refreshDecoded.userKey) {
+      const profile = getUserProfile(refreshDecoded.userKey) || { userKey: refreshDecoded.userKey, email: refreshDecoded.email };
+      const newTokens = generateTokens(profile);
+      const isProd = process.env.NODE_ENV === 'production';
+      res.cookie('auth_token', newTokens.accessToken, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        maxAge: ONE_MONTH_SECONDS * 1000
+      });
+      return { userKey: refreshDecoded.userKey, user: profile };
+    }
+  }
+
+  // 3. Try Authorization Bearer Header
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    const decoded = verifyAccessToken(token);
+    if (decoded && decoded.userKey) {
+      return { userKey: decoded.userKey, user: decoded };
+    }
+  }
+
+  // 4. Try x-user-key header or query param
+  const headerKey = req.headers['x-user-key'] || req.query.userKey || req.body?.userKey;
   if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
-    return headerKey.trim();
+    const cleanKey = headerKey.trim();
+    return { userKey: cleanKey, user: getUserProfile(cleanKey) };
   }
-  const queryKey = req.query.userKey;
-  if (queryKey && typeof queryKey === 'string' && queryKey.trim().length > 0) {
-    return queryKey.trim();
-  }
-  const bodyKey = req.body?.userKey;
-  if (bodyKey && typeof bodyKey === 'string' && bodyKey.trim().length > 0) {
-    return bodyKey.trim();
-  }
-  // Default to Santhosh if not specified
-  return 'tksanthosh494_gmail_com';
+
+  // 5. Default fallback to Santhosh
+  return { userKey: 'tksanthosh494_gmail_com', user: getUserProfile('tksanthosh494_gmail_com') };
+}
+
+function resolveUserKey(req, res = null) {
+  return resolveUserContext(req, res).userKey;
 }
 
 // Ensure default sandbox for Santhosh
@@ -57,7 +99,7 @@ ensureUserSandbox('tksanthosh494_gmail_com', {
   email: 'tksanthosh494@gmail.com'
 });
 
-// --- AUTH ROUTING ---
+// --- AUTH ROUTING (JWT & 30-Day Cookies) ---
 app.get('/api/auth/url', (req, res) => {
   try {
     const url = getAuthUrl(req.query.state || '');
@@ -74,8 +116,39 @@ app.get('/api/auth/callback', async (req, res) => {
   }
   try {
     const userInfo = await handleCallbackCode(code);
-    // Redirect to frontend app with user details
-    const redirectUrl = `/?auth=success&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
+    
+    // Generate 30-Day JWT Tokens
+    const { accessToken, refreshToken } = generateTokens(userInfo);
+    const isProd = process.env.NODE_ENV === 'production';
+
+    // Set 30-Day HttpOnly Cookies
+    res.cookie('auth_token', accessToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: ONE_MONTH_SECONDS * 1000
+    });
+
+    res.cookie('refresh_token', refreshToken, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: ONE_MONTH_SECONDS * 2 * 1000 // 60 days
+    });
+
+    res.cookie('user_session', JSON.stringify({
+      userKey: userInfo.userKey,
+      email: userInfo.email,
+      name: userInfo.name,
+      picture: userInfo.picture
+    }), {
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: ONE_MONTH_SECONDS * 1000
+    });
+
+    // Redirect to frontend with auth payload
+    const redirectUrl = `/?auth=success&jwt=${encodeURIComponent(accessToken)}&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
     res.redirect(redirectUrl);
   } catch (e) {
     console.error('OAuth callback exchange error:', e);
@@ -84,9 +157,9 @@ app.get('/api/auth/callback', async (req, res) => {
 });
 
 app.get('/api/auth/status', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const { userKey, user } = resolveUserContext(req, res);
   const authorized = isUserAuthorized(userKey);
-  const profile = getUserProfile(userKey);
+  const profile = getUserProfile(userKey) || user;
   res.json({ authorized, user: profile, userKey });
 });
 
@@ -99,9 +172,12 @@ app.get('/api/auth/profiles', (req, res) => {
 });
 
 app.post('/api/auth/logout', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     logout(userKey);
+    res.clearCookie('auth_token');
+    res.clearCookie('refresh_token');
+    res.clearCookie('user_session');
     res.json({ success: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -110,7 +186,7 @@ app.post('/api/auth/logout', (req, res) => {
 
 // --- RESUME TEMPLATE ROUTING (Per-User Sandbox) ---
 app.get('/api/resume', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     const resumeData = getUserResume(userKey);
     res.json(resumeData);
@@ -120,7 +196,7 @@ app.get('/api/resume', (req, res) => {
 });
 
 app.post('/api/resume', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     saveUserResume(userKey, req.body);
     res.json({ success: true });
@@ -131,7 +207,7 @@ app.post('/api/resume', (req, res) => {
 
 // Upload and parse uploaded PDF resume via python script
 app.post('/api/resume/upload', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { fileBase64, filename } = req.body;
   if (!fileBase64) {
     return res.status(400).json({ error: 'fileBase64 is required' });
@@ -144,7 +220,9 @@ app.post('/api/resume/upload', (req, res) => {
     fs.writeFileSync(tempPdfPath, buffer);
 
     const scriptPath = path.join(__dirname, 'utils/resume_extractor.py');
-    const pythonExe = `& "${path.join(__dirname, '../../../python-portable/python.exe')}"`;
+    const pythonExe = process.platform === 'win32' 
+      ? `& "${path.join(__dirname, '../../../python-portable/python.exe')}"`
+      : 'python3';
 
     exec(`${pythonExe} "${scriptPath}" "${tempPdfPath}"`, { maxBuffer: 1024 * 1024 * 10 }, (error, stdout, stderr) => {
       try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
@@ -170,7 +248,7 @@ app.post('/api/resume/upload', (req, res) => {
 
 // --- SINGLE EMAIL GENERATION & PREVIEW ---
 app.post('/api/generate', async (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const rawEmail = req.body.hrEmail || req.body.email;
   const { hrName, name, company, jd } = req.body;
 
@@ -217,7 +295,7 @@ app.post('/api/generate', async (req, res) => {
 
 // --- SEND EMAIL (Per-User Sandbox) ---
 app.post('/api/send', async (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { email, subject, body, resume, hrName, company, resumeType } = req.body;
   if (!email || !subject || !body || !resume) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -277,7 +355,7 @@ app.post('/api/send', async (req, res) => {
 
 // --- SAVE GMAIL DRAFT (Per-User Sandbox) ---
 app.post('/api/draft', async (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { email, subject, body, resume, hrName, company, resumeType } = req.body;
   if (!email || !subject || !body || !resume) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -328,7 +406,7 @@ app.post('/api/draft', async (req, res) => {
 
 // --- SCHEDULE DISPATCH ENDPOINTS ---
 app.post('/api/schedule', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { email, subject, body, resume, hrName, company, scheduledAt, resumeType } = req.body;
   if (!email || !subject || !body || !resume || !scheduledAt) {
     return res.status(400).json({ error: 'Missing required scheduling parameters' });
@@ -364,7 +442,7 @@ app.post('/api/schedule', (req, res) => {
 });
 
 app.get('/api/scheduled', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const allJobs = getScheduledJobs();
   const userJobs = allJobs.filter(j => !j.userKey || j.userKey === userKey);
   res.json({ jobs: userJobs });
@@ -377,7 +455,7 @@ app.delete('/api/scheduled/:id', (req, res) => {
 
 // --- OUTREACH LOGS ENDPOINTS (Per-User Sandbox) ---
 app.get('/api/logs', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     res.json({ logs: getUserLogs(userKey) });
   } catch (e) {
@@ -386,7 +464,7 @@ app.get('/api/logs', (req, res) => {
 });
 
 app.delete('/api/logs', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     const userPaths = getUserPaths(userKey);
     fs.writeFileSync(userPaths.logsPath, JSON.stringify([], null, 2), 'utf8');
@@ -413,7 +491,7 @@ app.post('/api/bulk-parse', (req, res) => {
 
 // --- DEDICATED JD RESUME TAILOR & APPLICATION LOGS ENDPOINTS (Per-User Sandbox) ---
 app.post('/api/applications/tailor', async (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { role, company, jd } = req.body;
   if (!jd || jd.trim().length === 0) {
     return res.status(400).json({ error: 'Job description (JD) is required.' });
@@ -462,7 +540,7 @@ app.post('/api/applications/tailor', async (req, res) => {
 });
 
 app.get('/api/applications', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   try {
     res.json({ applications: getUserApplications(userKey) });
   } catch (e) {
@@ -471,7 +549,7 @@ app.get('/api/applications', (req, res) => {
 });
 
 app.get('/api/applications/:id/pdf', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { id } = req.params;
   const apps = getUserApplications(userKey);
   const appItem = apps.find(a => a.id === id);
@@ -495,7 +573,7 @@ app.get('/api/applications/:id/pdf', (req, res) => {
 });
 
 app.delete('/api/applications/:id', (req, res) => {
-  const userKey = resolveUserKey(req);
+  const userKey = resolveUserKey(req, res);
   const { id } = req.params;
   let apps = getUserApplications(userKey);
   const appItem = apps.find(a => a.id === id);

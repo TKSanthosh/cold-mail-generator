@@ -3,21 +3,25 @@ import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XC
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
-// Helper to make authenticated, per-user sandbox API calls
+// Helper to make authenticated, per-user sandbox API calls with 30-Day JWT & Cookies
 export const apiFetch = (endpoint, options = {}) => {
   let userKey = '';
+  let jwtToken = '';
   try {
     const stored = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
     userKey = stored.userKey || '';
+    jwtToken = localStorage.getItem('cold_email_jwt') || '';
   } catch (e) {}
 
   const headers = {
     ...options.headers,
-    'x-user-key': userKey
+    'x-user-key': userKey,
+    ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
   };
 
   return fetch(`${BACKEND_URL}${endpoint}`, {
     ...options,
+    credentials: 'include', // Send and receive 30-day JWT cookies
     headers
   });
 };
@@ -63,6 +67,11 @@ export default function App() {
       const email = params.get('email');
       const name = params.get('name');
       const picture = params.get('picture');
+      const jwtToken = params.get('jwt');
+
+      if (jwtToken) {
+        localStorage.setItem('cold_email_jwt', jwtToken);
+      }
 
       const userObj = {
         userKey: userKey || (email ? email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() : 'default_user'),
@@ -74,7 +83,7 @@ export default function App() {
       setCurrentUser(userObj);
       localStorage.setItem('cold_email_user', JSON.stringify(userObj));
       setIsAuthorized(true);
-      showToast(`Welcome ${userObj.name}! Connected your private Gmail sandbox.`, 'success');
+      showToast(`Welcome ${userObj.name}! Logged in with 30-day persistent session.`, 'success');
 
       // Clean query parameters
       window.history.replaceState({}, document.title, window.location.pathname);

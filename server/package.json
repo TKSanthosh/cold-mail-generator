@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "cold-mail-generator": "file:..",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "googleapis": "^137.0.0",
+    "jsonwebtoken": "^9.0.3",
     "localtunnel": "^2.0.2",
     "pdfkit": "^0.15.0"
   }
