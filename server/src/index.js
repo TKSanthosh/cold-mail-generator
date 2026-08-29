@@ -850,6 +850,15 @@ app.get('/api/admin/user/:userKey', requireAdminAuth, async (req, res) => {
   }
 });
 
+// --- PUBLIC PRIVACY POLICY & TERMS OF SERVICE (For Google OAuth Verification) ---
+app.get('/privacy', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Privacy Policy - Cold Reach AI</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6;color:#1e293b;}h1{color:#4f46e5;}</style></head><body><h1>Privacy Policy</h1><p>Last updated: August 2026</p><p>Cold Reach AI ("we", "our", or "us") respects your privacy. We use Google OAuth strictly to send recruiter outreach emails upon your explicit request.</p><h2>1. Data Collection & Isolation</h2><p>All candidate profile data, resume templates, and Gmail credentials are encrypted and strictly partitioned per Google user account.</p><h2>2. Contact</h2><p>For inquiries, contact tksanthosh494@gmail.com.</p></body></html>`);
+});
+
+app.get('/terms', (req, res) => {
+  res.send(`<!DOCTYPE html><html><head><title>Terms of Service - Cold Reach AI</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6;color:#1e293b;}h1{color:#4f46e5;}</style></head><body><h1>Terms of Service</h1><p>Last updated: August 2026</p><p>By using Cold Reach AI, you agree to use our automated outreach tools in compliance with standard email sending and job application guidelines.</p><h2>Contact</h2><p>For inquiries, contact tksanthosh494@gmail.com.</p></body></html>`);
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {

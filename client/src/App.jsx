@@ -1549,7 +1549,23 @@ function ResumeEditor({ showToast, currentUser }) {
     }));
   };
 
-  if (loading) {
+  if (!currentUser) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center flex flex-col items-center justify-center gap-4 max-w-lg mx-auto my-12 shadow-sm">
+        <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 rounded-2xl">
+          <FileText className="w-8 h-8" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Sign in to Edit Your Base Resume</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+            Upload your resume PDF or customize your experience, skills, and personal information privately under your Google account.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !resumeData) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-slate-400 text-sm gap-2">
         <Loader2 className="w-8 h-8 animate-spin text-indigo-600" /> Loading resume baseline details...
