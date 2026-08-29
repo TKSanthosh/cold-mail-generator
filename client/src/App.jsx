@@ -39,7 +39,7 @@ export default function App() {
     return !!localStorage.getItem('cold_email_jwt') || !!localStorage.getItem('cold_email_user');
   });
 
-  const isAdmin = (currentUser?.email || '').toLowerCase().trim() === 'tksanthosh494@gmail.com';
+  const isAdmin = Boolean(isAuthorized && currentUser?.email && (currentUser.email).toLowerCase().trim() === 'tksanthosh494@gmail.com');
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [toast, setToast] = useState(null);
 
@@ -71,15 +71,21 @@ export default function App() {
         headers: { 'x-user-key': user?.userKey || '' }
       });
       const data = await res.json();
-      setIsAuthorized(Boolean(data.authorized));
-      if (data.user) {
+      if (data.authorized && data.user) {
+        setIsAuthorized(true);
         const updated = { ...user, ...data.user, userKey: data.userKey || user?.userKey };
         setCurrentUser(updated);
         localStorage.setItem('cold_email_user', JSON.stringify(updated));
+      } else {
+        setIsAuthorized(false);
+        setCurrentUser(null);
+        localStorage.removeItem('cold_email_user');
+        localStorage.removeItem('cold_email_jwt');
       }
     } catch (e) {
       console.error('Failed to check auth status', e);
       setIsAuthorized(false);
+      setCurrentUser(null);
     } finally {
       setCheckingAuth(false);
     }
@@ -3048,6 +3054,22 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       setUploading(false);
     }
   };
+
+  if (!currentUser) {
+    return (
+      <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center flex flex-col items-center justify-center gap-4 max-w-lg mx-auto my-12 shadow-sm">
+        <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 rounded-2xl">
+          <Lock className="w-8 h-8" />
+        </div>
+        <div>
+          <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">Sign in to Access Naukri Profile Booster</h3>
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
+            Naukri credentials, upload schedules, and boost history are 100% private and isolated to your Google SSO account.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">

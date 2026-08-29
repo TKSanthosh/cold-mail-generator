@@ -86,19 +86,23 @@ function resolveUserContext(req, res = null) {
     }
   }
 
-  // 4. Try x-user-key header or query param
+  // 4. Try x-user-key header or query param if valid profile exists
   const headerKey = req.headers['x-user-key'] || req.query.userKey || req.body?.userKey;
-  if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
+  if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0 && headerKey !== 'default_user' && headerKey !== 'null' && headerKey !== 'undefined') {
     const cleanKey = headerKey.trim();
-    return { userKey: cleanKey, user: getUserProfile(cleanKey) };
+    const profile = getUserProfile(cleanKey);
+    if (profile) {
+      return { userKey: cleanKey, user: profile };
+    }
   }
 
-  // 5. Default fallback to Santhosh
-  return { userKey: 'tksanthosh494_gmail_com', user: getUserProfile('tksanthosh494_gmail_com') };
+  // 5. Unauthenticated guest / logged out
+  return { userKey: null, user: null };
 }
 
 function resolveUserKey(req, res = null) {
-  return resolveUserContext(req, res).userKey;
+  const ctx = resolveUserContext(req, res);
+  return ctx.userKey || 'guest_user';
 }
 
 // Ensure default sandbox for Santhosh
@@ -177,6 +181,9 @@ app.get('/api/auth/callback', async (req, res) => {
 
 app.get('/api/auth/status', (req, res) => {
   const { userKey, user } = resolveUserContext(req, res);
+  if (!userKey) {
+    return res.json({ authorized: false, user: null, userKey: null });
+  }
   const authorized = isUserAuthorized(userKey);
   const profile = getUserProfile(userKey) || user;
   res.json({ authorized, user: profile, userKey });
