@@ -1,4 +1,4 @@
-﻿let puppeteer;
+let puppeteer;
 try {
   puppeteer = require('puppeteer');
 } catch (e) {
@@ -8,7 +8,13 @@ const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
 const { getUserResume, getUserPaths, ensureUserSandbox } = require('./user.service');
-const { isSupabaseConfigured, getSupabaseClient } = require('./supabase.service');
+const {
+  isSupabaseConfigured,
+  supabaseSaveNaukriConfig,
+  supabaseGetNaukriConfig,
+  supabaseAppendNaukriHistory,
+  supabaseGetNaukriHistory
+} = require('./supabase.service');
 
 const USERS_DIR = path.join(__dirname, '../../users');
 
@@ -130,6 +136,12 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   const current = getNaukriConfig(userKey);
   const updated = { ...current, ...config };
   fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(updated, null, 2), 'utf8');
+
+  // Supabase Cloud Multi-Device Sync
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, updated).catch(() => {});
+  }
+
   return updated;
 }
 
@@ -153,6 +165,11 @@ function appendNaukriHistory(userKey = 'default_user', record = {}) {
     ...record
   });
   fs.writeFileSync(paths.naukriHistoryPath, JSON.stringify(history.slice(0, 50), null, 2), 'utf8');
+
+  // Supabase Cloud Multi-Device Sync
+  if (isSupabaseConfigured()) {
+    supabaseAppendNaukriHistory(userKey, record).catch(() => {});
+  }
 }
 
 /**

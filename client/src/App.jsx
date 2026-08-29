@@ -307,25 +307,25 @@ export default function App() {
       {/* Main Content (Preserved in Memory) */}
       <main className="flex-1 p-3 sm:p-6 overflow-y-auto max-w-7xl w-full mx-auto touch-scroll">
         <div className={activeTab === 'single' ? 'block' : 'hidden'}>
-          <SingleSender isAuthorized={isAuthorized} showToast={showToast} />
+          <SingleSender isAuthorized={isAuthorized} showToast={showToast} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'bulk' ? 'block' : 'hidden'}>
-          <BulkSender isAuthorized={isAuthorized} showToast={showToast} />
+          <BulkSender isAuthorized={isAuthorized} showToast={showToast} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'logs' ? 'block' : 'hidden'}>
-          <LogsViewer showToast={showToast} isActive={activeTab === 'logs'} />
+          <LogsViewer showToast={showToast} isActive={activeTab === 'logs'} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'jdtailor' ? 'block' : 'hidden'}>
-          <JdResumeTailor showToast={showToast} />
+          <JdResumeTailor showToast={showToast} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'linkedin' ? 'block' : 'hidden'}>
-          <LinkedInAutoPilot isAuthorized={isAuthorized} showToast={showToast} isActive={activeTab === 'linkedin'} />
+          <LinkedInAutoPilot isAuthorized={isAuthorized} showToast={showToast} isActive={activeTab === 'linkedin'} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'naukri' ? 'block' : 'hidden'}>
           <NaukriAutoUploader showToast={showToast} isActive={activeTab === 'naukri'} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
-          <ResumeEditor showToast={showToast} />
+          <ResumeEditor showToast={showToast} currentUser={currentUser} />
         </div>
       </main>
     </div>
@@ -1080,7 +1080,7 @@ function BulkSender({ isAuthorized, showToast }) {
 /* =========================================================================
    OUTREACH LOGS / HISTORY MODULE
    ========================================================================= */
-function LogsViewer({ showToast, isActive }) {
+function LogsViewer({ showToast, isActive, currentUser }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
@@ -1088,7 +1088,7 @@ function LogsViewer({ showToast, isActive }) {
 
   const getCachedLogs = () => {
     try {
-      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const user = currentUser || JSON.parse(localStorage.getItem('cold_email_user') || '{}');
       const key = `cold_email_logs_${user.userKey || 'default'}`;
       return JSON.parse(localStorage.getItem(key) || '[]');
     } catch (e) {
@@ -1098,13 +1098,18 @@ function LogsViewer({ showToast, isActive }) {
 
   const setCachedLogs = (data) => {
     try {
-      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const user = currentUser || JSON.parse(localStorage.getItem('cold_email_user') || '{}');
       const key = `cold_email_logs_${user.userKey || 'default'}`;
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {}
   };
 
   const fetchLogs = async () => {
+    if (!currentUser) {
+      setLogs([]);
+      setLoading(false);
+      return;
+    }
     const cached = getCachedLogs();
     if (cached.length > 0) {
       setLogs(cached);
@@ -1131,7 +1136,7 @@ function LogsViewer({ showToast, isActive }) {
 
   useEffect(() => {
     fetchLogs();
-  }, [isActive]);
+  }, [isActive, currentUser]);
 
   const handleClearLogs = async () => {
     if (!window.confirm('Are you sure you want to clear all outreach logs?')) return;
@@ -1423,7 +1428,7 @@ function LogsViewer({ showToast, isActive }) {
 /* =========================================================================
    RESUME EDITOR MODULE
    ========================================================================= */
-function ResumeEditor({ showToast }) {
+function ResumeEditor({ showToast, currentUser }) {
   const [resumeData, setResumeData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1431,6 +1436,11 @@ function ResumeEditor({ showToast }) {
   const fileInputRef = useRef(null);
 
   const fetchResume = async () => {
+    if (!currentUser) {
+      setResumeData(null);
+      setLoading(false);
+      return;
+    }
     try {
       const res = await apiFetch(`/api/resume`);
       const data = await res.json();
@@ -1444,7 +1454,7 @@ function ResumeEditor({ showToast }) {
 
   useEffect(() => {
     fetchResume();
-  }, []);
+  }, [currentUser]);
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1673,7 +1683,7 @@ function ResumeEditor({ showToast }) {
 /* =========================================================================
    DEDICATED JD RESUME TAILOR & APPLICATION LOG MODULE
    ========================================================================= */
-function JdResumeTailor({ showToast }) {
+function JdResumeTailor({ showToast, currentUser }) {
   const [role, setRole] = useState('');
   const [company, setCompany] = useState('');
   const [jd, setJd] = useState('');
@@ -1689,7 +1699,7 @@ function JdResumeTailor({ showToast }) {
 
   const getCachedApps = () => {
     try {
-      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const user = currentUser || JSON.parse(localStorage.getItem('cold_email_user') || '{}');
       const key = `cold_email_apps_${user.userKey || 'default'}`;
       return JSON.parse(localStorage.getItem(key) || '[]');
     } catch (e) {
@@ -1699,13 +1709,18 @@ function JdResumeTailor({ showToast }) {
 
   const setCachedApps = (data) => {
     try {
-      const user = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
+      const user = currentUser || JSON.parse(localStorage.getItem('cold_email_user') || '{}');
       const key = `cold_email_apps_${user.userKey || 'default'}`;
       localStorage.setItem(key, JSON.stringify(data));
     } catch (e) {}
   };
 
   const fetchApplications = async () => {
+    if (!currentUser) {
+      setApplications([]);
+      setLoadingApps(false);
+      return;
+    }
     setLoadingApps(true);
     const cached = getCachedApps();
     if (cached.length > 0) {
@@ -1731,7 +1746,7 @@ function JdResumeTailor({ showToast }) {
 
   useEffect(() => {
     fetchApplications();
-  }, []);
+  }, [currentUser]);
 
   const handlePasteClipboard = async () => {
     try {

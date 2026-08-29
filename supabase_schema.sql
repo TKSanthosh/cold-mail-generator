@@ -1,4 +1,4 @@
-﻿-- =========================================================================
+-- =========================================================================
 -- COLD REACH AI - SUPABASE POSTGRESQL SCHEMA (FREE TIER)
 -- Run this script in the Supabase SQL Editor (https://supabase.com/dashboard)
 -- =========================================================================
@@ -69,15 +69,42 @@ CREATE TABLE IF NOT EXISTS linkedin_config (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Row-Level Security (Optional / Public Service Role Access)
+-- 6. NAUKRI CONFIG (Per-User Quarter-Day Settings & Credentials)
+CREATE TABLE IF NOT EXISTS naukri_config (
+    user_key TEXT PRIMARY KEY REFERENCES users(user_key) ON DELETE CASCADE,
+    config_data JSONB NOT NULL,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- 7. NAUKRI HISTORY (Per-User Resume Boost Audit Feed)
+CREATE TABLE IF NOT EXISTS naukri_history (
+    id TEXT PRIMARY KEY,
+    user_key TEXT NOT NULL,
+    status TEXT NOT NULL,
+    file_name TEXT,
+    message TEXT,
+    profile_status TEXT,
+    duration TEXT,
+    error TEXT,
+    timestamp TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_naukri_history_user_key ON naukri_history(user_key);
+CREATE INDEX IF NOT EXISTS idx_naukri_history_timestamp ON naukri_history(timestamp DESC);
+
+-- Row-Level Security (Allow Service Role and Public Client Access)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resumes ENABLE ROW LEVEL SECURITY;
 ALTER TABLE outreach_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE linkedin_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE naukri_config ENABLE ROW LEVEL SECURITY;
+ALTER TABLE naukri_history ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow service role and anon read/write" ON users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON resumes FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON outreach_logs FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON applications FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON linkedin_config FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow service role and anon read/write" ON naukri_config FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow service role and anon read/write" ON naukri_history FOR ALL USING (true) WITH CHECK (true);

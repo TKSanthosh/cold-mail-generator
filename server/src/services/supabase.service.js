@@ -291,6 +291,102 @@ async function supabaseGetLinkedInConfig() {
   }
 }
 
+/**
+ * NAUKRI CONFIG & HISTORY (Per-User)
+ */
+async function supabaseSaveNaukriConfig(userKey, config) {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
+      method: 'POST',
+      headers: {
+        ...getHeaders(),
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify({
+        user_key: userKey,
+        config_data: config,
+        updated_at: new Date().toISOString()
+      })
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[SUPABASE] saveNaukriConfig error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetNaukriConfig(userKey) {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config?user_key=eq.${encodeURIComponent(userKey)}&select=config_data`, {
+      headers: getHeaders()
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data && data[0] ? data[0].config_data : null;
+  } catch (e) {
+    console.warn('[SUPABASE] getNaukriConfig error:', e.message);
+    return null;
+  }
+}
+
+async function supabaseAppendNaukriHistory(userKey, record) {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const payload = {
+      id: record.id || `naukri_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      user_key: userKey,
+      status: record.status || 'success',
+      file_name: record.fileName || 'santhosh_t_k_resume.pdf',
+      message: record.message || '',
+      profile_status: record.profileStatus || '',
+      duration: record.duration || '',
+      error: record.error || null,
+      timestamp: record.timestamp ? new Date(record.timestamp).toISOString() : new Date().toISOString()
+    };
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_history`, {
+      method: 'POST',
+      headers: {
+        ...getHeaders(),
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[SUPABASE] appendNaukriHistory error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetNaukriHistory(userKey) {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_history?user_key=eq.${encodeURIComponent(userKey)}&select=*&order=timestamp.desc&limit=50`, {
+      headers: getHeaders()
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data) return null;
+
+    return data.map(d => ({
+      id: d.id,
+      timestamp: d.timestamp,
+      status: d.status,
+      fileName: d.file_name,
+      message: d.message,
+      profileStatus: d.profile_status,
+      duration: d.duration,
+      error: d.error
+    }));
+  } catch (e) {
+    console.warn('[SUPABASE] getNaukriHistory error:', e.message);
+    return null;
+  }
+}
+
 module.exports = {
   isSupabaseConfigured,
   supabaseUpsertUser,
@@ -302,5 +398,9 @@ module.exports = {
   supabaseSaveApplications,
   supabaseGetApplications,
   supabaseSaveLinkedInConfig,
-  supabaseGetLinkedInConfig
+  supabaseGetLinkedInConfig,
+  supabaseSaveNaukriConfig,
+  supabaseGetNaukriConfig,
+  supabaseAppendNaukriHistory,
+  supabaseGetNaukriHistory
 };

@@ -199,6 +199,8 @@ async function testPdfSinglePage() {
     assert(typeof supabaseService.supabaseSaveResume === 'function', 'supabase.service exports supabaseSaveResume');
     assert(typeof supabaseService.supabaseAppendLog === 'function', 'supabase.service exports supabaseAppendLog');
     assert(typeof supabaseService.supabaseSaveApplications === 'function', 'supabase.service exports supabaseSaveApplications');
+    assert(typeof supabaseService.supabaseSaveNaukriConfig === 'function', 'supabase.service exports supabaseSaveNaukriConfig');
+    assert(typeof supabaseService.supabaseAppendNaukriHistory === 'function', 'supabase.service exports supabaseAppendNaukriHistory');
     
     assert(fs.existsSync(path.join(__dirname, 'supabase_schema.sql')), 'supabase_schema.sql exists and is ready for 1-click execution');
   } catch (e) {
