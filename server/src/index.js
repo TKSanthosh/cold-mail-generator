@@ -856,7 +856,16 @@ app.get('/privacy', (req, res) => {
 });
 
 app.get('/terms', (req, res) => {
-  res.send(`<!DOCTYPE html><html><head><title>Terms of Service - Cold Reach AI</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6;color:#1e293b;}h1{color:#4f46e5;}</style></head><body><h1>Terms of Service</h1><p>Last updated: August 2026</p><p>By using Cold Reach AI, you agree to use our automated outreach tools in compliance with standard email sending and job application guidelines.</p><h2>Contact</h2><p>For inquiries, contact tksanthosh494@gmail.com.</p></body></html>`);
+  res.send(`<!DOCTYPE html><html><head><title>Terms of Service - emailSender</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6;color:#1e293b;}h1{color:#4f46e5;}</style></head><body><h1>Terms of Service</h1><p>Last updated: August 2026</p><p>By using emailSender, you agree to use our automated outreach tools in compliance with standard email sending and job application guidelines.</p><h2>Contact</h2><p>For inquiries, contact tksanthosh494@gmail.com.</p></body></html>`);
+});
+
+// Interactive 1-Minute Automated Demo Walkthrough for Google OAuth Verification
+app.get('/demo', (req, res) => {
+  const demoPath = path.join(__dirname, '../../demo_walkthrough.html');
+  if (fs.existsSync(demoPath)) {
+    return res.sendFile(demoPath);
+  }
+  res.redirect('/');
 });
 
 // Auto-restore from committed seed backup if present on cold deploy
