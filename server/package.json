@@ -4,7 +4,6 @@
   "description": "Backend API for Cold Email & Resume Tailor Generator",
   "main": "src/index.js",
   "scripts": {
-    "postinstall": "npx puppeteer browsers install chrome",
     "start": "node src/index.js",
     "dev": "node src/index.js"
   },

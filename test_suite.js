@@ -22,7 +22,7 @@ try {
   
   const importedIcons = new Set(importMatch[1].split(',').map(s => s.trim()).filter(Boolean));
   const jsxTagMatches = [...appCode.matchAll(/<([A-Z][a-zA-Z0-9]+)[\s\/>]/g)];
-  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot', 'NaukriAutoUploader']);
+  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot', 'NaukriAutoUploader', 'AdminDashboard']);
   
   const missingIcons = [];
   for (const m of jsxTagMatches) {
@@ -237,6 +237,20 @@ async function testPdfSinglePage() {
     assert(typeof status.pingInterval === 'string', 'Keep-Alive ping interval configured');
   } catch (e) {
     assert(false, `Test 12 threw error: ${e.message}`);
+  }
+
+  // TEST 13: Super Admin Control Center & Telemetry (tksanthosh494@gmail.com)
+  try {
+    const adminService = require('./server/src/services/admin.service');
+    assert(typeof adminService.getAdminOverview === 'function', 'admin.service exports getAdminOverview');
+    assert(typeof adminService.getAdminUserDetails === 'function', 'admin.service exports getAdminUserDetails');
+
+    const overview = await adminService.getAdminOverview();
+    assert(overview && overview.metrics && typeof overview.metrics.totalUsers === 'number', 'Admin overview metrics verified');
+    assert(Array.isArray(overview.users), 'Admin overview returns users array');
+    assert(Array.isArray(overview.activities), 'Admin overview returns live activity stream');
+  } catch (e) {
+    assert(false, `Test 13 threw error: ${e.message}`);
   }
 
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);

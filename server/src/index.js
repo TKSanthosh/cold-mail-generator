@@ -809,6 +809,40 @@ app.get('/api/keepalive/status', (req, res) => {
   res.json(getKeepAliveStatus(PORT));
 });
 
+// --- ADMIN CONTROL CENTER (Exclusively for tksanthosh494@gmail.com) ---
+const { getAdminOverview, getAdminUserDetails } = require('./services/admin.service');
+
+function requireAdminAuth(req, res, next) {
+  const context = resolveUserContext(req, res);
+  const email = (context.user?.email || '').toLowerCase().trim();
+
+  if (email === 'tksanthosh494@gmail.com') {
+    return next();
+  }
+
+  return res.status(403).json({
+    error: 'Access Denied: Admin control center is exclusively restricted to tksanthosh494@gmail.com.'
+  });
+}
+
+app.get('/api/admin/overview', requireAdminAuth, async (req, res) => {
+  try {
+    const data = await getAdminOverview();
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/admin/user/:userKey', requireAdminAuth, async (req, res) => {
+  try {
+    const data = await getAdminUserDetails(req.params.userKey);
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {
