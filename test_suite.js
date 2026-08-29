@@ -22,7 +22,7 @@ try {
   
   const importedIcons = new Set(importMatch[1].split(',').map(s => s.trim()).filter(Boolean));
   const jsxTagMatches = [...appCode.matchAll(/<([A-Z][a-zA-Z0-9]+)[\s\/>]/g)];
-  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot', 'NaukriAutoUploader', 'AdminDashboard']);
+  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot', 'NaukriAutoUploader', 'AdminDashboard', 'LoginPage']);
   
   const missingIcons = [];
   for (const m of jsxTagMatches) {
