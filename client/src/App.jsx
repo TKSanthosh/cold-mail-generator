@@ -2921,6 +2921,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     username: '',
     password: ''
   });
+  const [showOtpModal, setShowOtpModal] = useState(false);
+  const [otpInput, setOtpInput] = useState('');
+  const [otpMessage, setOtpMessage] = useState('');
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   const fetchConfigAndHistory = async () => {
     if (!currentUser) {
@@ -3064,7 +3068,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   const handleTriggerUpload = async () => {
     if (!config.hasSession && !config.username && !formData.username) {
-      return showToast('Please click "Sign in with Google (1-Click SSO)" or enter credentials first.', 'error');
+      return showToast('Please enter your Naukri username & password first.', 'error');
     }
     setUploading(true);
     try {
@@ -3080,6 +3084,13 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
+      if (data.result?.status === 'otp_required' || data.result?.requiresOtp) {
+        setOtpMessage(data.result.message || 'Naukri has sent a 6-digit OTP to your registered email/phone.');
+        setShowOtpModal(true);
+        showToast('🔑 Naukri requested 2FA OTP verification. Please enter the OTP code.', 'info');
+        return;
+      }
+
       showToast(`🚀 Resume uploaded to Naukri successfully! Profile Status: Active Just Now (${data.result?.duration || '12s'})`, 'success');
       fetchConfigAndHistory();
     } catch (err) {
@@ -3087,6 +3098,32 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       fetchConfigAndHistory();
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e) => {
+    e?.preventDefault();
+    if (!otpInput || otpInput.trim().length === 0) {
+      return showToast('Please enter the 6-digit OTP code.', 'error');
+    }
+    setVerifyingOtp(true);
+    try {
+      const res = await apiFetch('/api/naukri/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ otp: otpInput.trim() })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setShowOtpModal(false);
+      setOtpInput('');
+      showToast(data.result?.message || '🎉 2FA OTP Verified! Resume uploaded and session saved permanently.', 'success');
+      fetchConfigAndHistory();
+    } catch (err) {
+      showToast(err.message || 'Failed to verify OTP', 'error');
+    } finally {
+      setVerifyingOtp(false);
     }
   };
 
@@ -3359,6 +3396,63 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+
+      {/* 2FA OTP Verification Dialog Modal */}
+      {showOtpModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-5">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                <ShieldCheck className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Naukri 2FA OTP Verification</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">One-Time Device Authorization</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+              {otpMessage || 'Naukri has sent a 6-digit OTP to your registered email/phone. Enter it below to link your account once. Future boosts will run automatically without OTP!'}
+            </p>
+
+            <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Enter 6-Digit OTP Code
+                </label>
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  placeholder="e.g. 123456"
+                  autoFocus
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-center text-xl tracking-widest font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOtpModal(false)}
+                  disabled={verifyingOtp}
+                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={verifyingOtp || otpInput.length < 4}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                >
+                  {verifyingOtp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{verifyingOtp ? 'Verifying...' : 'Verify & Boost Profile'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

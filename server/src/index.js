@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -796,6 +796,20 @@ app.post('/api/naukri/trigger', async (req, res) => {
   }
 });
 
+app.post('/api/naukri/verify-otp', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { otp } = req.body;
+  if (!otp || typeof otp !== 'string' || otp.trim().length === 0) {
+    return res.status(400).json({ error: 'Please enter the 6-digit OTP code.' });
+  }
+  try {
+    const result = await verifyNaukriOtp(userKey, otp.trim());
+    res.json({ success: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- 24/7 CONTAINER HEALTH & KEEP-ALIVE ENDPOINTS ---
 app.get('/api/health', (req, res) => {
   res.json({
@@ -857,6 +871,11 @@ app.get('/privacy', (req, res) => {
 
 app.get('/terms', (req, res) => {
   res.send(`<!DOCTYPE html><html><head><title>Terms of Service - emailSender</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>body{font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;max-width:800px;margin:40px auto;padding:20px;line-height:1.6;color:#1e293b;}h1{color:#4f46e5;}</style></head><body><h1>Terms of Service</h1><p>Last updated: August 2026</p><p>By using emailSender, you agree to use our automated outreach tools in compliance with standard email sending and job application guidelines.</p><h2>Contact</h2><p>For inquiries, contact tksanthosh494@gmail.com.</p></body></html>`);
+});
+
+// Google Search Console Verification Endpoint
+app.get('/googlefe5b13cb88557756.html', (req, res) => {
+  res.send('google-site-verification: googlefe5b13cb88557756.html');
 });
 
 // Interactive 1-Minute Automated Demo Walkthrough for Google OAuth Verification

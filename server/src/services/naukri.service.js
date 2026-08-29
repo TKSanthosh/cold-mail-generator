@@ -17,6 +17,7 @@ const {
 } = require('./supabase.service');
 
 const USERS_DIR = path.join(__dirname, '../../users');
+const activeOtpSessions = new Map();
 
 /**
  * Calculates the next Quarter-Day schedule slot (10:00 AM, 04:00 PM, 10:00 PM, 04:00 AM)
@@ -435,12 +436,34 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
       }
 
-      if (page.url().includes('otp') || page.url().includes('verification')) {
-        throw new Error('Naukri requested 2FA OTP verification. Please sign into Naukri manually once to trust this device.');
+      const isOtpScreen = page.url().includes('otp') ||
+                          page.url().includes('verification') ||
+                          (await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i]'));
+
+      if (isOtpScreen) {
+        console.log(`[NAUKRI UPLOADER] 2FA OTP verification required for user ${userKey}. Storing session for user submission...`);
+        activeOtpSessions.set(userKey, {
+          browser,
+          page,
+          userPaths,
+          resumeFileName,
+          uploadPdfPath,
+          startTime,
+          createdAt: Date.now()
+        });
+
+        return {
+          status: 'otp_required',
+          requiresOtp: true,
+          message: 'Naukri sent a 6-digit OTP to your registered email/phone. Please enter it below to authorize your session.'
+        };
       }
 
       const sessionCookies = await page.cookies();
       fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
+      if (isSupabaseConfigured()) {
+        supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
+      }
       console.log(`[NAUKRI UPLOADER] Authentication successful. Session cookies saved for user ${userKey}.`);
 
       if (!page.url().includes('mnjuser/profile')) {
@@ -626,6 +649,145 @@ function initNaukriScheduler() {
   }, 30000); // Check every 30s
 }
 
+/**
+ * Verifies interactive Naukri 2FA OTP submitted by user
+ */
+async function verifyNaukriOtp(userKey, otpCode) {
+  const session = activeOtpSessions.get(userKey);
+  if (!session) {
+    throw new Error('No active OTP verification session found or session timed out. Please click "Upload to Naukri" again to generate a fresh OTP.');
+  }
+
+  const { browser, page, userPaths, resumeFileName, uploadPdfPath, startTime } = session;
+
+  try {
+    console.log(`[NAUKRI UPLOADER] Submitting 2FA OTP for user ${userKey}...`);
+
+    await page.waitForSelector('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"]', { timeout: 10000 });
+
+    const digitInputs = await page.$$('input[maxlength="1"], .otp-digit, input.otpBox');
+    if (digitInputs.length >= 6) {
+      const chars = otpCode.split('');
+      for (let i = 0; i < Math.min(chars.length, digitInputs.length); i++) {
+        await digitInputs[i].type(chars[i]);
+      }
+    } else {
+      const otpInput = await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"]');
+      if (otpInput) {
+        await otpInput.click({ clickCount: 3 });
+        await otpInput.type(otpCode, { delay: 30 });
+      }
+    }
+
+    const verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn, button:has-text("Verify"), button:has-text("Submit")');
+    if (verifyBtn) {
+      await verifyBtn.click();
+      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+    }
+
+    const sessionCookies = await page.cookies();
+    fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
+    if (isSupabaseConfigured()) {
+      supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
+    }
+    console.log(`[NAUKRI UPLOADER] 2FA OTP Verified! Permanent session cookies saved for user ${userKey}.`);
+
+    if (!page.url().includes('mnjuser/profile')) {
+      await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    }
+
+    // Dismiss overlay popups
+    try {
+      await page.evaluate(() => {
+        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close');
+        dismissBtns.forEach(btn => btn?.click?.());
+      });
+    } catch (e) {}
+
+    // Locate file input
+    let fileInput = await page.$('input#attachCV') ||
+                    await page.$('input[name="attachCV"]') ||
+                    await page.$('input[accept*=".pdf"]') ||
+                    await page.$('input[type="file"]');
+
+    if (!fileInput) {
+      const updateBtn = await page.$('.updateResume') ||
+                        await page.$('.uploadBtn') ||
+                        await page.$('[title*="Update resume" i]') ||
+                        await page.$('a[href*="attachCV"]') ||
+                        await page.$('button.updateResume');
+      if (updateBtn) {
+        await updateBtn.click();
+        await page.waitForTimeout(1500);
+        fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
+      }
+    }
+
+    if (!fileInput) {
+      const inputHandle = await page.evaluateHandle(() => {
+        return document.querySelector('#attachCV') ||
+               document.querySelector('input[type="file"]') ||
+               document.querySelector('input[name="attachCV"]') ||
+               document.querySelector('input[accept*="pdf"]');
+      });
+      if (inputHandle && inputHandle.asElement()) {
+        fileInput = inputHandle.asElement();
+      }
+    }
+
+    if (!fileInput) {
+      throw new Error('OTP verified successfully, but could not locate the resume upload button on your Naukri profile. Please click "Upload to Naukri" again.');
+    }
+
+    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
+    await fileInput.uploadFile(uploadPdfPath);
+    await page.waitForTimeout(4000);
+
+    const updatedStatusText = await page.evaluate(() => {
+      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg');
+      return el ? el.innerText.trim() : 'Resume uploaded successfully';
+    });
+
+    const durationSec = Math.round((Date.now() - startTime) / 1000);
+    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
+
+    const config = getNaukriConfig(userKey);
+    const nextRunDate = (config.scheduleMode === 'quarter_day')
+      ? getNextQuarterDayTime()
+      : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
+
+    config.hasSession = true;
+    config.lastUploadAt = new Date().toISOString();
+    config.lastStatus = 'Success';
+    config.lastError = null;
+    config.nextUploadAt = nextRunDate.toISOString();
+    saveNaukriConfig(userKey, config);
+
+    appendNaukriHistory(userKey, {
+      status: 'success',
+      fileName: resumeFileName,
+      profileStatus: updatedStatusText,
+      duration: `${durationSec}s`
+    });
+
+    activeOtpSessions.delete(userKey);
+    await browser.close().catch(() => {});
+
+    return {
+      status: 'success',
+      fileName: resumeFileName,
+      message: `2FA OTP Verified! Resume successfully uploaded as ${resumeFileName} (Active Just Now). Future scheduled boosts will run automatically!`,
+      duration: `${durationSec}s`,
+      timestamp: new Date().toISOString(),
+      profileStatus: updatedStatusText
+    };
+  } catch (err) {
+    activeOtpSessions.delete(userKey);
+    await browser.close().catch(() => {});
+    throw err;
+  }
+}
+
 module.exports = {
   getNextQuarterDayTime,
   findBrowserExecutable,
@@ -635,5 +797,6 @@ module.exports = {
   getNaukriHistory,
   startInteractiveGoogleSsoLogin,
   uploadResumeToNaukri,
+  verifyNaukriOtp,
   initNaukriScheduler
 };
