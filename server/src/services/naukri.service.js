@@ -79,7 +79,39 @@ function findBrowserExecutable() {
     if (fs.existsSync(p)) return p;
   }
 
-  // 3. Bundled Puppeteer browser executable if present
+  // 3. Local & Render .cache/puppeteer recursive search
+  const cacheDirs = [
+    path.join(__dirname, '../../.cache/puppeteer'),
+    path.join(__dirname, '../../../.cache/puppeteer'),
+    '/opt/render/project/src/server/.cache/puppeteer',
+    '/opt/render/project/src/.cache/puppeteer',
+    '/opt/render/.cache/puppeteer',
+    process.env.HOME ? path.join(process.env.HOME, '.cache/puppeteer') : null
+  ].filter(Boolean);
+
+  for (const cDir of cacheDirs) {
+    if (fs.existsSync(cDir)) {
+      try {
+        const findInDir = (dir) => {
+          const entries = fs.readdirSync(dir);
+          for (const entry of entries) {
+            const fullPath = path.join(dir, entry);
+            if (fs.statSync(fullPath).isDirectory()) {
+              const res = findInDir(fullPath);
+              if (res) return res;
+            } else if (entry === 'chrome' || entry === 'chrome.exe') {
+              return fullPath;
+            }
+          }
+          return null;
+        };
+        const found = findInDir(cDir);
+        if (found) return found;
+      } catch (e) {}
+    }
+  }
+
+  // 4. Bundled Puppeteer browser executable if present
   try {
     if (puppeteer && typeof puppeteer.executablePath === 'function') {
       const pPath = puppeteer.executablePath();
@@ -305,7 +337,17 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   await generateResumePdf(userResume, uploadPdfPath);
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
-  const browserPath = findBrowserExecutable();
+  let browserPath = findBrowserExecutable();
+  if (!browserPath && process.platform !== 'win32') {
+    try {
+      console.log('[NAUKRI UPLOADER] Browser binary not found on Linux container. Auto-installing Chrome on-demand...');
+      const { execSync } = require('child_process');
+      execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
+      browserPath = findBrowserExecutable();
+    } catch (e) {
+      console.warn('[NAUKRI UPLOADER] On-demand browser install warning:', e.message);
+    }
+  }
   console.log(`[NAUKRI UPLOADER] Launching browser engine (${browserPath || 'Puppeteer default'})...`);
 
   let browser = null;
