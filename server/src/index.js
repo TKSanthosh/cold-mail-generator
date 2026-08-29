@@ -754,23 +754,25 @@ app.get('/api/supabase/status', (req, res) => {
 
 // --- NAUKRI PROFILE BOOSTER & AUTO-UPLOADER ENDPOINTS ---
 app.get('/api/naukri/config', (req, res) => {
-  res.json({ config: getNaukriConfig() });
+  const userKey = resolveUserKey(req, res);
+  res.json({ config: getNaukriConfig(userKey) });
 });
 
 app.post('/api/naukri/config', (req, res) => {
-  const current = getNaukriConfig();
-  const updated = { ...current, ...req.body };
-  saveNaukriConfig(updated);
+  const userKey = resolveUserKey(req, res);
+  const updated = saveNaukriConfig(userKey, req.body || {});
   res.json({ success: true, config: updated });
 });
 
 app.get('/api/naukri/history', (req, res) => {
-  res.json({ history: getNaukriHistory() });
+  const userKey = resolveUserKey(req, res);
+  res.json({ history: getNaukriHistory(userKey) });
 });
 
 app.post('/api/naukri/launch-sso', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
   try {
-    const result = await startInteractiveGoogleSsoLogin();
+    const result = await startInteractiveGoogleSsoLogin(userKey);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });

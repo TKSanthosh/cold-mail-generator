@@ -1,4 +1,4 @@
-let puppeteer;
+﻿let puppeteer;
 try {
   puppeteer = require('puppeteer');
 } catch (e) {
@@ -7,12 +7,10 @@ try {
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
-const { getUserResume, getUserPaths } = require('./user.service');
+const { getUserResume, getUserPaths, ensureUserSandbox } = require('./user.service');
 const { isSupabaseConfigured, getSupabaseClient } = require('./supabase.service');
 
-const NAUKRI_CONFIG_FILE = path.join(__dirname, '../../naukri_config.json');
-const NAUKRI_SESSION_FILE = path.join(__dirname, '../../naukri_session.json');
-const NAUKRI_HISTORY_FILE = path.join(__dirname, '../../naukri_history.json');
+const USERS_DIR = path.join(__dirname, '../../users');
 
 /**
  * Calculates the next Quarter-Day schedule slot (10:00 AM, 04:00 PM, 10:00 PM, 04:00 AM)
@@ -86,32 +84,38 @@ function findBrowserExecutable() {
   return null;
 }
 
-function hasValidNaukriSession() {
-  if (fs.existsSync(NAUKRI_SESSION_FILE)) {
+function hasValidNaukriSession(userKey = 'default_user') {
+  const paths = getUserPaths(userKey);
+  if (fs.existsSync(paths.naukriSessionPath)) {
     try {
-      const cookies = JSON.parse(fs.readFileSync(NAUKRI_SESSION_FILE, 'utf8'));
+      const cookies = JSON.parse(fs.readFileSync(paths.naukriSessionPath, 'utf8'));
       return Array.isArray(cookies) && cookies.length > 0;
     } catch (e) {}
   }
   return false;
 }
 
-function getNaukriConfig() {
-  if (fs.existsSync(NAUKRI_CONFIG_FILE)) {
+function getNaukriConfig(userKey = 'default_user') {
+  const paths = getUserPaths(userKey);
+  if (fs.existsSync(paths.naukriConfigPath)) {
     try {
-      return JSON.parse(fs.readFileSync(NAUKRI_CONFIG_FILE, 'utf8'));
+      const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
+      return {
+        ...saved,
+        hasSession: hasValidNaukriSession(userKey)
+      };
     } catch (e) {}
   }
   const nextQuarterRun = getNextQuarterDayTime();
   return {
     enabled: true,
-    scheduleMode: 'quarter_day', // 'quarter_day' (10 AM, 4 PM, 10 PM, 4 AM) or 'interval'
+    scheduleMode: 'quarter_day',
     slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
     intervalHours: 6,
     intervalMinutes: 360,
     username: '',
     password: '',
-    hasSession: hasValidNaukriSession(),
+    hasSession: false,
     headless: true,
     lastUploadAt: null,
     nextUploadAt: nextQuarterRun.toISOString(),
@@ -120,39 +124,45 @@ function getNaukriConfig() {
   };
 }
 
-function saveNaukriConfig(config) {
-  fs.writeFileSync(NAUKRI_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+function saveNaukriConfig(userKey = 'default_user', config = {}) {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  const current = getNaukriConfig(userKey);
+  const updated = { ...current, ...config };
+  fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(updated, null, 2), 'utf8');
+  return updated;
 }
 
-function getNaukriHistory() {
-  if (fs.existsSync(NAUKRI_HISTORY_FILE)) {
+function getNaukriHistory(userKey = 'default_user') {
+  const paths = getUserPaths(userKey);
+  if (fs.existsSync(paths.naukriHistoryPath)) {
     try {
-      return JSON.parse(fs.readFileSync(NAUKRI_HISTORY_FILE, 'utf8'));
+      return JSON.parse(fs.readFileSync(paths.naukriHistoryPath, 'utf8'));
     } catch (e) {}
   }
   return [];
 }
 
-function appendNaukriHistory(record) {
-  const history = getNaukriHistory();
+function appendNaukriHistory(userKey = 'default_user', record = {}) {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  const history = getNaukriHistory(userKey);
   history.unshift({
     id: `naukri_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
     timestamp: new Date().toISOString(),
     ...record
   });
-  fs.writeFileSync(NAUKRI_HISTORY_FILE, JSON.stringify(history.slice(0, 50), null, 2), 'utf8');
+  fs.writeFileSync(paths.naukriHistoryPath, JSON.stringify(history.slice(0, 50), null, 2), 'utf8');
 }
 
 /**
- * 1-Click Interactive Google SSO Sign-in Helper
- * Opens a visible Chrome browser window to let user click "Sign in with Google".
- * Captures session cookies upon login and saves them to naukri_session.json.
+ * 1-Click Interactive Google SSO Sign-in Helper for specific user sandbox
  */
 let activeSsoBrowser = null;
 
-async function startInteractiveGoogleSsoLogin() {
+async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
   const browserPath = findBrowserExecutable();
-  console.log(`[NAUKRI SSO] Launching browser for 1-Click Google SSO login (${browserPath || 'Puppeteer default'})...`);
+  console.log(`[NAUKRI SSO] Launching browser for user ${userKey} (${browserPath || 'Puppeteer default'})...`);
 
   if (activeSsoBrowser) {
     try { await activeSsoBrowser.close(); } catch (e) {}
@@ -182,10 +192,8 @@ async function startInteractiveGoogleSsoLogin() {
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
   await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-  // Go to Naukri Login Page
   await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded' });
 
-  // Wait for user to complete login (either navigation to profile/homepage or cookies created)
   return new Promise((resolve, reject) => {
     let timeoutTimer = null;
     let checkInterval = null;
@@ -202,7 +210,7 @@ async function startInteractiveGoogleSsoLogin() {
     timeoutTimer = setTimeout(async () => {
       await cleanup();
       reject(new Error('Google SSO login timed out after 3 minutes. Please try again.'));
-    }, 180000); // 3 minutes timeout
+    }, 180000);
 
     checkInterval = setInterval(async () => {
       try {
@@ -221,15 +229,16 @@ async function startInteractiveGoogleSsoLogin() {
                                 (currentUrl.includes('naukri.com') && !currentUrl.includes('nlogin') && !currentUrl.includes('login'));
 
         if ((isProfileOrHome && hasAuthCookie) || currentUrl.includes('mnjuser/profile')) {
-          console.log('[NAUKRI SSO] Google SSO login detected! Saving session cookies...');
+          console.log(`[NAUKRI SSO] Google SSO login detected for user ${userKey}! Saving session cookies...`);
           
-          // Save all Naukri session cookies
-          fs.writeFileSync(NAUKRI_SESSION_FILE, JSON.stringify(cookies, null, 2), 'utf8');
+          ensureUserSandbox(userKey);
+          const paths = getUserPaths(userKey);
+          fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
 
-          const config = getNaukriConfig();
+          const config = getNaukriConfig(userKey);
           config.hasSession = true;
           config.lastStatus = 'Session Active (Google SSO)';
-          saveNaukriConfig(config);
+          saveNaukriConfig(userKey, config);
 
           await cleanup();
           resolve({
@@ -238,14 +247,13 @@ async function startInteractiveGoogleSsoLogin() {
           });
         }
       } catch (err) {
-        // Browser closed manually by user
         if (err.message.includes('Session closed') || err.message.includes('Target closed')) {
           if (timeoutTimer) clearTimeout(timeoutTimer);
           if (checkInterval) clearInterval(checkInterval);
           activeSsoBrowser = null;
           resolve({
-            success: hasValidNaukriSession(),
-            message: hasValidNaukriSession() ? 'Session saved successfully.' : 'Browser window was closed.'
+            success: hasValidNaukriSession(userKey),
+            message: hasValidNaukriSession(userKey) ? 'Session saved successfully.' : 'Browser window was closed.'
           });
         }
       }
@@ -254,10 +262,10 @@ async function startInteractiveGoogleSsoLogin() {
 }
 
 /**
- * Automates logging into Naukri & uploading fresh 1-page PDF resume
+ * Automates logging into Naukri & uploading fresh 1-page PDF resume for specific user
  */
-async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrideOptions = {}) {
-  const config = getNaukriConfig();
+async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = {}) {
+  const config = getNaukriConfig(userKey);
   const username = overrideOptions.username || config.username;
   const password = overrideOptions.password || config.password;
   const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
@@ -271,6 +279,7 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     throw new Error('Master resume data not found. Please upload or save your resume first.');
   }
 
+  ensureUserSandbox(userKey);
   const userPaths = getUserPaths(userKey);
   const uploadPdfPath = path.join(userPaths.uploadsDir, 'santhosh_t_k_resume.pdf');
   await generateResumePdf(userResume, uploadPdfPath);
@@ -309,13 +318,13 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-    // 3. Load Saved Session Cookies (Google SSO / Session)
-    if (fs.existsSync(NAUKRI_SESSION_FILE)) {
+    // 3. Load Saved User Session Cookies (Google SSO / Session)
+    if (fs.existsSync(userPaths.naukriSessionPath)) {
       try {
-        const cookies = JSON.parse(fs.readFileSync(NAUKRI_SESSION_FILE, 'utf8'));
+        const cookies = JSON.parse(fs.readFileSync(userPaths.naukriSessionPath, 'utf8'));
         if (Array.isArray(cookies) && cookies.length > 0) {
           await page.setCookie(...cookies);
-          console.log('[NAUKRI UPLOADER] Restored existing Google SSO session cookies.');
+          console.log(`[NAUKRI UPLOADER] Restored existing session cookies for user ${userKey}.`);
         }
       } catch (e) {}
     }
@@ -328,9 +337,9 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
 
     // 5. If redirected to login page, authenticate
     if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
-      console.log('[NAUKRI UPLOADER] Session not active. Attempting credentials fallback...');
+      console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials fallback...`);
       if (!username || !password) {
-        throw new Error('No active session found. Please click "Sign in with Google (1-Click SSO)" in the Naukri tab to connect your account once.');
+        throw new Error('No active session or credentials found. Please enter your Naukri username & password in the Naukri settings.');
       }
 
       await page.waitForSelector('#usernameField, input[placeholder*="Email" i]', { timeout: 15000 });
@@ -346,12 +355,12 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
       }
 
       if (page.url().includes('otp') || page.url().includes('verification')) {
-        throw new Error('Naukri requested 2FA OTP verification. Please use the "Sign in with Google (1-Click SSO)" button.');
+        throw new Error('Naukri requested 2FA OTP verification. Please sign in via non-headless mode or complete 2FA.');
       }
 
       const sessionCookies = await page.cookies();
-      fs.writeFileSync(NAUKRI_SESSION_FILE, JSON.stringify(sessionCookies, null, 2), 'utf8');
-      console.log('[NAUKRI UPLOADER] Authentication successful. Session cookies saved.');
+      fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
+      console.log(`[NAUKRI UPLOADER] Authentication successful. Session cookies saved for user ${userKey}.`);
 
       if (!page.url().includes('mnjuser/profile')) {
         await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'networkidle2', timeout: 30000 });
@@ -387,7 +396,7 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     });
 
     const durationSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as santhosh_t_k_resume.pdf. Status: ${updatedStatusText}`);
+    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as santhosh_t_k_resume.pdf for user ${userKey}. Status: ${updatedStatusText}`);
 
     uploadResult = {
       status: 'success',
@@ -407,9 +416,9 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     config.lastStatus = 'Success';
     config.lastError = null;
     config.nextUploadAt = nextRunDate.toISOString();
-    saveNaukriConfig(config);
+    saveNaukriConfig(userKey, config);
 
-    appendNaukriHistory({
+    appendNaukriHistory(userKey, {
       status: 'success',
       fileName: 'santhosh_t_k_resume.pdf',
       message: 'Resume refreshed on Naukri as santhosh_t_k_resume.pdf (Active Just Now)',
@@ -418,7 +427,7 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     });
 
   } catch (err) {
-    console.error('[NAUKRI UPLOADER ERROR]', err.message);
+    console.error(`[NAUKRI UPLOADER ERROR for ${userKey}]`, err.message);
     const durationSec = Math.round((Date.now() - startTime) / 1000);
 
     uploadResult = {
@@ -431,9 +440,9 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     config.lastStatus = 'Failed';
     config.lastError = err.message;
     config.nextUploadAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // Retry in 15m
-    saveNaukriConfig(config);
+    saveNaukriConfig(userKey, config);
 
-    appendNaukriHistory({
+    appendNaukriHistory(userKey, {
       status: 'failed',
       error: err.message,
       duration: `${durationSec}s`
@@ -450,32 +459,45 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
 }
 
 /**
- * Quarter-Day / Interval Automation Scheduler
+ * Quarter-Day / Interval Automation Scheduler iterating all active user sandboxes
  */
 let naukriSchedulerTimer = null;
 
 function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
 
-  console.log('[NAUKRI SCHEDULER] Initialized Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM) auto-uploader ticker.');
+  console.log('[NAUKRI SCHEDULER] Initialized Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM) multi-user auto-uploader ticker.');
 
   naukriSchedulerTimer = setInterval(async () => {
-    const config = getNaukriConfig();
-    if (!config.enabled) return;
+    if (!fs.existsSync(USERS_DIR)) return;
 
-    if (!config.username && !fs.existsSync(NAUKRI_SESSION_FILE)) return;
+    try {
+      const userFolders = fs.readdirSync(USERS_DIR);
+      for (const userKey of userFolders) {
+        const userFolder = path.join(USERS_DIR, userKey);
+        if (!fs.statSync(userFolder).isDirectory()) continue;
 
-    const now = new Date();
-    const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
+        const config = getNaukriConfig(userKey);
+        if (!config.enabled) continue;
 
-    if (now >= nextRun) {
-      console.log('[NAUKRI SCHEDULER] Quarter-Day schedule slot reached! Uploading fresh resume to Naukri...');
-      try {
-        await uploadResumeToNaukri('tksanthosh494_gmail_com');
-        console.log('[NAUKRI SCHEDULER] Profile refreshed successfully.');
-      } catch (e) {
-        console.error('[NAUKRI SCHEDULER ERROR] Scheduled run failed:', e.message);
+        const paths = getUserPaths(userKey);
+        if (!config.username && !fs.existsSync(paths.naukriSessionPath)) continue;
+
+        const now = new Date();
+        const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
+
+        if (now >= nextRun) {
+          console.log(`[NAUKRI SCHEDULER] Quarter-Day schedule reached for user ${userKey}! Uploading fresh resume...`);
+          try {
+            await uploadResumeToNaukri(userKey);
+            console.log(`[NAUKRI SCHEDULER] Profile refreshed successfully for user ${userKey}.`);
+          } catch (e) {
+            console.error(`[NAUKRI SCHEDULER ERROR for ${userKey}] Scheduled run failed:`, e.message);
+          }
+        }
       }
+    } catch (err) {
+      console.warn('[NAUKRI SCHEDULER TICKER WARN]', err.message);
     }
   }, 30000); // Check every 30s
 }

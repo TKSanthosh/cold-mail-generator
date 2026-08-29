@@ -322,7 +322,7 @@ export default function App() {
           <LinkedInAutoPilot isAuthorized={isAuthorized} showToast={showToast} isActive={activeTab === 'linkedin'} />
         </div>
         <div className={activeTab === 'naukri' ? 'block' : 'hidden'}>
-          <NaukriAutoUploader showToast={showToast} isActive={activeTab === 'naukri'} />
+          <NaukriAutoUploader showToast={showToast} isActive={activeTab === 'naukri'} currentUser={currentUser} />
         </div>
         <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
           <ResumeEditor showToast={showToast} />
@@ -2816,7 +2816,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 /* =========================================================================
    NAUKRI AUTO-UPLOADER & QUARTER-DAY (10 AM / 4 PM / 10 PM / 4 AM) BOOSTER
    ========================================================================= */
-function NaukriAutoUploader({ showToast, isActive }) {
+function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [config, setConfig] = useState({
     enabled: true,
     scheduleMode: 'quarter_day',
@@ -2825,6 +2825,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
     intervalMinutes: 360,
     username: '',
     password: '',
+    hasSession: false,
     headless: true,
     lastUploadAt: null,
     nextUploadAt: null,
@@ -2841,6 +2842,27 @@ function NaukriAutoUploader({ showToast, isActive }) {
   });
 
   const fetchConfigAndHistory = async () => {
+    if (!currentUser) {
+      setConfig({
+        enabled: true,
+        scheduleMode: 'quarter_day',
+        slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+        intervalHours: 6,
+        intervalMinutes: 360,
+        username: '',
+        password: '',
+        hasSession: false,
+        headless: true,
+        lastUploadAt: null,
+        nextUploadAt: null,
+        lastStatus: null,
+        lastError: null
+      });
+      setFormData({ username: '', password: '' });
+      setHistory([]);
+      return;
+    }
+
     try {
       const [confRes, histRes] = await Promise.all([
         apiFetch('/api/naukri/config'),
@@ -2856,7 +2878,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
           password: confData.config.password || ''
         });
       }
-      if (histData.history) {
+      if (Array.isArray(histData.history)) {
         setHistory(histData.history);
       }
     } catch (e) {
@@ -2868,7 +2890,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
     if (isActive) {
       fetchConfigAndHistory();
     }
-  }, [isActive]);
+  }, [isActive, currentUser]);
 
   const handleSaveCredentials = async (e) => {
     e?.preventDefault();
