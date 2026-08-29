@@ -309,7 +309,16 @@ async function supabaseSaveNaukriConfig(userKey, config) {
         updated_at: new Date().toISOString()
       })
     });
-    return res.ok;
+    if (res.ok) return true;
+
+    // Fallback: Store into users.tokens.naukri_config if standalone table is not yet created
+    const user = await supabaseGetUser(userKey);
+    if (user) {
+      const updatedTokens = { ...(user.tokens || {}), naukri_config: config };
+      await supabaseUpsertUser(userKey, user, updatedTokens);
+      return true;
+    }
+    return false;
   } catch (e) {
     console.warn('[SUPABASE] saveNaukriConfig error:', e.message);
     return false;
@@ -322,9 +331,17 @@ async function supabaseGetNaukriConfig(userKey) {
     const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config?user_key=eq.${encodeURIComponent(userKey)}&select=config_data`, {
       headers: getHeaders()
     });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return data && data[0] ? data[0].config_data : null;
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data[0] && data[0].config_data) return data[0].config_data;
+    }
+
+    // Fallback: Retrieve from users.tokens.naukri_config
+    const user = await supabaseGetUser(userKey);
+    if (user && user.tokens && user.tokens.naukri_config) {
+      return user.tokens.naukri_config;
+    }
+    return null;
   } catch (e) {
     console.warn('[SUPABASE] getNaukriConfig error:', e.message);
     return null;
