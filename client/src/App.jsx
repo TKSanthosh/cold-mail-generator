@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, AlertCircle, Sun, Moon } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -287,6 +287,14 @@ export default function App() {
           <Globe className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-sky-500" /> <span>LinkedIn Auto-Pilot</span>
         </button>
         <button
+          onClick={() => setActiveTab('naukri')}
+          className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
+            activeTab === 'naukri' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
+          }`}
+        >
+          <TrendingUp className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-emerald-500" /> <span>Naukri Auto-Uploader</span>
+        </button>
+        <button
           onClick={() => setActiveTab('resume')}
           className={`py-2.5 sm:py-3 px-2 sm:px-1 text-xs sm:text-sm font-semibold border-b-2 transition-all flex items-center gap-1.5 sm:gap-2 shrink-0 ${
             activeTab === 'resume' ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100'
@@ -312,6 +320,9 @@ export default function App() {
         </div>
         <div className={activeTab === 'linkedin' ? 'block' : 'hidden'}>
           <LinkedInAutoPilot isAuthorized={isAuthorized} showToast={showToast} isActive={activeTab === 'linkedin'} />
+        </div>
+        <div className={activeTab === 'naukri' ? 'block' : 'hidden'}>
+          <NaukriAutoUploader showToast={showToast} isActive={activeTab === 'naukri'} />
         </div>
         <div className={activeTab === 'resume' ? 'block' : 'hidden'}>
           <ResumeEditor showToast={showToast} />
@@ -2798,6 +2809,400 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* =========================================================================
+   NAUKRI AUTO-UPLOADER & QUARTER-DAY (10 AM / 4 PM / 10 PM / 4 AM) BOOSTER
+   ========================================================================= */
+function NaukriAutoUploader({ showToast, isActive }) {
+  const [config, setConfig] = useState({
+    enabled: true,
+    scheduleMode: 'quarter_day',
+    slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+    intervalHours: 6,
+    intervalMinutes: 360,
+    username: '',
+    password: '',
+    headless: true,
+    lastUploadAt: null,
+    nextUploadAt: null,
+    lastStatus: null,
+    lastError: null
+  });
+  const [history, setHistory] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [savingCreds, setSavingCreds] = useState(false);
+  const [formData, setFormData] = useState({
+    username: '',
+    password: ''
+  });
+
+  const fetchConfigAndHistory = async () => {
+    try {
+      const [confRes, histRes] = await Promise.all([
+        apiFetch('/api/naukri/config'),
+        apiFetch('/api/naukri/history')
+      ]);
+      const confData = await confRes.json();
+      const histData = await histRes.json();
+
+      if (confData.config) {
+        setConfig(confData.config);
+        setFormData({
+          username: confData.config.username || '',
+          password: confData.config.password || ''
+        });
+      }
+      if (histData.history) {
+        setHistory(histData.history);
+      }
+    } catch (e) {
+      console.error('Failed fetching Naukri data', e);
+    }
+  };
+
+  useEffect(() => {
+    if (isActive) {
+      fetchConfigAndHistory();
+    }
+  }, [isActive]);
+
+  const handleSaveCredentials = async (e) => {
+    e?.preventDefault();
+    setSavingCreds(true);
+    try {
+      const updated = {
+        ...config,
+        username: formData.username.trim(),
+        password: formData.password
+      };
+      const res = await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setConfig(data.config);
+      showToast('Naukri credentials saved securely!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to save credentials', 'error');
+    } finally {
+      setSavingCreds(false);
+    }
+  };
+
+  const handleToggleAutoUploader = async () => {
+    const updated = { ...config, enabled: !config.enabled };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(updated.enabled ? 'Naukri Auto-Uploader is now ACTIVE!' : 'Naukri Auto-Uploader paused.', 'info');
+    } catch (e) {
+      showToast('Failed to update config', 'error');
+    }
+  };
+
+  const handleScheduleModeChange = async (mode) => {
+    const updated = { ...config, scheduleMode: mode };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(`Schedule set to ${mode === 'quarter_day' ? 'Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM)' : 'Every 1 Hour'}`, 'success');
+    } catch (e) {
+      showToast('Failed to update schedule mode', 'error');
+    }
+  };
+
+  const handleHeadlessToggle = async () => {
+    const updated = { ...config, headless: !config.headless };
+    setConfig(updated);
+    try {
+      await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      showToast(`Browser mode: ${updated.headless ? 'Headless (Silent)' : 'Visible Chrome Window'}`, 'info');
+    } catch (e) {}
+  };
+
+  const handleTriggerUpload = async () => {
+    if (!config.username && !formData.username) {
+      return showToast('Please enter your Naukri login email & password first.', 'error');
+    }
+    setUploading(true);
+    try {
+      const res = await apiFetch('/api/naukri/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: formData.username.trim() || config.username,
+          password: formData.password || config.password,
+          headless: config.headless
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast(`🚀 Resume uploaded to Naukri successfully! Profile Status: Active Just Now (${data.result?.duration || '12s'})`, 'success');
+      fetchConfigAndHistory();
+    } catch (err) {
+      showToast(err.message || 'Failed to upload resume to Naukri', 'error');
+      fetchConfigAndHistory();
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4 sm:gap-6">
+      {/* 1. Control Center Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <TrendingUp className="w-5 h-5 text-emerald-500" />
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">Naukri Quarter-Day Auto-Uploader & Profile Booster</h2>
+              <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
+                config.enabled
+                  ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
+              }`}>
+                {config.enabled ? '● QUARTER-DAY AUTO-UPLOADER ACTIVE' : '○ PAUSED'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              Automatically generates your latest ATS-tailored 1-page resume and uploads it to Naukri.com every quarter of the day (<strong>10:00 AM</strong>, <strong>04:00 PM</strong>, <strong>10:00 PM</strong>, <strong>04:00 AM</strong>) to keep your profile marked as <strong>"Active Just Now"</strong> at the top of recruiter searches.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleToggleAutoUploader}
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs border ${
+                config.enabled
+                  ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent'
+              }`}
+            >
+              {config.enabled ? 'Pause Scheduler' : '▶ Activate Scheduler'}
+            </button>
+
+            <select
+              value={config.scheduleMode || 'quarter_day'}
+              onChange={(e) => handleScheduleModeChange(e.target.value)}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
+              title="Upload Schedule Mode"
+            >
+              <option value="quarter_day">⏱️ Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM)</option>
+              <option value="hourly">⏱️ Every 1 Hour (Continuous Hourly)</option>
+              <option value="half_hour">⏱️ Every 30 Minutes</option>
+            </select>
+
+            <button
+              onClick={handleTriggerUpload}
+              disabled={uploading}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
+              title="Upload resume immediately right now"
+            >
+              {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
+              <span>{uploading ? 'Uploading to Naukri...' : 'Boost Profile Now'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Live Uploading Progress Banner */}
+        {uploading && (
+          <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-3 animate-pulse">
+            <Loader2 className="w-5 h-5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold text-emerald-900 dark:text-emerald-200 block">
+                Launching Chrome & uploading tailored 1-page PDF to Naukri.com...
+              </span>
+              <span className="text-emerald-700 dark:text-emerald-400 text-[11px]">
+                Authenticating session, updating resume file input (#attachCV), and confirming 'Active Just Now' status badge.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Config & Info Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Credentials Card */}
+          <form onSubmit={handleSaveCredentials} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-3">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5 text-indigo-500" />
+                <span>Naukri Account Credentials</span>
+              </span>
+              <span className="text-[10px] text-slate-400">Stored securely in local sandbox</span>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Naukri Login Email / Username
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
+                placeholder="e.g. tksanthosh494@gmail.com"
+                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
+                Naukri Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="••••••••••••"
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs pr-8 focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-between items-center pt-2">
+              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.headless}
+                  onChange={handleHeadlessToggle}
+                  className="rounded text-indigo-600 focus:ring-indigo-500"
+                />
+                <span>Run Headless (Silent background)</span>
+              </label>
+
+              <button
+                type="submit"
+                disabled={savingCreds}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1"
+              >
+                {savingCreds ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                <span>Save Credentials</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Quarter-Day Resdex Hack Strategy Info Card */}
+          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col justify-between gap-2">
+            <div>
+              <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
+                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Quarter-Day Upload Schedule (Every 6 Hours)</span>
+              </span>
+              <p className="text-xs text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
+                Naukri ranks candidate profiles by <strong>Last Active / Updated timestamp</strong>. Your resume will be uploaded across 4 daily peak recruiter search windows:
+              </p>
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌅 Slot 1: 10:00 AM</span>
+                  <span className="text-[10px] text-slate-500">Peak Morning Search</span>
+                </div>
+                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">☀️ Slot 2: 04:00 PM</span>
+                  <span className="text-[10px] text-slate-500">Afternoon Hiring Review</span>
+                </div>
+                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌙 Slot 3: 10:00 PM</span>
+                  <span className="text-[10px] text-slate-500">Late Evening Sourcing</span>
+                </div>
+                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌌 Slot 4: 04:00 AM</span>
+                  <span className="text-[10px] text-slate-500">Early Index Freshness</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60 flex justify-between items-center text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
+              <span>Last Upload: {config.lastUploadAt ? new Date(config.lastUploadAt).toLocaleTimeString() : 'Not yet'}</span>
+              <span>Next Upload Slot: {config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString() : '10:00 AM'}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Upload History Feed Table */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <History className="w-4 h-4 text-emerald-500" />
+            <span>Naukri Upload & Profile Boost History ({history.length})</span>
+          </h3>
+          <button
+            onClick={fetchConfigAndHistory}
+            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
+          >
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="py-12 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
+            No upload history recorded yet. Click "Boost Profile Now" above or save your credentials to begin automatic quarter-day updates!
+          </div>
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                  <th className="p-3">Upload Timestamp</th>
+                  <th className="p-3">Status</th>
+                  <th className="p-3">Profile Status Message</th>
+                  <th className="p-3">Duration</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {history.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
+                      {new Date(item.timestamp).toLocaleString()}
+                    </td>
+                    <td className="p-3">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                        item.status === 'success'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                          : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                      }`}>
+                        {item.status === 'success' ? '🟢 Active Just Now' : '🔴 Failed'}
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-800 dark:text-slate-200">
+                      {item.profileStatus || item.message || item.error || 'Resume Refreshed'}
+                    </td>
+                    <td className="p-3 font-mono text-slate-500 dark:text-slate-400">
+                      {item.duration || '8s'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

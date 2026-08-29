@@ -14,6 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, initNaukriScheduler } = require('./services/naukri.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
@@ -750,6 +751,32 @@ app.get('/api/supabase/status', (req, res) => {
   });
 });
 
+// --- NAUKRI PROFILE BOOSTER & AUTO-UPLOADER ENDPOINTS ---
+app.get('/api/naukri/config', (req, res) => {
+  res.json({ config: getNaukriConfig() });
+});
+
+app.post('/api/naukri/config', (req, res) => {
+  const current = getNaukriConfig();
+  const updated = { ...current, ...req.body };
+  saveNaukriConfig(updated);
+  res.json({ success: true, config: updated });
+});
+
+app.get('/api/naukri/history', (req, res) => {
+  res.json({ history: getNaukriHistory() });
+});
+
+app.post('/api/naukri/trigger', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const result = await uploadResumeToNaukri(userKey, req.body || {});
+    res.json({ success: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {
@@ -765,6 +792,7 @@ if (fs.existsSync(seedBackupPath)) {
 // Initialize background schedulers
 initScheduler();
 initLinkedInScheduler();
+initNaukriScheduler();
 
 // --- SERVE PRODUCTION CLIENT ASSETS ---
 const clientDistPath = path.join(__dirname, '../../client/dist');

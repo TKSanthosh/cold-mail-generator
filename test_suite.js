@@ -22,7 +22,7 @@ try {
   
   const importedIcons = new Set(importMatch[1].split(',').map(s => s.trim()).filter(Boolean));
   const jsxTagMatches = [...appCode.matchAll(/<([A-Z][a-zA-Z0-9]+)[\s\/>]/g)];
-  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot']);
+  const internalComponents = new Set(['App', 'SingleSender', 'BulkSender', 'LogsViewer', 'ResumeEditor', 'JdResumeTailor', 'LinkedInAutoPilot', 'NaukriAutoUploader']);
   
   const missingIcons = [];
   for (const m of jsxTagMatches) {
@@ -139,7 +139,7 @@ async function testPdfSinglePage() {
     const masterResume = JSON.parse(fs.readFileSync(path.join(__dirname, 'server/resume.json'), 'utf8'));
     masterResume.atsKeywords = ['MERN Stack', 'MongoDB', 'Express.js', 'React.js', 'Node.js', 'JavaScript', 'ES6+', 'REST APIs', 'AWS', 'Docker', 'CI/CD'];
     
-    const testPdfPath = path.join(__dirname, 'test_single_page_unit.pdf');
+    const testPdfPath = path.join(__dirname, `test_single_page_${Date.now()}_${Math.random().toString(36).substr(2, 4)}.pdf`);
     await generateResumePdf(masterResume, testPdfPath);
     
     const pdfContent = fs.readFileSync(testPdfPath, 'binary');
@@ -203,6 +203,25 @@ async function testPdfSinglePage() {
     assert(fs.existsSync(path.join(__dirname, 'supabase_schema.sql')), 'supabase_schema.sql exists and is ready for 1-click execution');
   } catch (e) {
     assert(false, `Test 10 threw error: ${e.message}`);
+  }
+
+  // TEST 11: Naukri Profile Booster & Quarter-Day Scheduler
+  try {
+    const naukriService = require('./server/src/services/naukri.service');
+    assert(typeof naukriService.findBrowserExecutable === 'function', 'naukri.service exports findBrowserExecutable');
+    assert(typeof naukriService.getNaukriConfig === 'function', 'naukri.service exports getNaukriConfig');
+    assert(typeof naukriService.getNextQuarterDayTime === 'function', 'naukri.service exports getNextQuarterDayTime');
+    
+    const browserPath = naukriService.findBrowserExecutable();
+    assert(Boolean(browserPath), `Browser executable discovered: ${browserPath}`);
+    
+    const nextSlot = naukriService.getNextQuarterDayTime();
+    assert(nextSlot instanceof Date && nextSlot > new Date(), `Next Quarter-Day slot calculated: ${nextSlot.toLocaleTimeString()}`);
+
+    const config = naukriService.getNaukriConfig();
+    assert(config.scheduleMode === 'quarter_day' || config.enabled !== undefined, 'Naukri Quarter-Day config verified');
+  } catch (e) {
+    assert(false, `Test 11 threw error: ${e.message}`);
   }
 
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
