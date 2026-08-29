@@ -8,6 +8,8 @@ node_modules/
 token.json
 */token.json
 client_secret*.json
+server/naukri_session.json
+naukri_session.json
 
 # Generated PDFs & logs
 uploads/*.pdf
