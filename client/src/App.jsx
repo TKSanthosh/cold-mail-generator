@@ -3120,7 +3120,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 <span>Naukri Account Credentials</span>
               </span>
               <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                📄 santhosh_t_k_resume.pdf
+                📄 {currentUser?.name ? `${currentUser.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_resume.pdf` : 'candidate_resume.pdf'}
               </span>
             </div>
 
@@ -3132,7 +3132,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 type="text"
                 value={formData.username}
                 onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                placeholder="e.g. tksanthosh494@gmail.com"
+                placeholder="e.g. your_email@gmail.com"
                 className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>

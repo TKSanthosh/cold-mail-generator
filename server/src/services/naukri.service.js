@@ -298,7 +298,10 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
   ensureUserSandbox(userKey);
   const userPaths = getUserPaths(userKey);
-  const uploadPdfPath = path.join(userPaths.uploadsDir, 'santhosh_t_k_resume.pdf');
+  const candidateName = userResume?.personalInfo?.name || 'Candidate';
+  const cleanName = candidateName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+  const resumeFileName = `${cleanName}_resume.pdf`;
+  const uploadPdfPath = path.join(userPaths.uploadsDir, resumeFileName);
   await generateResumePdf(userResume, uploadPdfPath);
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
@@ -402,7 +405,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       throw new Error('Could not locate the resume upload button (#attachCV) on Naukri profile page.');
     }
 
-    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as santhosh_t_k_resume.pdf (${uploadPdfPath})...`);
+    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
     await fileInput.uploadFile(uploadPdfPath);
 
     await page.waitForTimeout(4000);
@@ -413,12 +416,12 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     });
 
     const durationSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as santhosh_t_k_resume.pdf for user ${userKey}. Status: ${updatedStatusText}`);
+    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
 
     uploadResult = {
       status: 'success',
-      fileName: 'santhosh_t_k_resume.pdf',
-      message: 'Resume updated successfully on Naukri profile as santhosh_t_k_resume.pdf (Active Just Now)',
+      fileName: resumeFileName,
+      message: `Resume updated successfully on Naukri profile as ${resumeFileName} (Active Just Now)`,
       duration: `${durationSec}s`,
       timestamp: new Date().toISOString(),
       profileStatus: updatedStatusText
@@ -437,8 +440,8 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     appendNaukriHistory(userKey, {
       status: 'success',
-      fileName: 'santhosh_t_k_resume.pdf',
-      message: 'Resume refreshed on Naukri as santhosh_t_k_resume.pdf (Active Just Now)',
+      fileName: resumeFileName,
+      message: `Resume refreshed on Naukri as ${resumeFileName} (Active Just Now)`,
       duration: `${durationSec}s`,
       profileStatus: updatedStatusText
     });
