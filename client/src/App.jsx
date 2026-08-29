@@ -2938,9 +2938,30 @@ function NaukriAutoUploader({ showToast, isActive }) {
     } catch (e) {}
   };
 
+  const [connectingSso, setConnectingSso] = useState(false);
+
+  const handleLaunchGoogleSso = async () => {
+    setConnectingSso(true);
+    showToast('🚀 Chrome opened! Click "Sign in with Google" in the Chrome window to complete authentication.', 'info');
+    try {
+      const res = await apiFetch('/api/naukri/launch-sso', {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast('🎉 Google SSO connected successfully! Session cookies saved.', 'success');
+      fetchConfigAndHistory();
+    } catch (err) {
+      showToast(err.message || 'Google SSO login failed', 'error');
+    } finally {
+      setConnectingSso(false);
+    }
+  };
+
   const handleTriggerUpload = async () => {
-    if (!config.username && !formData.username) {
-      return showToast('Please enter your Naukri login email & password first.', 'error');
+    if (!config.hasSession && !config.username && !formData.username) {
+      return showToast('Please click "Sign in with Google (1-Click SSO)" or enter credentials first.', 'error');
     }
     setUploading(true);
     try {
@@ -3013,7 +3034,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
 
             <button
               onClick={handleTriggerUpload}
-              disabled={uploading}
+              disabled={uploading || connectingSso}
               className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
               title="Upload resume immediately right now"
             >
@@ -3023,7 +3044,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
           </div>
         </div>
 
-        {/* Live Uploading Progress Banner */}
+        {/* Live Uploading / SSO Connecting Progress Banner */}
         {uploading && (
           <div className="p-4 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-xl flex items-center gap-3 animate-pulse">
             <Loader2 className="w-5 h-5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -3032,7 +3053,21 @@ function NaukriAutoUploader({ showToast, isActive }) {
                 Launching Chrome & uploading tailored 1-page PDF to Naukri.com...
               </span>
               <span className="text-emerald-700 dark:text-emerald-400 text-[11px]">
-                Authenticating session, updating resume file input (#attachCV), and confirming 'Active Just Now' status badge.
+                Authenticating session via Google SSO cookies, attaching resume PDF to #attachCV, and confirming 'Active Just Now' timestamp.
+              </span>
+            </div>
+          </div>
+        )}
+
+        {connectingSso && (
+          <div className="p-4 bg-sky-50 dark:bg-sky-950/40 border border-sky-200 dark:border-sky-800 rounded-xl flex items-center gap-3 animate-pulse">
+            <Loader2 className="w-5 h-5 animate-spin text-sky-600 dark:text-sky-400 shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold text-sky-900 dark:text-sky-200 block">
+                Chrome Window Open: Please click "Sign in with Google"
+              </span>
+              <span className="text-sky-700 dark:text-sky-400 text-[11px]">
+                Select your Google account in the Chrome window. Once signed in, this window will automatically save your session cookies for background Quarter-Day auto-uploads!
               </span>
             </div>
           </div>
@@ -3040,14 +3075,16 @@ function NaukriAutoUploader({ showToast, isActive }) {
 
         {/* Config & Info Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Credentials Card */}
-          <form onSubmit={handleSaveCredentials} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-3">
+          {/* Credentials Card (Primary) */}
+          <form onSubmit={handleSaveCredentials} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-indigo-500" />
                 <span>Naukri Account Credentials</span>
               </span>
-              <span className="text-[10px] text-slate-400">Stored securely in local sandbox</span>
+              <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
+                📄 santhosh_t_k_resume.pdf
+              </span>
             </div>
 
             <div>
@@ -3085,7 +3122,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-2">
+            <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-700">
               <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
                 <input
                   type="checkbox"
@@ -3093,7 +3130,7 @@ function NaukriAutoUploader({ showToast, isActive }) {
                   onChange={handleHeadlessToggle}
                   className="rounded text-indigo-600 focus:ring-indigo-500"
                 />
-                <span>Run Headless (Silent background)</span>
+                <span>Run Headless (Silent Background)</span>
               </label>
 
               <button

@@ -1,4 +1,4 @@
-﻿const puppeteer = require('puppeteer-core');
+const puppeteer = require('puppeteer-core');
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
@@ -47,6 +47,16 @@ function findBrowserExecutable() {
   return null;
 }
 
+function hasValidNaukriSession() {
+  if (fs.existsSync(NAUKRI_SESSION_FILE)) {
+    try {
+      const cookies = JSON.parse(fs.readFileSync(NAUKRI_SESSION_FILE, 'utf8'));
+      return Array.isArray(cookies) && cookies.length > 0;
+    } catch (e) {}
+  }
+  return false;
+}
+
 function getNaukriConfig() {
   if (fs.existsSync(NAUKRI_CONFIG_FILE)) {
     try {
@@ -62,6 +72,7 @@ function getNaukriConfig() {
     intervalMinutes: 360,
     username: '',
     password: '',
+    hasSession: hasValidNaukriSession(),
     headless: true,
     lastUploadAt: null,
     nextUploadAt: nextQuarterRun.toISOString(),
@@ -94,6 +105,115 @@ function appendNaukriHistory(record) {
 }
 
 /**
+ * 1-Click Interactive Google SSO Sign-in Helper
+ * Opens a visible Chrome browser window to let user click "Sign in with Google".
+ * Captures session cookies upon login and saves them to naukri_session.json.
+ */
+let activeSsoBrowser = null;
+
+async function startInteractiveGoogleSsoLogin() {
+  const browserPath = findBrowserExecutable();
+  if (!browserPath) {
+    throw new Error('Google Chrome executable not found on Windows.');
+  }
+
+  if (activeSsoBrowser) {
+    try { await activeSsoBrowser.close(); } catch (e) {}
+    activeSsoBrowser = null;
+  }
+
+  console.log('[NAUKRI SSO] Launching visible Chrome for 1-Click Google SSO login...');
+
+  const browser = await puppeteer.launch({
+    executablePath: browserPath,
+    headless: false, // Visible window so user can click Sign in with Google
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-blink-features=AutomationControlled',
+      '--window-size=1200,800'
+    ],
+    defaultViewport: null
+  });
+
+  activeSsoBrowser = browser;
+
+  const pages = await browser.pages();
+  const page = pages.length > 0 ? pages[0] : await browser.newPage();
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+
+  // Go to Naukri Login Page
+  await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded' });
+
+  // Wait for user to complete login (either navigation to profile/homepage or cookies created)
+  return new Promise((resolve, reject) => {
+    let timeoutTimer = null;
+    let checkInterval = null;
+
+    const cleanup = async () => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (checkInterval) clearInterval(checkInterval);
+      if (activeSsoBrowser) {
+        try { await activeSsoBrowser.close(); } catch (e) {}
+        activeSsoBrowser = null;
+      }
+    };
+
+    timeoutTimer = setTimeout(async () => {
+      await cleanup();
+      reject(new Error('Google SSO login timed out after 3 minutes. Please try again.'));
+    }, 180000); // 3 minutes timeout
+
+    checkInterval = setInterval(async () => {
+      try {
+        const currentUrl = page.url();
+        const cookies = await page.cookies();
+        const hasAuthCookie = cookies.some(c => 
+          c.name.includes('nauk_session') || 
+          c.name.includes('ubt_user') || 
+          c.name.includes('isLoggedIn') || 
+          c.name.includes('TOKEN')
+        );
+
+        const isProfileOrHome = currentUrl.includes('mnjuser/profile') || 
+                                currentUrl.includes('naukri.com/homepage') || 
+                                currentUrl.includes('naukri.com/mynaukri') ||
+                                (currentUrl.includes('naukri.com') && !currentUrl.includes('nlogin') && !currentUrl.includes('login'));
+
+        if ((isProfileOrHome && hasAuthCookie) || currentUrl.includes('mnjuser/profile')) {
+          console.log('[NAUKRI SSO] Google SSO login detected! Saving session cookies...');
+          
+          // Save all Naukri session cookies
+          fs.writeFileSync(NAUKRI_SESSION_FILE, JSON.stringify(cookies, null, 2), 'utf8');
+
+          const config = getNaukriConfig();
+          config.hasSession = true;
+          config.lastStatus = 'Session Active (Google SSO)';
+          saveNaukriConfig(config);
+
+          await cleanup();
+          resolve({
+            success: true,
+            message: 'Google SSO login successful! Session cookies saved for background auto-uploading.'
+          });
+        }
+      } catch (err) {
+        // Browser closed manually by user
+        if (err.message.includes('Session closed') || err.message.includes('Target closed')) {
+          if (timeoutTimer) clearTimeout(timeoutTimer);
+          if (checkInterval) clearInterval(checkInterval);
+          activeSsoBrowser = null;
+          resolve({
+            success: hasValidNaukriSession(),
+            message: hasValidNaukriSession() ? 'Session saved successfully.' : 'Browser window was closed.'
+          });
+        }
+      }
+    }, 1500);
+  });
+}
+
+/**
  * Automates logging into Naukri & uploading fresh 1-page PDF resume
  */
 async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrideOptions = {}) {
@@ -112,13 +232,12 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
   }
 
   const userPaths = getUserPaths(userKey);
-  const tempPdfPath = path.join(userPaths.uploadsDir, `Santhosh_T_K_Resume_Naukri_${Date.now()}.pdf`);
-  await generateResumePdf(userResume, tempPdfPath);
+  const uploadPdfPath = path.join(userPaths.uploadsDir, 'santhosh_t_k_resume.pdf');
+  await generateResumePdf(userResume, uploadPdfPath);
 
   // 2. Discover Browser Executable
   const browserPath = findBrowserExecutable();
   if (!browserPath) {
-    if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
     throw new Error('Google Chrome / Microsoft Edge executable not found on Windows.');
   }
 
@@ -144,13 +263,13 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
 
-    // 3. Load Saved Session Cookies (if available)
+    // 3. Load Saved Session Cookies (Google SSO / Session)
     if (fs.existsSync(NAUKRI_SESSION_FILE)) {
       try {
         const cookies = JSON.parse(fs.readFileSync(NAUKRI_SESSION_FILE, 'utf8'));
         if (Array.isArray(cookies) && cookies.length > 0) {
           await page.setCookie(...cookies);
-          console.log('[NAUKRI UPLOADER] Restored existing session cookies.');
+          console.log('[NAUKRI UPLOADER] Restored existing Google SSO session cookies.');
         }
       } catch (e) {}
     }
@@ -163,9 +282,9 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
 
     // 5. If redirected to login page, authenticate
     if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
-      console.log('[NAUKRI UPLOADER] Session not active. Authenticating with credentials...');
+      console.log('[NAUKRI UPLOADER] Session not active. Attempting credentials fallback...');
       if (!username || !password) {
-        throw new Error('Naukri credentials (Username & Password) are required. Please configure them in the Naukri tab.');
+        throw new Error('No active session found. Please click "Sign in with Google (1-Click SSO)" in the Naukri tab to connect your account once.');
       }
 
       await page.waitForSelector('#usernameField, input[placeholder*="Email" i]', { timeout: 15000 });
@@ -181,7 +300,7 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
       }
 
       if (page.url().includes('otp') || page.url().includes('verification')) {
-        throw new Error('Naukri requested 2FA OTP verification. Please log in once manually in non-headless mode or complete 2FA.');
+        throw new Error('Naukri requested 2FA OTP verification. Please use the "Sign in with Google (1-Click SSO)" button.');
       }
 
       const sessionCookies = await page.cookies();
@@ -211,8 +330,8 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
       throw new Error('Could not locate the resume upload button (#attachCV) on Naukri profile page.');
     }
 
-    console.log(`[NAUKRI UPLOADER] Uploading generated PDF (${tempPdfPath})...`);
-    await fileInput.uploadFile(tempPdfPath);
+    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as santhosh_t_k_resume.pdf (${uploadPdfPath})...`);
+    await fileInput.uploadFile(uploadPdfPath);
 
     await page.waitForTimeout(4000);
 
@@ -222,21 +341,22 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
     });
 
     const durationSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s. Status: ${updatedStatusText}`);
+    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as santhosh_t_k_resume.pdf. Status: ${updatedStatusText}`);
 
     uploadResult = {
       status: 'success',
-      message: 'Resume updated successfully on Naukri profile (Active Just Now)',
+      fileName: 'santhosh_t_k_resume.pdf',
+      message: 'Resume updated successfully on Naukri profile as santhosh_t_k_resume.pdf (Active Just Now)',
       duration: `${durationSec}s`,
       timestamp: new Date().toISOString(),
       profileStatus: updatedStatusText
     };
 
-    // Calculate next run
     const nextRunDate = (config.scheduleMode === 'quarter_day')
       ? getNextQuarterDayTime()
       : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
 
+    config.hasSession = true;
     config.lastUploadAt = new Date().toISOString();
     config.lastStatus = 'Success';
     config.lastError = null;
@@ -245,7 +365,8 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
 
     appendNaukriHistory({
       status: 'success',
-      message: 'Resume refreshed on Naukri (Active Just Now)',
+      fileName: 'santhosh_t_k_resume.pdf',
+      message: 'Resume refreshed on Naukri as santhosh_t_k_resume.pdf (Active Just Now)',
       duration: `${durationSec}s`,
       profileStatus: updatedStatusText
     });
@@ -276,9 +397,6 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
   } finally {
     if (browser) {
       try { await browser.close(); } catch (e) {}
-    }
-    if (fs.existsSync(tempPdfPath)) {
-      try { fs.unlinkSync(tempPdfPath); } catch (e) {}
     }
   }
 
@@ -319,9 +437,11 @@ function initNaukriScheduler() {
 module.exports = {
   getNextQuarterDayTime,
   findBrowserExecutable,
+  hasValidNaukriSession,
   getNaukriConfig,
   saveNaukriConfig,
   getNaukriHistory,
+  startInteractiveGoogleSsoLogin,
   uploadResumeToNaukri,
   initNaukriScheduler
 };

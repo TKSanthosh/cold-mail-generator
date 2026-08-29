@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
@@ -765,6 +765,15 @@ app.post('/api/naukri/config', (req, res) => {
 
 app.get('/api/naukri/history', (req, res) => {
   res.json({ history: getNaukriHistory() });
+});
+
+app.post('/api/naukri/launch-sso', async (req, res) => {
+  try {
+    const result = await startInteractiveGoogleSsoLogin();
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/naukri/trigger', async (req, res) => {
