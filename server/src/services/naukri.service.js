@@ -1,4 +1,9 @@
-const puppeteer = require('puppeteer-core');
+let puppeteer;
+try {
+  puppeteer = require('puppeteer');
+} catch (e) {
+  puppeteer = require('puppeteer-core');
+}
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
@@ -41,14 +46,23 @@ function findBrowserExecutable() {
     return process.env.GOOGLE_CHROME_BIN;
   }
 
-  const candidatePaths = [
-    // Windows paths
-    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-    'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-    process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : null,
-    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-    // Linux / Render / Docker / Debian paths
+  // 1. Windows standard paths
+  if (process.platform === 'win32') {
+    const winCandidates = [
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : null,
+      'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+      'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+    ].filter(Boolean);
+
+    for (const p of winCandidates) {
+      if (fs.existsSync(p)) return p;
+    }
+  }
+
+  // 2. Linux / Render / Docker paths
+  const linuxCandidates = [
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
     '/usr/bin/chromium',
@@ -56,13 +70,19 @@ function findBrowserExecutable() {
     '/snap/bin/chromium',
     '/usr/lib/chromium/chrome',
     '/app/.apt/usr/bin/google-chrome'
-  ].filter(Boolean);
-
-  for (const p of candidatePaths) {
-    if (fs.existsSync(p)) {
-      return p;
-    }
+  ];
+  for (const p of linuxCandidates) {
+    if (fs.existsSync(p)) return p;
   }
+
+  // 3. Bundled Puppeteer browser executable if present
+  try {
+    if (puppeteer && typeof puppeteer.executablePath === 'function') {
+      const pPath = puppeteer.executablePath();
+      if (pPath && fs.existsSync(pPath)) return pPath;
+    }
+  } catch (e) {}
+
   return null;
 }
 
@@ -132,29 +152,30 @@ let activeSsoBrowser = null;
 
 async function startInteractiveGoogleSsoLogin() {
   const browserPath = findBrowserExecutable();
-  if (!browserPath) {
-    throw new Error('Google Chrome executable not found on Windows.');
-  }
+  console.log(`[NAUKRI SSO] Launching browser for 1-Click Google SSO login (${browserPath || 'Puppeteer default'})...`);
 
   if (activeSsoBrowser) {
     try { await activeSsoBrowser.close(); } catch (e) {}
     activeSsoBrowser = null;
   }
 
-  console.log('[NAUKRI SSO] Launching visible Chrome for 1-Click Google SSO login...');
-
-  const browser = await puppeteer.launch({
-    executablePath: browserPath,
-    headless: false, // Visible window so user can click Sign in with Google
+  const launchOptions = {
+    headless: false,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
       '--disable-blink-features=AutomationControlled',
       '--window-size=1200,800'
     ],
     defaultViewport: null
-  });
+  };
 
+  if (browserPath) {
+    launchOptions.executablePath = browserPath;
+  }
+
+  const browser = await puppeteer.launch(launchOptions);
   activeSsoBrowser = browser;
 
   const pages = await browser.pages();
@@ -254,30 +275,36 @@ async function uploadResumeToNaukri(userKey = 'tksanthosh494_gmail_com', overrid
   const uploadPdfPath = path.join(userPaths.uploadsDir, 'santhosh_t_k_resume.pdf');
   await generateResumePdf(userResume, uploadPdfPath);
 
-  // 2. Discover Browser Executable
+  // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
   const browserPath = findBrowserExecutable();
-  if (!browserPath) {
-    throw new Error('Google Chrome / Microsoft Edge executable not found on Windows.');
-  }
-
-  console.log(`[NAUKRI UPLOADER] Launching browser engine: ${browserPath}`);
+  console.log(`[NAUKRI UPLOADER] Launching browser engine (${browserPath || 'Puppeteer default'})...`);
 
   let browser = null;
   let uploadResult = null;
 
   try {
-    browser = await puppeteer.launch({
-      executablePath: browserPath,
+    const launchOptions = {
       headless: headless ? 'new' : false,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--single-process',
+        '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
-        '--window-size=1280,800',
-        '--disable-features=IsolateOrigins,site-per-process'
+        '--window-size=1280,800'
       ],
       defaultViewport: { width: 1280, height: 800 }
-    });
+    };
+
+    if (browserPath) {
+      launchOptions.executablePath = browserPath;
+    }
+
+    browser = await puppeteer.launch(launchOptions);
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');

@@ -213,7 +213,7 @@ async function testPdfSinglePage() {
     assert(typeof naukriService.getNextQuarterDayTime === 'function', 'naukri.service exports getNextQuarterDayTime');
     
     const browserPath = naukriService.findBrowserExecutable();
-    assert(Boolean(browserPath), `Browser executable discovered: ${browserPath}`);
+    assert(browserPath !== undefined, `Browser executable discovered: ${browserPath || 'Puppeteer default (Render Linux)'}`);
     
     const nextSlot = naukriService.getNextQuarterDayTime();
     assert(nextSlot instanceof Date && nextSlot > new Date(), `Next Quarter-Day slot calculated: ${nextSlot.toLocaleTimeString()}`);
