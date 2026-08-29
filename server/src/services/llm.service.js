@@ -73,62 +73,53 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
  * Generates a tailored, plain-text cold email strictly adhering to the user's fixed format.
  */
 async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
-  const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
-  const candidateTitle = 'Full Stack Developer';
-  const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
-  const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
-  const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
-  const candidateGithub = resumeData?.personalInfo?.github || 'github.com/TKSanthosh';
+  const candidateName = resumeData?.personalInfo?.name || 'Candidate';
+  const candidateTitle = resumeData?.personalInfo?.title || 'Full Stack Developer';
+  const candidateEmail = resumeData?.personalInfo?.email || '';
+  const candidatePhone = resumeData?.personalInfo?.phone || '';
+  const candidateLinkedin = resumeData?.personalInfo?.linkedin || '';
+  const candidateGithub = resumeData?.personalInfo?.github || '';
 
   const genericKeywords = ['hr', 'careers', 'talent', 'jobs', 'noreply', 'recruiting', 'admin', 'team', 'contact', 'info'];
   const cleanHrName = (hrName && !genericKeywords.includes(hrName.toLowerCase().trim())) 
     ? hrName.trim() 
     : 'Hiring Team';
 
-  const systemPrompt = `You are a high-converting cold email writer for a software engineer job seeker. Output PLAIN TEXT ONLY.
+  const systemPrompt = `You are a world-class executive recruiter and concise cold email copywriter. Output PLAIN TEXT ONLY.
+
+CORE OBJECTIVE:
+Generate an ultra-brief, high-converting, punchy cold email (under 90-110 words) that a busy hiring manager can scan in 10 seconds on mobile.
 
 STRICT RULES:
-- Never output JSON, curly braces, quotation-mark-wrapped keys, or any markup.
-- Never output field labels like "subject:", "greeting:", "paragraph1:".
-- Output must be ready to paste directly into an email body — nothing else.
-- Do not truncate sentences. Every sentence must be grammatically complete.
-- Do not fabricate or round up years of experience. Use EXACTLY "3+ years" of experience as provided in the input data.
-- Do not use the word "seasoned" or similar inflated language.
+- Never output JSON, curly braces, quotes around keys, or any markup.
+- Never output field labels like "subject:", "greeting:", "body:".
+- Keep sentences short, crisp, and impactful.
+- Use EXACTLY "3+ years" of experience as provided in the input data.
+- NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
 
-ROLE TITLE RULES:
-1. Check the company and Job Description (JD): If a specific role name is provided (e.g. "Full Stack Engineer", "Backend Developer", "Software Engineer", "MERN Stack Developer", "Software Development Engineer"), tailor the subject line and opening pitch to use their exact role title naming.
-2. If it is a general cold outreach with no JD, use "Full Stack Developer" as the primary role title in the subject line and opening body.
-3. NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
-
-OUTPUT FORMAT (plain text, in this exact structure):
-Subject: <Targeted subject line: e.g. "Full Stack Developer Opportunities at ${company} - ${candidateName}" or "Exploring <Role Title> Opportunities at ${company} - ${candidateName}">
+OUTPUT FORMAT (plain text, exact structure):
+Subject: Exploring <Role Title> Opportunities at ${company} - ${candidateName}
 
 Hi ${cleanHrName},
 
-<Paragraph 1: 2-3 sentences. Express strong interest in Full Stack Developer opportunities (or the specific role title if JD is provided) at ${company}. Highlight 3+ years of experience building scalable web applications and RESTful APIs using Node.js, Express.js, React.js (MERN stack), MySQL, MongoDB, and AWS.>
+<Opening: 1 punchy sentence expressing interest in ${company}'s engineering team for <Role Title> roles.>
 
-<Paragraph 2: 2-3 sentences. Specific achievements from input: reduced API response time by 20% and eliminated ~30% of production issues migrating PHP backend to Node.js & MongoDB at Sify Technologies; built clinical event platform at IQVIA; maintained 95%+ first-pass code review approval rate. Connect with the company's tech focus if company context is available. Do not invent metrics not present in input.>
+<Core Pitch: 2 concise sentences highlighting 3+ years in MERN / full-stack engineering, building scalable RESTful APIs, and delivering measurable impact (e.g. reducing API latency by 20% and production bugs by ~30%).>
 
-<Paragraph 3: 1-2 sentences. Clear call to action requesting a 15-minute intro call this week to discuss how I can contribute to your engineering team, mention attached resume.>
+<Call To Action: 1 short low-friction sentence asking for a brief 10-minute chat this week, mentioning attached 1-page resume.>
 
 Best regards,
 ${candidateName}
-Full Stack Developer
-${candidatePhone} | ${candidateEmail}
-${candidateLinkedin} | ${candidateGithub}
-
-Before finalizing, re-check: no JSON syntax, no level numbers like SDE2, no truncated sentences, no inflated experience claims, no field-name labels visible in the text.`;
+${candidateTitle}
+${candidatePhone ? `${candidatePhone} | ` : ''}${candidateEmail}
+${candidateLinkedin ? `${candidateLinkedin} | ` : ''}${candidateGithub}`;
 
   let userPrompt = `Target Recruiter: ${cleanHrName}
 Target Company: ${company}
 Candidate: ${candidateName} (${candidateTitle})
 Total Experience: 3+ years (full-stack & backend web application development)
-Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, JWT/RBAC, REST APIs
-Experience & Achievements:
-- Software Development Engineer at IQVIA, Bangalore (Clinical Event & Engagement Management Platform)
-- Software Developer at Sify Technologies (Exam Engine: migrated PHP backend to Node.js/MongoDB, cutting production issues by ~30%; QPTool: built RESTful APIs + React.js, improved API response time by ~20%)
-- Maintained 95%+ first-pass code review approval rate; set coding standards for a 5-member team
-Call to Action: Request a 15-minute intro call this week; resume attached.
+Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, REST APIs
+Notable Achievements: Reduced API response times by ~20% and cut production issues by ~30% at Sify Technologies; built clinical platforms at IQVIA.
 `;
 
   if (companyIntel && companyIntel.summary) {
