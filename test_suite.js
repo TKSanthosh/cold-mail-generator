@@ -224,6 +224,19 @@ async function testPdfSinglePage() {
     assert(false, `Test 11 threw error: ${e.message}`);
   }
 
+  // TEST 12: Anti-Sleep 24/7 Keep-Alive Heartbeat Service
+  try {
+    const keepAliveService = require('./server/src/services/keepalive.service');
+    assert(typeof keepAliveService.initKeepAliveService === 'function', 'keepalive.service exports initKeepAliveService');
+    assert(typeof keepAliveService.getKeepAliveStatus === 'function', 'keepalive.service exports getKeepAliveStatus');
+    
+    const status = keepAliveService.getKeepAliveStatus(5001);
+    assert(status && status.enabled === true, 'Keep-Alive anti-sleep status active');
+    assert(typeof status.pingInterval === 'string', 'Keep-Alive ping interval configured');
+  } catch (e) {
+    assert(false, `Test 12 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }

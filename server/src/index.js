@@ -15,6 +15,7 @@ const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
 const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
@@ -786,6 +787,26 @@ app.post('/api/naukri/trigger', async (req, res) => {
   }
 });
 
+// --- 24/7 CONTAINER HEALTH & KEEP-ALIVE ENDPOINTS ---
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    timestamp: new Date().toISOString(),
+    service: 'Cold Reach AI & Profile Booster',
+    schedulers: {
+      linkedin30Min: true,
+      naukriQuarterDay: true,
+      antiSleepHeartbeat: true
+    },
+    keepAlive: getKeepAliveStatus(PORT)
+  });
+});
+
+app.get('/api/keepalive/status', (req, res) => {
+  res.json(getKeepAliveStatus(PORT));
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {
@@ -798,10 +819,11 @@ if (fs.existsSync(seedBackupPath)) {
   }
 }
 
-// Initialize background schedulers
+// Initialize background schedulers & 24/7 Keep-Alive Anti-Sleep Heartbeat
 initScheduler();
 initLinkedInScheduler();
 initNaukriScheduler();
+initKeepAliveService(PORT);
 
 // --- SERVE PRODUCTION CLIENT ASSETS ---
 const clientDistPath = path.join(__dirname, '../../client/dist');

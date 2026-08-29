@@ -28,15 +28,34 @@ function getNextQuarterDayTime(baseDate = new Date()) {
 }
 
 /**
- * Automatically discovers Google Chrome or Microsoft Edge on Windows
+ * Automatically discovers Google Chrome or Microsoft Edge across Windows & Linux (Render / Docker)
  */
 function findBrowserExecutable() {
+  if (process.env.PUPPETEER_EXECUTABLE_PATH && fs.existsSync(process.env.PUPPETEER_EXECUTABLE_PATH)) {
+    return process.env.PUPPETEER_EXECUTABLE_PATH;
+  }
+  if (process.env.CHROME_PATH && fs.existsSync(process.env.CHROME_PATH)) {
+    return process.env.CHROME_PATH;
+  }
+  if (process.env.GOOGLE_CHROME_BIN && fs.existsSync(process.env.GOOGLE_CHROME_BIN)) {
+    return process.env.GOOGLE_CHROME_BIN;
+  }
+
   const candidatePaths = [
+    // Windows paths
     'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
     'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Google\\Chrome\\Application\\chrome.exe') : null,
     'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    // Linux / Render / Docker / Debian paths
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/google-chrome',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/snap/bin/chromium',
+    '/usr/lib/chromium/chrome',
+    '/app/.apt/usr/bin/google-chrome'
   ].filter(Boolean);
 
   for (const p of candidatePaths) {
