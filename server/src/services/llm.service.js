@@ -144,7 +144,8 @@ Notable Achievements: Reduced API response times by ~20% and cut production issu
 }
 
 /**
- * Code-level safety net to extract pure subject and body text with zero JSON artifacts.
+ * Code-level safety net to extract pure subject and body text with zero JSON artifacts,
+ * zero duplicate greetings, and zero subject lines leaked into the body.
  */
 function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   const name = candidateInfo?.name || 'Santhosh T K';
@@ -154,7 +155,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
   const github = candidateInfo?.github || 'github.com/TKSanthosh';
 
-  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone} | ${email}\n${linkedin} | ${github}`;
+  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone ? `${phone} | ` : ''}${email}\n${linkedin ? `${linkedin} | ` : ''}${github}`.trim();
 
   let text = (raw || '').trim();
 
@@ -163,7 +164,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     try {
       const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const obj = JSON.parse(cleanJson);
-      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Full Stack Developer Opportunities at ${company} - ${name}`;
+      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Exploring Full Stack Developer Opportunities at ${company} - ${name}`;
       
       const paragraphs = [
         obj.greeting || `Hi ${hrName || 'Hiring Team'},`,
@@ -181,52 +182,86 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     }
   }
 
-  // 2. Extract Subject Line if present
-  let subject = `Full Stack Developer Opportunities at ${company} - ${name}`;
-  const subjectMatch = text.match(/^Subject:\s*(.+)$/im);
-  if (subjectMatch) {
-    subject = subjectMatch[1].replace(/["']/g, '').trim();
-    // Remove Subject line from body text
+  // 2. Intelligent Multi-Pattern Subject Line Detection & Extraction
+  let subject = `Exploring Full Stack Developer Opportunities at ${company} - ${name}`;
+
+  const explicitSubjectMatch = text.match(/^Subject:\s*(.+)$/im);
+  if (explicitSubjectMatch) {
+    subject = explicitSubjectMatch[1].replace(/["']/g, '').trim();
     text = text.replace(/^Subject:\s*.+$/im, '').trim();
+  } else {
+    // Check for subject lines formatted without "Subject:" prefix (e.g. "Exploring Full Stack Developer Opportunities at Ship - Santhosh T K")
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+    for (let i = 0; i < Math.min(lines.length, 5); i++) {
+      const line = lines[i];
+      const isSubjectCandidate = 
+        /^(?:Exploring|Application\s+for|Seeking|Inquiry\s+regarding|Software\s+Engineer|Full\s+Stack|Backend|Frontend|Developer|Role|Opportunity)\b/i.test(line) &&
+        (line.includes(company) || line.includes(name) || line.includes('Opportunities') || line.includes('Application') || line.includes('-'));
+
+      if (isSubjectCandidate) {
+        subject = line.replace(/^(?:Subject|Re):\s*/i, '').replace(/["']/g, '').trim();
+        text = text.replace(line, '').trim();
+        break;
+      }
+    }
   }
 
-  // 3. Strip existing signatures from the end
-  const signoffRegex = /(?:best regards|warm regards|sincerely|regards|thanks & regards|thanks and regards)/i;
+  // 3. Strip any existing signatures from the end
+  const signoffRegex = /(?:best regards|warm regards|sincerely|regards|thanks & regards|thanks and regards|cheers)/i;
   const signoffIndex = text.search(signoffRegex);
   let mainBody = text;
   if (signoffIndex !== -1) {
     mainBody = text.substring(0, signoffIndex).trim();
   }
 
-  // 4. Remove labels like "paragraph1:", "greeting:", "body:"
+  // 4. Remove labels like "paragraph1:", "greeting:", "body:", "subject:"
   mainBody = mainBody
-    .replace(/^(?:greeting|paragraph\s*\d+|body|call to action):\s*/gim, '')
+    .replace(/^(?:greeting|paragraph\s*\d+|body|call to action|subject):\s*/gim, '')
     .replace(/^["']|["']$/gm, '')
     .trim();
 
-  // 5. Build structured paragraphs
+  // 5. Parse and clean paragraphs, strictly deduplicating greetings and removing subject leakage
   const rawParagraphs = mainBody.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-  let finalParagraphs = [];
+  let contentParagraphs = [];
+  let greeting = null;
 
-  rawParagraphs.forEach(p => {
-    // Check if greeting is merged into paragraph 1
-    const greetingMatch = p.match(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,)\s*([\s\S]*)$/i);
+  for (const p of rawParagraphs) {
+    const cleanP = p.replace(/\n+/g, ' ').trim();
+    if (!cleanP) continue;
+
+    // Check if this paragraph is identical or very similar to the subject line - if so, DROP IT!
+    if (cleanP === subject || (subject.length > 20 && cleanP.toLowerCase().includes(subject.toLowerCase().slice(0, 30)))) {
+      continue;
+    }
+
+    // Check if this paragraph is a greeting (e.g. "Hi Hiring Team,")
+    const greetingMatch = cleanP.match(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,|Hey\s+[^,\n]+,)\s*([\s\S]*)$/i);
     if (greetingMatch) {
-      finalParagraphs.push(greetingMatch[1].trim());
+      if (!greeting) {
+        greeting = greetingMatch[1].trim();
+      }
+      // If there was content attached after the greeting on the same paragraph
       if (greetingMatch[2] && greetingMatch[2].trim().length > 0) {
-        finalParagraphs.push(greetingMatch[2].trim().replace(/\n+/g, ' '));
+        const remaining = greetingMatch[2].trim();
+        if (remaining !== subject && !(subject.length > 20 && remaining.toLowerCase().includes(subject.toLowerCase().slice(0, 30)))) {
+          contentParagraphs.push(remaining);
+        }
       }
     } else {
-      finalParagraphs.push(p.replace(/\n+/g, ' ').trim());
+      // Regular body paragraph
+      contentParagraphs.push(cleanP);
     }
-  });
-
-  // Ensure greeting exists
-  if (finalParagraphs.length === 0 || !finalParagraphs[0].match(/^(Hi|Dear|Hello)\b/i)) {
-    finalParagraphs.unshift(`Hi ${hrName || 'Hiring Team'},`);
   }
 
-  const finalBody = finalParagraphs.join('\n\n') + '\n\n' + cleanSignature;
+  // Ensure single, clean greeting
+  const finalGreeting = greeting || `Hi ${hrName || 'Hiring Team'},`;
+
+  // Filter out any stray repetitions of candidate name/links/signatures from the content paragraphs
+  const filteredParagraphs = contentParagraphs.filter(p => {
+    return !p.startsWith(name) && !p.includes('linkedin.com') && !p.includes('github.com');
+  });
+
+  const finalBody = [finalGreeting, ...filteredParagraphs, cleanSignature].join('\n\n');
 
   return { subject, body: finalBody };
 }
@@ -288,5 +323,6 @@ Output JSON ONLY matching this format with no other text.`;
 
 module.exports = {
   generateColdEmail,
-  tailorResume
+  tailorResume,
+  sanitizeAndExtractEmail
 };

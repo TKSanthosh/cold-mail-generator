@@ -253,6 +253,69 @@ async function testPdfSinglePage() {
     assert(false, `Test 13 threw error: ${e.message}`);
   }
 
+  // TEST 14: Cold Email Clean Extraction & Anti-Duplication Engine
+  try {
+    const { sanitizeAndExtractEmail } = require('./server/src/services/llm.service');
+    assert(typeof sanitizeAndExtractEmail === 'function', 'llm.service exports sanitizeAndExtractEmail');
+
+    // Case A: Exact User Screenshot Bug Reproduction
+    const buggyRawText = `Hi Hiring Team,
+
+Exploring Full Stack Developer Opportunities at Ship - Santhosh T K
+
+Hi Hiring Team,
+
+I'm excited to explore Full Stack Developer opportunities at Ship, where I can leverage my 3+ years of experience in MERN stack development to drive scalable solutions.
+
+With expertise in building high-performance RESTful APIs, I've delivered measurable impact at Sify Technologies (20% API latency reduction, 30% production bug decrease) and IQVIA (clinical platform development). I'd love to discuss how my skills can contribute to Ship's success.
+
+Let's schedule a brief 10-minute chat this week to explore opportunities further. I've attached my 1-page resume for your review.
+
+Best regards,
+Santhosh T K`;
+
+    const candidate = {
+      name: 'Santhosh T K',
+      title: 'Full Stack Developer',
+      phone: '+91 8825802707',
+      email: 'tksanthosh494@gmail.com',
+      linkedin: 'linkedin.com/in/santhosh-tk',
+      github: 'github.com/TKSanthosh'
+    };
+
+    const sanitized = sanitizeAndExtractEmail(buggyRawText, 'Hiring Team', 'Ship', candidate);
+
+    assert(sanitized.subject === 'Exploring Full Stack Developer Opportunities at Ship - Santhosh T K', 'Extracted clean subject line from text without prefix');
+    assert(!sanitized.body.includes('Exploring Full Stack Developer Opportunities at Ship - Santhosh T K'), 'Subject line is 100% stripped from email body');
+
+    const greetingCount = (sanitized.body.match(/Hi Hiring Team,/g) || []).length;
+    assert(greetingCount === 1, `Greeting is strictly deduplicated to 1 occurrence (Actual: ${greetingCount})`);
+
+    const signoffCount = (sanitized.body.match(/Best regards,/g) || []).length;
+    assert(signoffCount === 1, `Signoff is strictly deduplicated to 1 occurrence (Actual: ${signoffCount})`);
+
+    // Case B: Explicit "Subject:" Prefix
+    const explicitSubjectRaw = `Subject: Application for Software Engineer at Google - Santhosh T K\n\nHi Sundar,\n\nI am thrilled to apply for the Software Engineer role.\n\nBest regards,\nSanthosh T K`;
+    const resB = sanitizeAndExtractEmail(explicitSubjectRaw, 'Sundar', 'Google', candidate);
+    assert(resB.subject === 'Application for Software Engineer at Google - Santhosh T K', 'Explicit Subject line extracted');
+    assert(!resB.body.includes('Subject:'), 'Subject prefix removed from body');
+    assert(!resB.body.includes('Application for Software Engineer at Google'), 'Subject text stripped from body');
+
+    // Case C: JSON Response safety net
+    const jsonRaw = JSON.stringify({
+      subject: 'Exploring Full Stack Roles at Swiggy - Santhosh T K',
+      greeting: 'Hi Swiggy Hiring Team,',
+      paragraph1: 'I have 3+ years experience with Node.js and React.',
+      paragraph2: 'Let us connect for 10 minutes.'
+    });
+    const resC = sanitizeAndExtractEmail(jsonRaw, 'Swiggy Hiring Team', 'Swiggy', candidate);
+    assert(resC.subject === 'Exploring Full Stack Roles at Swiggy - Santhosh T K', 'JSON subject extracted cleanly');
+    assert(!resC.body.includes('{') && !resC.body.includes('"greeting"'), 'JSON artifacts 100% stripped from body');
+
+  } catch (e) {
+    assert(false, `Test 14 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }
