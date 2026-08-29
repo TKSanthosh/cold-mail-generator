@@ -406,29 +406,37 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
     await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
-    let currentUrl = page.url();
+    // 5. Check if redirected to login page or unauthenticated state
+    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth') || !currentUrl.includes('mnjuser/profile');
+    if (!isLoginPage) {
+      const loginField = await page.$('#usernameField, input[type="password"], .loginButton');
+      if (loginField) isLoginPage = true;
+    }
 
-    // 5. If redirected to login page, authenticate
-    if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
-      console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials fallback...`);
+    if (isLoginPage) {
+      console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials authentication...`);
       if (!username || !password) {
-        throw new Error('No active session or credentials found. Please enter your Naukri username & password in the Naukri settings.');
+        throw new Error('Naukri credentials not configured. Please save your Naukri username & password in the Naukri Booster settings tab.');
+      }
+
+      if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
+        await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
       }
 
       await page.waitForSelector('#usernameField, input[placeholder*="Email" i]', { timeout: 15000 });
-      await page.type('#usernameField, input[placeholder*="Email" i]', username, { delay: 40 });
+      await page.type('#usernameField, input[placeholder*="Email" i]', username, { delay: 30 });
 
       await page.waitForSelector('#passwordField, input[type="password"]', { timeout: 15000 });
-      await page.type('#passwordField, input[type="password"]', password, { delay: 40 });
+      await page.type('#passwordField, input[type="password"]', password, { delay: 30 });
 
       const loginBtn = await page.$('button[type="submit"], .btn-primary, .loginButton');
       if (loginBtn) {
         await loginBtn.click();
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 }).catch(() => {});
+        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
       }
 
       if (page.url().includes('otp') || page.url().includes('verification')) {
-        throw new Error('Naukri requested 2FA OTP verification. Please sign in via non-headless mode or complete 2FA.');
+        throw new Error('Naukri requested 2FA OTP verification. Please sign into Naukri manually once to trust this device.');
       }
 
       const sessionCookies = await page.cookies();
@@ -436,26 +444,69 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       console.log(`[NAUKRI UPLOADER] Authentication successful. Session cookies saved for user ${userKey}.`);
 
       if (!page.url().includes('mnjuser/profile')) {
-        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'networkidle2', timeout: 30000 });
+        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
       }
     }
 
-    // 6. Upload Resume to Profile
+    // 6. Locate Resume Upload Input Element with Multi-Selector Discovery & Modal Dismissal
     console.log('[NAUKRI UPLOADER] Locating resume upload input element...');
-    
-    let fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
-    
+
+    // Dismiss any promotional overlay popups or banners
+    try {
+      await page.evaluate(() => {
+        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close');
+        dismissBtns.forEach(btn => btn?.click?.());
+      });
+    } catch (e) {}
+
+    // Scroll down slightly to trigger lazy-loaded profile sections
+    try {
+      await page.evaluate(() => window.scrollBy(0, 400));
+      await page.waitForTimeout(1000);
+    } catch (e) {}
+
+    // Wait for any resume upload input or update button
+    try {
+      await page.waitForSelector('input#attachCV, input[type="file"], input[name="attachCV"], .updateResume, .uploadBtn, [title*="Update resume" i]', { timeout: 10000 });
+    } catch (e) {}
+
+    // 1st priority: direct file input elements
+    let fileInput = await page.$('input#attachCV') ||
+                    await page.$('input[name="attachCV"]') ||
+                    await page.$('input[accept*=".pdf"]') ||
+                    await page.$('input[type="file"]');
+
+    // 2nd priority: click "Update resume" button if input is hidden
     if (!fileInput) {
-      const updateBtn = await page.$('.updateResume, .uploadBtn, [title="Update resume"]');
+      const updateBtn = await page.$('.updateResume') ||
+                        await page.$('.uploadBtn') ||
+                        await page.$('[title*="Update resume" i]') ||
+                        await page.$('a[href*="attachCV"]') ||
+                        await page.$('button.updateResume');
       if (updateBtn) {
         await updateBtn.click();
-        await page.waitForTimeout(1000);
-        fileInput = await page.$('input[type="file"]');
+        await page.waitForTimeout(1500);
+        fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
+      }
+    }
+
+    // 3rd priority: query across document handle
+    if (!fileInput) {
+      const inputHandle = await page.evaluateHandle(() => {
+        return document.querySelector('#attachCV') ||
+               document.querySelector('input[type="file"]') ||
+               document.querySelector('input[name="attachCV"]') ||
+               document.querySelector('input[accept*="pdf"]');
+      });
+      if (inputHandle && inputHandle.asElement()) {
+        fileInput = inputHandle.asElement();
       }
     }
 
     if (!fileInput) {
-      throw new Error('Could not locate the resume upload button (#attachCV) on Naukri profile page.');
+      const currentFinalUrl = page.url();
+      const pageTitle = await page.title().catch(() => 'Unknown');
+      throw new Error(`Could not locate the resume upload element on Naukri (Page: "${pageTitle}" at ${currentFinalUrl}). Please ensure your Naukri credentials are correct in the settings tab.`);
     }
 
     console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
