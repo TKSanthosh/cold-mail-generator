@@ -759,7 +759,6 @@ app.post('/api/backup/restore', (req, res) => {
 });
 
 // --- SUPABASE CLOUD STATUS ENDPOINT ---
-const { isSupabaseConfigured } = require('./services/supabase.service');
 app.get('/api/supabase/status', (req, res) => {
   res.json({
     configured: isSupabaseConfigured(),
