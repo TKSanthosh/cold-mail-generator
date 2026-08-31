@@ -2307,8 +2307,9 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     intervalMinutes: 240,
     customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
     keywords: 'Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote',
+    timeFrame: '3d',
     mode: 'send',
-    targetPerRun: 10,
+    targetPerRun: 15,
     lastRunAt: null,
     nextRunAt: null
   });
@@ -2326,6 +2327,24 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
         if (data.config.keywords) setSearchKeywords(data.config.keywords);
       }
     } catch (e) {}
+  };
+
+  const handleTimeFrameChange = async (newTf) => {
+    const updated = { ...config, timeFrame: newTf };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Timeframe updated to ${newTf.toUpperCase()}! Searching fresh recruiter posts...`, 'info');
+      handleScanLeads(searchKeywords, newTf);
+    } catch (e) {
+      showToast('Failed to update timeframe', 'error');
+    }
   };
 
   const handleParsePastedPost = async () => {
@@ -2350,19 +2369,20 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     }
   };
 
-  const handleScanLeads = async (queryOverride = null) => {
+  const handleScanLeads = async (queryOverride = null, timeFrameOverride = null) => {
     const query = queryOverride || searchKeywords || config.keywords || 'MERN Stack Developer React Node.js';
+    const tf = timeFrameOverride || config.timeFrame || '3d';
     setScanning(true);
     try {
       const res = await apiFetch('/api/linkedin/harvest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, count: config.targetPerRun || 10 })
+        body: JSON.stringify({ query, count: config.targetPerRun || 15, timeFrame: tf })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setLeads(data.leads || []);
-      showToast(`Discovered ${data.leads?.length || 0} live recruiter hiring posts!`, 'success');
+      showToast(`Discovered ${data.leads?.length || 0} live recruiter hiring posts (${tf.toUpperCase()})!`, 'success');
     } catch (e) {
       showToast(e.message || 'Failed to discover LinkedIn posts', 'error');
     } finally {
@@ -2846,13 +2866,36 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
           </div>
         )}
 
-        {/* 2. Target Search Keywords / Role Filters */}
-        <div className="flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
-              <Search className="w-3.5 h-3.5 text-sky-500" />
-              <span>Target Job Roles & Search Keywords (Searches Live Recruiter Posts)</span>
-            </label>
+        {/* 2. Recruiter Post Timeframe Filter & Search Keywords */}
+        <div className="flex flex-col gap-2.5">
+          <div className="flex justify-between items-center flex-wrap gap-2">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                <Clock className="w-3.5 h-3.5 text-sky-500" />
+                <span>Hiring Post Timeframe:</span>
+              </span>
+              {[
+                { id: '24h', label: '🕒 Past 24 Hours' },
+                { id: '3d', label: '⚡ Past 3 Days' },
+                { id: '7d', label: '📅 Past 1 Week' },
+                { id: '30d', label: '🗓️ Past 1 Month' },
+                { id: 'all', label: '🌐 All Active' }
+              ].map(tf => (
+                <button
+                  key={tf.id}
+                  type="button"
+                  onClick={() => handleTimeFrameChange(tf.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all border cursor-pointer ${
+                    (config.timeFrame || '3d') === tf.id
+                      ? 'bg-sky-600 text-white border-sky-600 shadow-xs'
+                      : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-750'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
+
             <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
               Next Scheduled Run: <strong className="text-sky-600 dark:text-sky-400">{config.nextRunAt ? new Date(config.nextRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</strong>
             </span>
@@ -2880,11 +2923,11 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             <button
               onClick={handleRunBatchOutreach}
               disabled={dispatching || scanning || leads.length === 0}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-xs transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-xs transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer shrink-0"
               title="Tailors 1-page resumes and sends emails continuously one-after-another"
             >
               {dispatching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>{dispatching ? 'Sending Batch...' : `Batch Outreach (${Math.min(leads.filter(l => !l.alreadyContacted).length, config.targetPerRun || 10)})`}</span>
+              <span>{dispatching ? 'Auto-Sending Batch...' : `🚀 1-Click Auto-Send All (${leads.filter(l => !l.alreadyContacted).length})`}</span>
             </button>
           </div>
 

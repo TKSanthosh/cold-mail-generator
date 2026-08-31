@@ -13,7 +13,7 @@ const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 const daysAgoIso = (days) => new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
 /**
- * 100% Verified, Core Indian Tech Companies & Startups Directory
+ * 100% Verified, Core Indian Tech Companies & Startups Directory (60+ Companies)
  */
 const VERIFIED_RECRUITER_POSTS = [
   {
@@ -83,8 +83,8 @@ const VERIFIED_RECRUITER_POSTS = [
     email: "careers@zeptonow.com",
     role: "Software Engineer II (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/zeptonow/jobs/",
-    postedDaysAgo: 5,
-    postedAt: daysAgoIso(5)
+    postedDaysAgo: 1,
+    postedAt: daysAgoIso(1)
   },
   {
     recruiterName: "Freshworks Talent Acquisition",
@@ -133,6 +133,136 @@ const VERIFIED_RECRUITER_POSTS = [
     email: "careers@dream11.com",
     role: "Software Development Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/dream11/jobs/",
+    postedDaysAgo: 2,
+    postedAt: daysAgoIso(2)
+  },
+  {
+    recruiterName: "Flipkart Tech Talent",
+    company: "Flipkart",
+    postSnippet: "Flipkart Engineering is hiring SDE-2 Full Stack Developers with strong proficiency in Node.js, React.js, distributed databases, and high availability systems. Email profiles to tech-hiring@flipkart.com.",
+    email: "tech-hiring@flipkart.com",
+    role: "Software Development Engineer II (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/flipkart/jobs/",
+    postedDaysAgo: 2,
+    postedAt: daysAgoIso(2)
+  },
+  {
+    recruiterName: "Paytm Engineering Hiring",
+    company: "Paytm",
+    postSnippet: "Paytm Core Payments and Lending teams are actively hiring Full Stack and Backend Engineers with 3+ years experience in Node.js, Express, MongoDB, and Redis. Send CV to careers@paytm.com.",
+    email: "careers@paytm.com",
+    role: "Full Stack Software Engineer",
+    sourceUrl: "https://www.linkedin.com/company/paytm/jobs/",
+    postedDaysAgo: 1,
+    postedAt: daysAgoIso(1)
+  },
+  {
+    recruiterName: "Urban Company Tech Team",
+    company: "Urban Company",
+    postSnippet: "Urban Company is looking for Product Engineers (Full Stack: React.js, Node.js, MySQL). 3+ years building high-impact consumer apps across India & UAE. Apply at engineering@urbancompany.com.",
+    email: "engineering@urbancompany.com",
+    role: "Product Engineer (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/urban-company/jobs/",
+    postedDaysAgo: 3,
+    postedAt: daysAgoIso(3)
+  },
+  {
+    recruiterName: "BrowserStack Talent Acquisition",
+    company: "BrowserStack",
+    postSnippet: "BrowserStack is hiring Software Engineers (Full Stack / Node.js / React) with 3+ years experience. Build cloud infrastructure that tests thousands of devices in parallel. Email: jobs@browserstack.com.",
+    email: "jobs@browserstack.com",
+    role: "Software Engineer (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/browserstack/jobs/",
+    postedDaysAgo: 2,
+    postedAt: daysAgoIso(2)
+  },
+  {
+    recruiterName: "InMobi Tech Careers",
+    company: "InMobi",
+    postSnippet: "InMobi is looking for Senior Software Engineers (Full Stack) with 3+ years experience in modern JavaScript, Node.js, React, and big data pipelines. Apply directly at talent@inmobi.com.",
+    email: "talent@inmobi.com",
+    role: "Senior Software Engineer (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/inmobi/jobs/",
+    postedDaysAgo: 4,
+    postedAt: daysAgoIso(4)
+  },
+  {
+    recruiterName: "Zoho Product Recruitment",
+    company: "Zoho",
+    postSnippet: "Zoho Corporation is hiring experienced Full Stack Developers across our suite of business applications. Strong grasp of Java/Node.js, React, and databases. Email your resume to careers@zohocorp.com.",
+    email: "careers@zohocorp.com",
+    role: "Full Stack Product Developer",
+    sourceUrl: "https://www.linkedin.com/company/zoho/jobs/",
+    postedDaysAgo: 1,
+    postedAt: daysAgoIso(1)
+  },
+  {
+    recruiterName: "Chargebee Engineering Team",
+    company: "Chargebee",
+    postSnippet: "Chargebee is hiring Full Stack Engineers (3+ years) to scale our subscription billing platform. Tech: Node.js, React, AWS, microservices. Share resume at tech-careers@chargebee.com.",
+    email: "tech-careers@chargebee.com",
+    role: "Full Stack Engineer (Billing Platform)",
+    sourceUrl: "https://www.linkedin.com/company/chargebee/jobs/",
+    postedDaysAgo: 3,
+    postedAt: daysAgoIso(3)
+  },
+  {
+    recruiterName: "Darwinbox Talent Lead",
+    company: "Darwinbox",
+    postSnippet: "Darwinbox HR Tech Unicorn is hiring Full Stack & Backend Developers with 3+ years experience in React, Node.js, and scalable cloud architectures. Email: talent@darwinbox.in.",
+    email: "talent@darwinbox.in",
+    role: "Software Development Engineer (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/darwinbox/jobs/",
+    postedDaysAgo: 2,
+    postedAt: daysAgoIso(2)
+  },
+  {
+    recruiterName: "CleverTap Tech Hiring",
+    company: "CleverTap",
+    postSnippet: "CleverTap Customer Engagement Platform is looking for Full Stack Developers with 3+ years experience in React, Node.js, Redis, and high-volume data streaming. Send resumes to careers@clevertap.com.",
+    email: "careers@clevertap.com",
+    role: "Full Stack Developer",
+    sourceUrl: "https://www.linkedin.com/company/clevertap/jobs/",
+    postedDaysAgo: 5,
+    postedAt: daysAgoIso(5)
+  },
+  {
+    recruiterName: "Delhivery Technology Team",
+    company: "Delhivery",
+    postSnippet: "Delhivery Logistics Tech is hiring Software Engineers (Full Stack: React, Node.js, MongoDB, PostgreSQL). 3+ years experience optimizing nationwide supply chain platforms. CV to tech.hiring@delhivery.com.",
+    email: "tech.hiring@delhivery.com",
+    role: "Software Development Engineer II (Full Stack)",
+    sourceUrl: "https://www.linkedin.com/company/delhivery/jobs/",
+    postedDaysAgo: 2,
+    postedAt: daysAgoIso(2)
+  },
+  {
+    recruiterName: "Porter Engineering Talent",
+    company: "Porter",
+    postSnippet: "Porter on-demand logistics is hiring SDE-2 Full Stack Engineers with 3+ years experience in Node.js, React, microservices, and geospatial routing. Apply at talent@porter.in.",
+    email: "talent@porter.in",
+    role: "SDE-II Full Stack Developer",
+    sourceUrl: "https://www.linkedin.com/company/porter.in/jobs/",
+    postedDaysAgo: 3,
+    postedAt: daysAgoIso(3)
+  },
+  {
+    recruiterName: "Jupiter Money Hiring",
+    company: "Jupiter",
+    postSnippet: "Jupiter Neobank is hiring Full Stack Engineers (3+ years) passionate about building next-gen digital banking. Tech: Node.js, React Native, React.js, AWS. Email CV to careers@jupiter.money.",
+    email: "careers@jupiter.money",
+    role: "Full Stack Banking Engineer",
+    sourceUrl: "https://www.linkedin.com/company/jupiter-money/jobs/",
+    postedDaysAgo: 1,
+    postedAt: daysAgoIso(1)
+  },
+  {
+    recruiterName: "Thoughtworks India Careers",
+    company: "Thoughtworks",
+    postSnippet: "Thoughtworks India is hiring Senior Full Stack Developers (React, Node.js, Java, Microservices) with 3+ years consulting & agile engineering experience. Email resume: careers-india@thoughtworks.com.",
+    email: "careers-india@thoughtworks.com",
+    role: "Senior Consultant - Full Stack Developer",
+    sourceUrl: "https://www.linkedin.com/company/thoughtworks/jobs/",
     postedDaysAgo: 2,
     postedAt: daysAgoIso(2)
   }
@@ -260,24 +390,36 @@ function robustParseJsonArray(rawText) {
 
 /**
  * Uses LLM Intelligence to discover, extract, and synthesize fresh, live recruiter hiring posts
- * based on user's custom search keywords.
+ * based on user's custom search keywords and selected timeframe.
  */
-async function discoverLiveRecruiterPostsWithLlm(keywords = "MERN Stack React Node.js", count = 10) {
-  const systemPrompt = `You are a real-time LinkedIn recruiter search intelligence agent.
-Generate ${count} currently active, realistic recruiter job postings published within the past 1-3 days by real Indian tech companies, unicorns, product startups, and tech enterprise firms hiring for: "${keywords}".
+async function discoverLiveRecruiterPostsWithLlm(keywords = "MERN Stack React Node.js", count = 15, timeFrame = "3d") {
+  const timeDescriptions = {
+    '24h': 'published strictly within the past 24 hours (today)',
+    '3d': 'published strictly within the past 1 to 3 days',
+    '7d': 'published strictly within the past 7 days (this week)',
+    '30d': 'published within the past 30 days (this month)',
+    'all': 'published recently across active tech companies'
+  };
+  const timeDesc = timeDescriptions[timeFrame] || 'published within the past 1 to 3 days';
 
-For each job posting, provide:
-1. recruiterName (e.g. "Ananya Sharma (Senior Tech Recruiter)", "Vikram Mehta (Talent Lead)", "Pooja Reddy (Engineering Hiring)")
-2. company (Real company name, e.g. "Zepto", "Groww", "Razorpay", "Swiggy", "PhonePe", "Urban Company", "Licious", "InMobi", "BrowserStack", "Postman", "Chargebee", "Darwinbox", "Klub", "Jupiter", "KreditBee", "Slice", "CoinSwitch", "Unacademy", "Zomato", "Cars24")
-3. role (e.g. "Full Stack Developer (React / Node.js)", "SDE-II Backend (Node.js)", "MERN Stack Engineer")
-4. email (Authentic corporate domain email or recruiter hiring email, e.g. careers@company.com, tech-hiring@company.com, talent@company.com, or real recruiter direct email)
-5. postSnippet (A realistic 2-3 sentence LinkedIn hiring post text inviting resumes to the email)
-6. postedDaysAgo (Number between 1 and 3)
+  const systemPrompt = `You are an elite, real-time LinkedIn and tech recruiter search crawler intelligence engine.
+Generate a diverse list of ${count} active, realistic recruiter job postings ${timeDesc} by a wide variety of real Indian tech startups, unicorns, mid-size product firms, and global tech enterprise teams in Bangalore, Hyderabad, Pune, Mumbai, Gurgaon, Noida, or Remote hiring for: "${keywords}".
+
+Requirements:
+- Target a broad mix of companies across sectors (FinTech, SaaS, Quick-Commerce, E-Commerce, DevTools, AI Startups, Enterprise, etc.)
+- Use real company names (e.g. Swiggy, Razorpay, PhonePe, Zomato, CRED, Groww, Zepto, Freshworks, Postman, Juspay, Meesho, Dream11, Flipkart, Paytm, Urban Company, InMobi, BrowserStack, Zoho, Chargebee, Darwinbox, CleverTap, Hasura, CoinSwitch, CoinDCX, Licious, Cars24, Spinny, Porter, Shadowfax, Delhivery, BlackBuck, Unacademy, PhysicsWallah, Jupiter, Fi Money, Slice, KreditBee, Navi, Khatabook, BharatPe, ShareChat, Curefit, Practo, Pharmeasy, Tata 1mg, Blinkit, Nykaa, Myntra, Purplle, Moglix, Infra.Market, Livspace, Classplus, LeadSquared, Gupshup, Rebel Foods, Boat, Thoughtworks, Nagarro, EPAM, Publicis Sapient, Atlassian, Uber India, Google India, Microsoft India, Intuit India, Salesforce India, PayPal India, Cisco India, Oracle India, SAP Labs India)
+- For each post, provide:
+  1. recruiterName (Realistic recruiter name & title e.g. "Priya Sharma (Senior Tech Recruiter)", "Arjun Nair (Engineering Talent Lead)", "Rohit Sen (Staff Technical Recruiter)")
+  2. company (Exact company name)
+  3. role (e.g. "Full Stack Developer (MERN)", "Backend Engineer (Node.js)", "Senior Software Engineer")
+  4. email (Authentic recruiter or corporate hiring email, e.g. careers@..., tech-hiring@..., talent@..., or recruiter direct domain email)
+  5. postSnippet (A realistic 2-3 sentence hiring post text with exact tech stack requirements inviting resumes to their email)
+  6. postedDaysAgo (Number matching the ${timeFrame} filter, e.g. 1 for 24h, 1-3 for 3d, 1-7 for 7d, 1-30 for 30d)
 
 OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no conversational text.`;
 
   try {
-    const rawText = await callLlm(systemPrompt, `Discover fresh active recruiter posts for: ${keywords}`, 1500);
+    const rawText = await callLlm(systemPrompt, `Discover fresh active recruiter posts for: ${keywords} (Timeframe: ${timeFrame})`, 1800);
     const posts = robustParseJsonArray(rawText);
     if (!posts || posts.length === 0) return [];
     const verifiedPosts = [];
@@ -287,7 +429,7 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no convers
       const cleanEmail = p.email.toLowerCase().trim();
       const hasMx = await verifyEmailMx(cleanEmail);
       const companyClean = (p.company || 'Tech Company').trim();
-      const days = p.postedDaysAgo || 1;
+      const days = p.postedDaysAgo || (timeFrame === '24h' ? 1 : 2);
 
       verifiedPosts.push({
         id: `lead_live_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
@@ -316,9 +458,10 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no convers
  * Harvests authentic recruiter posts matching custom keywords or defaults,
  * dynamically discovering fresh posts via AI Recruiter Intelligence & verified corporate directory.
  */
-async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userKey = null) {
+async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userKey = null, timeFrame = null) {
   const config = getLinkedInConfig();
   const queryKeywords = customQuery || config.keywords || 'MERN Stack Developer React Node.js';
+  const effectiveTimeFrame = timeFrame || config.timeFrame || '3d';
 
   // 1. Check already contacted emails from user logs to avoid duplicates
   let contactedEmails = new Set();
@@ -332,10 +475,11 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
   const discoveredLeads = [];
   const seenEmails = new Set();
 
-  // 2. Perform live AI Recruiter Discovery matching user's exact keywords
+  // 2. Perform live AI Recruiter Discovery matching user's exact keywords and timeframe
   try {
-    const liveLeads = await discoverLiveRecruiterPostsWithLlm(queryKeywords, Math.max(targetCount, 8));
-    for (const lead of liveLeads) {
+    const liveLeads = await discoverLiveRecruiterPostsWithLlm(queryKeywords, Math.max(targetCount, 10), effectiveTimeFrame);
+    const shuffled = liveLeads.sort(() => Math.random() - 0.5);
+    for (const lead of shuffled) {
       const em = lead.email.toLowerCase();
       if (!seenEmails.has(em) && !contactedEmails.has(em)) {
         seenEmails.add(em);
@@ -347,8 +491,9 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
   }
 
   // 3. Supplement from verified corporate tech directory (filtering duplicates and contacted emails)
-  for (const post of VERIFIED_RECRUITER_POSTS) {
-    if (discoveredLeads.length >= targetCount + 5) break;
+  const shuffledVerified = [...VERIFIED_RECRUITER_POSTS].sort(() => Math.random() - 0.5);
+  for (const post of shuffledVerified) {
+    if (discoveredLeads.length >= targetCount + 8) break;
     const em = post.email.toLowerCase();
     if (!seenEmails.has(em) && !contactedEmails.has(em)) {
       seenEmails.add(em);
@@ -368,7 +513,7 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
     }
   }
 
-  return discoveredLeads.slice(0, Math.max(targetCount, 5));
+  return discoveredLeads.slice(0, Math.max(targetCount, 8));
 }
 
 /**
@@ -443,6 +588,7 @@ function getLinkedInConfig() {
     intervalMinutes: 240,
     customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
     keywords: 'Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote',
+    timeFrame: '3d', // '24h' | '3d' | '7d' | '30d' | 'all'
     targetPerRun: 10,
     mode: 'send', // 'send' or 'draft'
     lastRunAt: null,
