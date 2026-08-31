@@ -533,6 +533,11 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
     await delay(2500);
   }
 
+  const currentUrl = page.url();
+  if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
+    throw new Error('Naukri session is unauthenticated. Please link your account via the "Paste Session Cookie" button or verify your credentials in the settings tab.');
+  }
+
   // 2. Dismiss any overlay popups or banners
   await dismissNaukriPopups(page);
 
@@ -794,38 +799,86 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       await page.waitForSelector('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]', { timeout: 15000 });
       const userEl = await page.$('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
       await userEl.click({ clickCount: 3 });
+      await page.keyboard.press('Backspace');
       await userEl.type(username, { delay: 25 });
+      await page.evaluate(() => {
+        const u = document.querySelector('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
+        if (u) {
+          u.dispatchEvent(new Event('input', { bubbles: true }));
+          u.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }).catch(() => {});
 
       await page.waitForSelector('#passwordField, input[type="password"], input[name="password"]', { timeout: 15000 });
       const passEl = await page.$('#passwordField, input[type="password"], input[name="password"]');
       await passEl.click({ clickCount: 3 });
+      await page.keyboard.press('Backspace');
       await passEl.type(password, { delay: 25 });
+      await page.evaluate(() => {
+        const p = document.querySelector('#passwordField, input[type="password"], input[name="password"]');
+        if (p) {
+          p.dispatchEvent(new Event('input', { bubbles: true }));
+          p.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+      }).catch(() => {});
 
-      const loginBtn = await page.$('button[type="submit"], .btn-primary, .loginButton');
-      if (loginBtn) {
-        await loginBtn.click();
-        await delay(3500);
+      await delay(500);
+
+      // Submit login form
+      await page.evaluate(() => {
+        const btn = document.querySelector('button[type="submit"], .btn-primary, .loginButton, button.blueBtn');
+        if (btn) btn.click();
+      }).catch(() => {});
+      await page.keyboard.press('Enter');
+
+      // Poll for up to 20 seconds for session authentication, OTP challenge, or login error
+      console.log(`[NAUKRI UPLOADER] Login submitted. Polling for session authentication or OTP challenge...`);
+      let loginSuccess = false;
+      let detectedOtp = false;
+
+      for (let attempt = 0; attempt < 25; attempt++) {
+        await delay(800);
+
+        // 1. Check for on-screen error messages
+        const loginErrorText = await page.evaluate(() => {
+          const el = document.querySelector('.server-err, .err, .error, .login-error, .errMsg, .error-message, .err-msg, [role="alert"]');
+          return el ? el.innerText.trim() : null;
+        }).catch(() => null);
+
+        if (loginErrorText && loginErrorText.length > 0 && !loginErrorText.toLowerCase().includes('otp')) {
+          throw new Error(`Naukri Login Failed: ${loginErrorText}`);
+        }
+
+        // 2. Check for OTP / 2FA challenge screen
+        let curUrl = '';
+        try { curUrl = page.url(); } catch (e) {}
+
+        const hasOtpInput = await page.evaluate(() => {
+          const el = document.querySelector('input[placeholder*="OTP" i], input[placeholder*="verification" i], input[placeholder*="code" i], input[type="tel"]:not(#usernameField), input.otp-input, input[name*="otp" i], input[id*="otp" i], .otpBox, .otp-digit');
+          return !!el;
+        }).catch(() => false);
+
+        if (curUrl.includes('otp') || curUrl.includes('verification') || hasOtpInput) {
+          detectedOtp = true;
+          break;
+        }
+
+        // 3. Check for authenticated session cookies or navigation
+        let cookies = [];
+        try { cookies = await page.cookies(); } catch (e) {}
+        const hasSessionCookie = cookies.some(c =>
+          c.name.includes('nauk_session') ||
+          c.name.includes('ubt_user') ||
+          c.name.includes('isLoggedIn')
+        );
+
+        if (hasSessionCookie || curUrl.includes('mnjuser/profile') || curUrl.includes('mnjuser/homepage') || curUrl.includes('mynaukri') || (!curUrl.includes('nlogin') && !curUrl.includes('login'))) {
+          loginSuccess = true;
+          break;
+        }
       }
 
-      // Check for login errors safely without stale handle serialization
-      const loginErrorText = await page.evaluate(() => {
-        const el = document.querySelector('.server-err, .err, .error, .login-error, .errMsg, .error-message, .err-msg');
-        return el ? el.innerText.trim() : null;
-      }).catch(() => null);
-
-      if (loginErrorText && loginErrorText.length > 0) {
-        throw new Error(`Naukri Login Failed: ${loginErrorText}`);
-      }
-
-      currentUrl = page.url();
-      const hasOtpInputOnPage = await page.evaluate(() => {
-        const el = document.querySelector('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], .otpBox, .otp-digit');
-        return !!el;
-      }).catch(() => false);
-
-      const isOtpScreen = currentUrl.includes('otp') || currentUrl.includes('verification') || hasOtpInputOnPage;
-
-      if (isOtpScreen) {
+      if (detectedOtp) {
         console.log(`[NAUKRI UPLOADER] 2FA OTP verification required for user ${userKey}. Keeping browser open for user submission...`);
         isOtpWaiting = true;
 
@@ -851,6 +904,14 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
           requiresOtp: true,
           message: 'Naukri sent a 6-digit OTP to your registered email/phone. Please enter it below to authorize your session.'
         };
+      }
+
+      if (!loginSuccess) {
+        let finalUrl = '';
+        try { finalUrl = page.url(); } catch (e) {}
+        if (finalUrl.includes('login') || finalUrl.includes('nlogin')) {
+          throw new Error('Naukri login did not complete (session unauthenticated). If your account uses Google SSO or 2FA, please click the "Paste Session Cookie" button to link your session in 5 seconds without a password.');
+        }
       }
 
       const sessionCookies = await page.cookies();
