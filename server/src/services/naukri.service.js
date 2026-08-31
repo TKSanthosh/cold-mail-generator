@@ -38,6 +38,37 @@ function getNextQuarterDayTime(baseDate = new Date()) {
 }
 
 /**
+ * Recursively scans directory for chrome/chromium executable
+ */
+function findChromeInDirectory(dir) {
+  if (!fs.existsSync(dir)) return null;
+  try {
+    const entries = fs.readdirSync(dir);
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry);
+      const stat = fs.statSync(fullPath);
+      if (stat.isDirectory()) {
+        const found = findChromeInDirectory(fullPath);
+        if (found) return found;
+      } else if (
+        entry === 'chrome' ||
+        entry === 'chrome.exe' ||
+        entry === 'chromium' ||
+        entry === 'msedge.exe' ||
+        entry === 'google-chrome-stable'
+      ) {
+        // Ensure it is executable on Linux
+        if (process.platform !== 'win32') {
+          try { fs.chmodSync(fullPath, 0o755); } catch (e) {}
+        }
+        return fullPath;
+      }
+    }
+  } catch (e) {}
+  return null;
+}
+
+/**
  * Automatically discovers Google Chrome or Microsoft Edge across Windows & Linux (Render / Docker)
  */
 function findBrowserExecutable() {
@@ -66,7 +97,7 @@ function findBrowserExecutable() {
     }
   }
 
-  // 2. Linux / Render / Docker paths
+  // 2. Linux / Render / Docker standard binary paths
   const linuxCandidates = [
     '/usr/bin/google-chrome-stable',
     '/usr/bin/google-chrome',
@@ -80,36 +111,24 @@ function findBrowserExecutable() {
     if (fs.existsSync(p)) return p;
   }
 
-  // 3. Local & Render .cache/puppeteer recursive search
+  // 3. Search all possible Puppeteer cache directories (Render & local)
   const cacheDirs = [
+    process.env.PUPPETEER_CACHE_DIR,
+    path.join(process.cwd(), '.cache/puppeteer'),
+    path.join(process.cwd(), 'server/.cache/puppeteer'),
     path.join(__dirname, '../../.cache/puppeteer'),
     path.join(__dirname, '../../../.cache/puppeteer'),
-    '/opt/render/project/src/server/.cache/puppeteer',
+    path.join(__dirname, '../.cache/puppeteer'),
     '/opt/render/project/src/.cache/puppeteer',
+    '/opt/render/project/src/server/.cache/puppeteer',
     '/opt/render/.cache/puppeteer',
+    '/root/.cache/puppeteer',
     process.env.HOME ? path.join(process.env.HOME, '.cache/puppeteer') : null
   ].filter(Boolean);
 
   for (const cDir of cacheDirs) {
-    if (fs.existsSync(cDir)) {
-      try {
-        const findInDir = (dir) => {
-          const entries = fs.readdirSync(dir);
-          for (const entry of entries) {
-            const fullPath = path.join(dir, entry);
-            if (fs.statSync(fullPath).isDirectory()) {
-              const res = findInDir(fullPath);
-              if (res) return res;
-            } else if (entry === 'chrome' || entry === 'chrome.exe') {
-              return fullPath;
-            }
-          }
-          return null;
-        };
-        const found = findInDir(cDir);
-        if (found) return found;
-      } catch (e) {}
-    }
+    const found = findChromeInDirectory(cDir);
+    if (found) return found;
   }
 
   // 4. Bundled Puppeteer browser executable if present
@@ -121,6 +140,31 @@ function findBrowserExecutable() {
   } catch (e) {}
 
   return null;
+}
+
+/**
+ * Ensures Chrome is installed, attempting on-demand download if missing on Linux
+ */
+function ensureBrowserInstalled() {
+  let executable = findBrowserExecutable();
+  if (executable) return executable;
+
+  if (process.platform !== 'win32') {
+    try {
+      console.log('[BROWSER DISCOVERY] Chrome not found. Attempting on-demand install via npx puppeteer browsers install chrome...');
+      const { execSync } = require('child_process');
+      const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(process.cwd(), '.cache/puppeteer');
+      execSync(`npx puppeteer browsers install chrome --path "${cacheDir}"`, {
+        stdio: 'inherit',
+        env: { ...process.env, PUPPETEER_CACHE_DIR: cacheDir }
+      });
+      executable = findBrowserExecutable();
+    } catch (e) {
+      console.warn('[BROWSER DISCOVERY] On-demand Chrome install notice:', e.message);
+    }
+  }
+
+  return executable;
 }
 
 function hasValidNaukriSession(userKey = 'default_user') {
@@ -272,7 +316,12 @@ function clearActiveOtpSession(userKey) {
 let activeSsoBrowser = null;
 
 async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
-  const browserPath = findBrowserExecutable();
+  // Check if running in a headless cloud environment without a display
+  if (process.platform !== 'win32' && !process.env.DISPLAY) {
+    throw new Error('Interactive Google SSO requires a desktop browser window. On cloud hosting (Render), please use the Naukri Username & Password form to authenticate via 2FA OTP, or connect via Google SSO while running the app locally (which automatically syncs your session to the cloud).');
+  }
+
+  const browserPath = ensureBrowserInstalled();
   console.log(`[NAUKRI SSO] Launching browser for user ${userKey} (${browserPath || 'Puppeteer default'})...`);
 
   if (activeSsoBrowser) {
@@ -556,17 +605,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   await generateResumePdf(userResume, uploadPdfPath);
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
-  let browserPath = findBrowserExecutable();
-  if (!browserPath && process.platform !== 'win32') {
-    try {
-      console.log('[NAUKRI UPLOADER] Browser binary not found on Linux container. Auto-installing Chrome on-demand...');
-      const { execSync } = require('child_process');
-      execSync('npx puppeteer browsers install chrome', { stdio: 'inherit' });
-      browserPath = findBrowserExecutable();
-    } catch (e) {
-      console.warn('[NAUKRI UPLOADER] On-demand browser install warning:', e.message);
-    }
-  }
+  let browserPath = ensureBrowserInstalled();
   console.log(`[NAUKRI UPLOADER] Launching browser engine (${browserPath || 'Puppeteer default'})...`);
 
   let browser = null;
@@ -595,7 +634,20 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       launchOptions.executablePath = browserPath;
     }
 
-    browser = await puppeteer.launch(launchOptions);
+    try {
+      browser = await puppeteer.launch(launchOptions);
+    } catch (launchErr) {
+      if (launchErr.message.includes('Could not find Chrome') || launchErr.message.includes('executablePath')) {
+        console.warn('[NAUKRI UPLOADER] Initial launch failed. Running on-demand browser install and retrying...', launchErr.message);
+        browserPath = ensureBrowserInstalled();
+        if (browserPath) {
+          launchOptions.executablePath = browserPath;
+        }
+        browser = await puppeteer.launch(launchOptions);
+      } else {
+        throw launchErr;
+      }
+    }
 
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
