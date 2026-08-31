@@ -19,26 +19,50 @@ const {
 const USERS_DIR = path.join(__dirname, '../../users');
 const activeOtpSessions = new Map();
 
+const IST_OFFSET_MINUTES = 330; // Indian Standard Time (UTC+5:30)
+
+function getIstTime(date = new Date()) {
+  const istDate = new Date(date.getTime() + IST_OFFSET_MINUTES * 60 * 1000);
+  return {
+    year: istDate.getUTCFullYear(),
+    month: istDate.getUTCMonth(),
+    date: istDate.getUTCDate(),
+    hours: istDate.getUTCHours(),
+    minutes: istDate.getUTCMinutes(),
+    seconds: istDate.getUTCSeconds(),
+    totalMinutes: istDate.getUTCHours() * 60 + istDate.getUTCMinutes()
+  };
+}
+
+function createDateFromIst(year, month, date, targetHour, targetMinute) {
+  const utcMillis = Date.UTC(year, month, date, targetHour, targetMinute, 0, 0) - (IST_OFFSET_MINUTES * 60 * 1000);
+  return new Date(utcMillis);
+}
+
 /**
- * Calculates the next Quarter-Day schedule slot (10:00 AM, 04:00 PM, 10:00 PM, 04:00 AM)
+ * Calculates the next Quarter-Day schedule slot (10:00 AM, 04:00 PM, 10:00 PM, 04:00 AM IST)
  */
 function getNextQuarterDayTime(baseDate = new Date()) {
-  const slots = [4, 10, 16, 22]; // 04:00 AM, 10:00 AM, 04:00 PM, 10:00 PM
-  for (const slotHour of slots) {
-    const candidate = new Date(baseDate);
-    candidate.setHours(slotHour, 0, 0, 0);
+  const istNow = getIstTime(baseDate);
+  const slots = [
+    { hour: 4, minute: 0 },
+    { hour: 10, minute: 0 },
+    { hour: 16, minute: 0 },
+    { hour: 22, minute: 0 }
+  ];
+
+  for (const s of slots) {
+    const candidate = createDateFromIst(istNow.year, istNow.month, istNow.date, s.hour, s.minute);
     if (candidate > baseDate) {
       return candidate;
     }
   }
-  const tomorrow = new Date(baseDate);
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  tomorrow.setHours(slots[0], 0, 0, 0);
-  return tomorrow;
+
+  return createDateFromIst(istNow.year, istNow.month, istNow.date + 1, slots[0].hour, slots[0].minute);
 }
 
 /**
- * Calculates the next schedule slot based on config (Quarter-Day, Hourly, Half-Hour, or Custom Timings)
+ * Calculates the next schedule slot based on config (Quarter-Day, Hourly, Half-Hour, or Custom Timings) in IST
  */
 function calculateNextUploadTime(config = {}, baseDate = new Date()) {
   const scheduleMode = config.scheduleMode || 'quarter_day';
@@ -51,6 +75,8 @@ function calculateNextUploadTime(config = {}, baseDate = new Date()) {
     const mins = config.intervalMinutes || 60;
     return new Date(baseDate.getTime() + mins * 60 * 1000);
   }
+
+  const istNow = getIstTime(baseDate);
 
   if (scheduleMode === 'custom') {
     const rawSlots = Array.isArray(config.customSlots) && config.customSlots.length > 0
@@ -80,24 +106,22 @@ function calculateNextUploadTime(config = {}, baseDate = new Date()) {
         hour = parseInt(str, 10) || 0;
       }
 
-      parsedSlots.push({ hour, minute, original: slot });
+      parsedSlots.push({ hour, minute, totalMins: hour * 60 + minute, original: slot });
     }
 
-    parsedSlots.sort((a, b) => (a.hour * 60 + a.minute) - (b.hour * 60 + b.minute));
+    parsedSlots.sort((a, b) => a.totalMins - b.totalMins);
 
+    // Check next slot today in IST
     for (const s of parsedSlots) {
-      const candidate = new Date(baseDate);
-      candidate.setHours(s.hour, s.minute, 0, 0);
+      const candidate = createDateFromIst(istNow.year, istNow.month, istNow.date, s.hour, s.minute);
       if (candidate > baseDate) {
         return candidate;
       }
     }
 
+    // Wrap around to first slot tomorrow in IST
     if (parsedSlots.length > 0) {
-      const tomorrow = new Date(baseDate);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      tomorrow.setHours(parsedSlots[0].hour, parsedSlots[0].minute, 0, 0);
-      return tomorrow;
+      return createDateFromIst(istNow.year, istNow.month, istNow.date + 1, parsedSlots[0].hour, parsedSlots[0].minute);
     }
   }
 
