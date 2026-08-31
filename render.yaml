@@ -3,7 +3,7 @@ services:
     name: cold-mail-generator
     runtime: node
     plan: free
-    buildCommand: npm install --prefix server && npm install --prefix client --include=dev && npm run build --prefix client && npx --prefix server puppeteer browsers install chrome
+    buildCommand: npm install --prefix server && npm install --prefix client --include=dev && npm run build --prefix client && node server/install-browser.js
     startCommand: node server/src/index.js
     envVars:
       - key: NODE_ENV

@@ -145,26 +145,42 @@ function findBrowserExecutable() {
 /**
  * Ensures Chrome is installed, attempting on-demand download if missing on Linux
  */
-function ensureBrowserInstalled() {
+async function ensureBrowserInstalled() {
   let executable = findBrowserExecutable();
   if (executable) return executable;
 
   if (process.platform !== 'win32') {
     try {
-      console.log('[BROWSER DISCOVERY] Chrome not found. Attempting on-demand install via npx puppeteer browsers install chrome...');
-      const { execSync } = require('child_process');
-      const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(process.cwd(), '.cache/puppeteer');
-      execSync(`npx puppeteer browsers install chrome --path "${cacheDir}"`, {
-        stdio: 'inherit',
-        env: { ...process.env, PUPPETEER_CACHE_DIR: cacheDir }
+      const browsers = require('@puppeteer/browsers');
+      let buildId = '121.0.6167.85';
+      try {
+        const { PUPPETEER_REVISIONS } = require('puppeteer-core/internal/revisions.js');
+        if (PUPPETEER_REVISIONS && PUPPETEER_REVISIONS.chrome) {
+          buildId = PUPPETEER_REVISIONS.chrome;
+        }
+      } catch (e) {}
+
+      const cacheDir = process.env.PUPPETEER_CACHE_DIR || path.join(__dirname, '../../../.cache/puppeteer');
+      try { fs.mkdirSync(cacheDir, { recursive: true }); } catch (e) {}
+
+      console.log(`[BROWSER DISCOVERY] Chrome missing on Linux. Downloading Chrome build (${buildId}) into: ${cacheDir}...`);
+      const installed = await browsers.install({
+        browser: browsers.Browser.CHROME,
+        buildId: buildId,
+        cacheDir: cacheDir
       });
-      executable = findBrowserExecutable();
-    } catch (e) {
-      console.warn('[BROWSER DISCOVERY] On-demand Chrome install notice:', e.message);
+
+      console.log(`[BROWSER DISCOVERY] Chrome installed successfully at: ${installed.executablePath}`);
+      if (process.platform !== 'win32') {
+        try { fs.chmodSync(installed.executablePath, 0o755); } catch (e) {}
+      }
+      return installed.executablePath;
+    } catch (err) {
+      console.warn('[BROWSER DISCOVERY] Programmatic browser install notice:', err.message);
     }
   }
 
-  return executable;
+  return findBrowserExecutable();
 }
 
 function hasValidNaukriSession(userKey = 'default_user') {
@@ -321,7 +337,7 @@ async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
     throw new Error('Interactive Google SSO requires a desktop browser window. On cloud hosting (Render), please use the Naukri Username & Password form to authenticate via 2FA OTP, or connect via Google SSO while running the app locally (which automatically syncs your session to the cloud).');
   }
 
-  const browserPath = ensureBrowserInstalled();
+  const browserPath = await ensureBrowserInstalled();
   console.log(`[NAUKRI SSO] Launching browser for user ${userKey} (${browserPath || 'Puppeteer default'})...`);
 
   if (activeSsoBrowser) {
@@ -605,7 +621,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   await generateResumePdf(userResume, uploadPdfPath);
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
-  let browserPath = ensureBrowserInstalled();
+  let browserPath = await ensureBrowserInstalled();
   console.log(`[NAUKRI UPLOADER] Launching browser engine (${browserPath || 'Puppeteer default'})...`);
 
   let browser = null;
@@ -639,7 +655,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     } catch (launchErr) {
       if (launchErr.message.includes('Could not find Chrome') || launchErr.message.includes('executablePath')) {
         console.warn('[NAUKRI UPLOADER] Initial launch failed. Running on-demand browser install and retrying...', launchErr.message);
-        browserPath = ensureBrowserInstalled();
+        browserPath = await ensureBrowserInstalled();
         if (browserPath) {
           launchOptions.executablePath = browserPath;
         }
