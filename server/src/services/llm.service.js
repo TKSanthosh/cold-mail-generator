@@ -70,54 +70,61 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
 }
 
 /**
- * Generates a tailored, plain-text cold email strictly adhering to the user's fixed format.
+ * Generates a tailored, plain-text cold email strictly adhering to the user's fixed template format.
  */
 async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) {
-  const candidateName = resumeData?.personalInfo?.name || 'Candidate';
-  const candidateTitle = resumeData?.personalInfo?.title || 'Full Stack Developer';
-  const candidateEmail = resumeData?.personalInfo?.email || '';
-  const candidatePhone = resumeData?.personalInfo?.phone || '';
-  const candidateLinkedin = resumeData?.personalInfo?.linkedin || '';
-  const candidateGithub = resumeData?.personalInfo?.github || '';
+  const candidateName = resumeData?.personalInfo?.name || 'Santhosh T K';
+  const candidateTitle = resumeData?.personalInfo?.title || 'Software Developer';
+  const candidateEmail = resumeData?.personalInfo?.email || 'tksanthosh494@gmail.com';
+  const candidatePhone = resumeData?.personalInfo?.phone || '+91 8825802707';
+  const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'https://linkedin.com/in/santhosh-tk';
+  const candidateGithub = resumeData?.personalInfo?.github || 'https://github.com/TKSanthosh';
 
   const genericKeywords = ['hr', 'careers', 'talent', 'jobs', 'noreply', 'recruiting', 'admin', 'team', 'contact', 'info'];
   const cleanHrName = (hrName && !genericKeywords.includes(hrName.toLowerCase().trim())) 
     ? hrName.trim() 
     : 'Hiring Team';
 
-  const systemPrompt = `You are a world-class executive recruiter and concise cold email copywriter. Output PLAIN TEXT ONLY.
+  const systemPrompt = `You are an elite tech recruiter and cold email specialist. Output PLAIN TEXT ONLY.
 
-CORE OBJECTIVE:
-Generate an ultra-brief, high-converting, punchy cold email (under 90-110 words) that a busy hiring manager can scan in 10 seconds on mobile.
+STRICT SUBJECT FORMAT:
+Subject: [Role] | [X Years] | [Key Tech] | Interested in [Company]
+(Example: Subject: Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company})
 
-STRICT RULES:
-- Never output JSON, curly braces, quotes around keys, or any markup.
-- Never output field labels like "subject:", "greeting:", "body:".
-- Keep sentences short, crisp, and impactful.
-- Use EXACTLY "3+ years" of experience as provided in the input data.
-- NEVER use level numbers like "SDE2", "SDE 2", or "Software Development Engineer 2".
-
-OUTPUT FORMAT (plain text, exact structure):
-Subject: Exploring <Role Title> Opportunities at ${company} - ${candidateName}
-
+STRICT BODY TEMPLATE:
 Hi ${cleanHrName},
 
-<Opening: 1 punchy sentence expressing interest in ${company}'s engineering team for <Role Title> roles.>
+I’m ${candidateName}, a Software Developer with 3+ years of experience in [Key Tech / Full Stack], currently working on [one-line description of current work/domain].
 
-<Core Pitch: 2 concise sentences highlighting 3+ years in MERN / full-stack engineering, building scalable RESTful APIs, and delivering measurable impact (e.g. reducing API latency by 20% and production bugs by ~30%).>
+I’m reaching out regarding Software Developer opportunities at ${company}. Your team’s work in [specific product/team/technology] caught my attention, and I believe my experience could be relevant.
 
-<Call To Action: 1 short low-friction sentence asking for a brief 10-minute chat this week, mentioning attached 1-page resume.>
+**What I bring:**
+• 3+ years of experience with [core technology stack]
+• Built/owned [important project or high-throughput system]
+• [Strong measurable achievement, e.g. reduced API latency by 20% / cut production issues by 30%]
+• Experience with [cloud/microservices/databases/system design]
+
+I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
+
+**Resume:** Attached (1-Page ATS PDF)
+**LinkedIn:** ${candidateLinkedin}
+**GitHub:** ${candidateGithub}
+
+If there’s a suitable opening, I’d be happy to discuss how I could contribute to the team.
 
 Best regards,
 ${candidateName}
-${candidateTitle}
 ${candidatePhone ? `${candidatePhone} | ` : ''}${candidateEmail}
-${candidateLinkedin ? `${candidateLinkedin} | ` : ''}${candidateGithub}`;
+
+RULES:
+- Do NOT output JSON or code fences.
+- Maintain the exact section headings (**What I bring:**, **Resume:**, **LinkedIn:**, **GitHub:**).
+- Use bullet points (•) under **What I bring:**.`;
 
   let userPrompt = `Target Recruiter: ${cleanHrName}
 Target Company: ${company}
-Candidate: ${candidateName} (${candidateTitle})
-Total Experience: 3+ years (full-stack & backend web application development)
+Candidate Name: ${candidateName}
+Total Experience: 3+ years (full-stack & backend engineering)
 Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, REST APIs
 Notable Achievements: Reduced API response times by ~20% and cut production issues by ~30% at Sify Technologies; built clinical platforms at IQVIA.
 `;
@@ -127,9 +134,9 @@ Notable Achievements: Reduced API response times by ~20% and cut production issu
   }
 
   if (jd && jd.trim().length > 0) {
-    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Check how the company names the role in this JD and align your subject line, role title, and technical pitch to their exact role requirements.`;
+    userPrompt += `\nJob Description (JD):\n${jd}\n\nTask: Align the [Role], [Key Tech], and "**What I bring:**" bullets strictly to this JD while keeping the exact template.`;
   } else {
-    userPrompt += `\nTask: Draft a concise, high-impact cold email to ${company} for Full Stack Developer opportunities.`;
+    userPrompt += `\nTask: Draft a high-impact cold email for ${company} following the template.`;
   }
 
   const responseText = await callLlm(systemPrompt, userPrompt);
@@ -144,18 +151,16 @@ Notable Achievements: Reduced API response times by ~20% and cut production issu
 }
 
 /**
- * Code-level safety net to extract pure subject and body text with zero JSON artifacts,
- * zero duplicate greetings, and zero subject lines leaked into the body.
+ * Code-level safety net to extract pure subject and body text adhering strictly to the user's template format.
  */
 function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   const name = candidateInfo?.name || 'Santhosh T K';
-  const title = candidateInfo?.title || 'Full Stack Developer';
   const phone = candidateInfo?.phone || '+91 8825802707';
   const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
-  const linkedin = candidateInfo?.linkedin || 'linkedin.com/in/santhosh-tk';
-  const github = candidateInfo?.github || 'github.com/TKSanthosh';
+  const linkedin = candidateInfo?.linkedin || 'https://linkedin.com/in/santhosh-tk';
+  const github = candidateInfo?.github || 'https://github.com/TKSanthosh';
 
-  const cleanSignature = `Best regards,\n${name}\n${title}\n${phone ? `${phone} | ` : ''}${email}\n${linkedin ? `${linkedin} | ` : ''}${github}`.trim();
+  const cleanSignature = `Best regards,\n${name}\n${phone ? `${phone} | ` : ''}${email}`.trim();
 
   let text = (raw || '').trim();
 
@@ -164,7 +169,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     try {
       const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const obj = JSON.parse(cleanJson);
-      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Exploring Full Stack Developer Opportunities at ${company} - ${name}`;
+      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
       
       const paragraphs = [
         obj.greeting || `Hi ${hrName || 'Hiring Team'},`,
@@ -182,28 +187,33 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     }
   }
 
-  // 2. Intelligent Multi-Pattern Subject Line Detection & Extraction
-  let subject = `Exploring Full Stack Developer Opportunities at ${company} - ${name}`;
+  // 2. Extract Subject Line in format: [Role] | [X Years] | [Key Tech] | Interested in [Company]
+  let subject = null;
 
   const explicitSubjectMatch = text.match(/^Subject:\s*(.+)$/im);
   if (explicitSubjectMatch) {
     subject = explicitSubjectMatch[1].replace(/["']/g, '').trim();
     text = text.replace(/^Subject:\s*.+$/im, '').trim();
   } else {
-    // Check for subject lines formatted without "Subject:" prefix (e.g. "Exploring Full Stack Developer Opportunities at Ship - Santhosh T K")
+    // Check for pipe-separated or role-based subject line candidates
     const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
     for (let i = 0; i < Math.min(lines.length, 5); i++) {
       const line = lines[i];
-      const isSubjectCandidate = 
-        /^(?:Exploring|Application\s+for|Seeking|Inquiry\s+regarding|Software\s+Engineer|Full\s+Stack|Backend|Frontend|Developer|Role|Opportunity)\b/i.test(line) &&
-        (line.includes(company) || line.includes(name) || line.includes('Opportunities') || line.includes('Application') || line.includes('-'));
-
-      if (isSubjectCandidate) {
+      if (line.includes('|') || line.includes('Interested in') || line.includes('Opportunities') || line.includes('Application for') || line.includes('Exploring')) {
         subject = line.replace(/^(?:Subject|Re):\s*/i, '').replace(/["']/g, '').trim();
         text = text.replace(line, '').trim();
         break;
       }
     }
+  }
+
+  if (!subject) {
+    subject = `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
+  }
+
+  // If subject line is still embedded anywhere in text, remove it
+  if (subject && text.includes(subject)) {
+    text = text.replace(subject, '').trim();
   }
 
   // 3. Strip any existing signatures from the end
@@ -214,54 +224,30 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     mainBody = text.substring(0, signoffIndex).trim();
   }
 
-  // 4. Remove labels like "paragraph1:", "greeting:", "body:", "subject:"
+  // 4. Remove unwanted label artifacts
   mainBody = mainBody
     .replace(/^(?:greeting|paragraph\s*\d+|body|call to action|subject):\s*/gim, '')
     .replace(/^["']|["']$/gm, '')
     .trim();
 
-  // 5. Parse and clean paragraphs, strictly deduplicating greetings and removing subject leakage
-  const rawParagraphs = mainBody.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-  let contentParagraphs = [];
-  let greeting = null;
-
-  for (const p of rawParagraphs) {
-    const cleanP = p.replace(/\n+/g, ' ').trim();
-    if (!cleanP) continue;
-
-    // Check if this paragraph is identical or very similar to the subject line - if so, DROP IT!
-    if (cleanP === subject || (subject.length > 20 && cleanP.toLowerCase().includes(subject.toLowerCase().slice(0, 30)))) {
-      continue;
-    }
-
-    // Check if this paragraph is a greeting (e.g. "Hi Hiring Team,")
-    const greetingMatch = cleanP.match(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,|Hey\s+[^,\n]+,)\s*([\s\S]*)$/i);
-    if (greetingMatch) {
-      if (!greeting) {
-        greeting = greetingMatch[1].trim();
-      }
-      // If there was content attached after the greeting on the same paragraph
-      if (greetingMatch[2] && greetingMatch[2].trim().length > 0) {
-        const remaining = greetingMatch[2].trim();
-        if (remaining !== subject && !(subject.length > 20 && remaining.toLowerCase().includes(subject.toLowerCase().slice(0, 30)))) {
-          contentParagraphs.push(remaining);
-        }
-      }
-    } else {
-      // Regular body paragraph
-      contentParagraphs.push(cleanP);
-    }
+  // 5. Ensure single clean greeting & deduplicate all greeting occurrences
+  let finalGreeting = `Hi ${hrName || 'Hiring Team'},`;
+  const firstGreetingMatch = mainBody.match(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,|Hey\s+[^,\n]+,)/i);
+  if (firstGreetingMatch) {
+    finalGreeting = firstGreetingMatch[1].trim();
   }
 
-  // Ensure single, clean greeting
-  const finalGreeting = greeting || `Hi ${hrName || 'Hiring Team'},`;
+  let bodyWithoutGreetings = mainBody
+    .replace(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,|Hey\s+[^,\n]+,)\s*/gim, '')
+    .trim();
 
-  // Filter out any stray repetitions of candidate name/links/signatures from the content paragraphs
-  const filteredParagraphs = contentParagraphs.filter(p => {
-    return !p.startsWith(name) && !p.includes('linkedin.com') && !p.includes('github.com');
-  });
+  // 6. Ensure links are present in the body
+  if (!bodyWithoutGreetings.includes('**LinkedIn:**') && !bodyWithoutGreetings.includes('linkedin.com')) {
+    const linksBlock = `**Resume:** Attached (1-Page ATS PDF)\n**LinkedIn:** ${linkedin}\n**GitHub:** ${github}`;
+    bodyWithoutGreetings = bodyWithoutGreetings + '\n\n' + linksBlock;
+  }
 
-  const finalBody = [finalGreeting, ...filteredParagraphs, cleanSignature].join('\n\n');
+  const finalBody = `${finalGreeting}\n\n${bodyWithoutGreetings}\n\n${cleanSignature}`.trim();
 
   return { subject, body: finalBody };
 }

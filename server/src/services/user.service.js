@@ -372,6 +372,17 @@ function listAllProfiles() {
   return profiles;
 }
 
+function getAllUserKeys() {
+  if (!fs.existsSync(USERS_DIR)) return [];
+  try {
+    return fs.readdirSync(USERS_DIR, { withFileTypes: true })
+      .filter(entry => entry.isDirectory())
+      .map(entry => entry.name);
+  } catch (e) {
+    return [];
+  }
+}
+
 module.exports = {
   getUserKeyFromEmail,
   getUserPaths,
@@ -389,6 +400,7 @@ module.exports = {
   getUserOAuthClient,
   isUserAuthorized,
   listAllProfiles,
+  getAllUserKeys,
   USERS_DIR,
   createFullBackup,
   restoreFullBackup

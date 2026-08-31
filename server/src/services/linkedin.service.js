@@ -4,7 +4,7 @@ const dns = require('dns').promises;
 const { generateResumePdf } = require('./pdf.service');
 const { sendGmail, createGmailDraft } = require('./mail.service');
 const { tailorResume, generateColdEmail, callLlm } = require('./llm.service');
-const { getUserResume, getUserLogs, addUserLog, getUserPaths, isUserAuthorized } = require('./user.service');
+const { getUserResume, getUserLogs, addUserLog, getUserPaths, isUserAuthorized, getAllUserKeys } = require('./user.service');
 const { isSupabaseConfigured, supabaseSaveLinkedInConfig, supabaseGetLinkedInConfig } = require('./supabase.service');
 
 const CONFIG_FILE = path.join(__dirname, '../../linkedin_config.json');
@@ -296,7 +296,7 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no convers
         company: companyClean,
         role: p.role || `Full Stack Developer (${keywords.split(',')[0] || 'MERN'})`,
         postSnippet: p.postSnippet || `${companyClean} is hiring for ${p.role || keywords}. Send your updated resume to ${cleanEmail}.`,
-        sourceUrl: `https://www.linkedin.com/company/${companyClean.toLowerCase().replace(/[^a-z0-9]/g, '-')}/jobs/`,
+        sourceUrl: p.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(companyClean + ' ' + (p.role || keywords))}&location=India`,
         postedAt: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
         postedDaysAgo: days,
         timeFrame: `${days}d ago (Live AI Discovery)`,
@@ -610,7 +610,7 @@ let schedulerTimer = null;
 function initLinkedInScheduler() {
   if (schedulerTimer) clearInterval(schedulerTimer);
 
-  console.log('[LINKEDIN SCHEDULER] Initialized automated multi-mode LinkedIn Recruiter Auto-Pilot ticker.');
+  console.log('[LINKEDIN SCHEDULER] Initialized automated background LinkedIn Recruiter Auto-Pilot daemon.');
 
   schedulerTimer = setInterval(async () => {
     const config = getLinkedInConfig();
@@ -624,22 +624,25 @@ function initLinkedInScheduler() {
         ? `Custom Slots: ${config.customSlots?.join(', ')}`
         : `Every ${config.intervalHours || 4} Hours`;
 
-      console.log(`[LINKEDIN SCHEDULER] Scheduled interval reached (${modeDesc})! Discovering fresh LinkedIn recruiter posts...`);
-      const defaultUser = 'tksanthosh494_gmail_com';
+      console.log(`[LINKEDIN AUTO-PILOT] Scheduled trigger reached (${modeDesc})! Starting 100% autonomous discovery and direct email dispatch to HRs...`);
 
-      if (isUserAuthorized(defaultUser)) {
-        try {
-          const runReport = await runLinkedInOutreachJob(defaultUser, {
-            targetCount: config.targetPerRun || 10,
-            mode: config.mode || 'send',
-            query: config.keywords
-          });
-          console.log(`[LINKEDIN SCHEDULER] Completed scheduled outreach. Dispatched ${runReport.processedCount} emails for ${defaultUser}.`);
-        } catch (e) {
-          console.error('[LINKEDIN SCHEDULER ERROR] Scheduled run failed:', e.message);
+      const discoveredUsers = getAllUserKeys();
+      const targetUsers = discoveredUsers.length > 0 ? discoveredUsers : ['tksanthosh494_gmail_com'];
+
+      for (const userKey of targetUsers) {
+        if (isUserAuthorized(userKey)) {
+          try {
+            console.log(`[LINKEDIN AUTO-PILOT] Automatically harvesting live jobs & sending emails for ${userKey}...`);
+            const runReport = await runLinkedInOutreachJob(userKey, {
+              targetCount: config.targetPerRun || 10,
+              mode: config.mode || 'send', // Automatic direct Gmail send (no click required)
+              query: config.keywords
+            });
+            console.log(`[LINKEDIN AUTO-PILOT] Successfully dispatched ${runReport.processedCount} tailored outreach emails directly to HRs for user ${userKey}.`);
+          } catch (e) {
+            console.error(`[LINKEDIN AUTO-PILOT ERROR] Scheduled dispatch failed for ${userKey}:`, e.message);
+          }
         }
-      } else {
-        console.log('[LINKEDIN SCHEDULER] User not authorized for Gmail API, skipping automatic send.');
       }
 
       const nextRunDate = calculateNextLinkedInRunTime(config, now);

@@ -341,14 +341,47 @@ Santhosh T K`;
 
     // Case C: JSON Response safety net
     const jsonRaw = JSON.stringify({
-      subject: 'Exploring Full Stack Roles at Swiggy - Santhosh T K',
+      subject: 'Software Developer | 3+ Years | React / Node.js / MERN | Interested in Swiggy',
       greeting: 'Hi Swiggy Hiring Team,',
       paragraph1: 'I have 3+ years experience with Node.js and React.',
       paragraph2: 'Let us connect for 10 minutes.'
     });
     const resC = sanitizeAndExtractEmail(jsonRaw, 'Swiggy Hiring Team', 'Swiggy', candidate);
-    assert(resC.subject === 'Exploring Full Stack Roles at Swiggy - Santhosh T K', 'JSON subject extracted cleanly');
+    assert(resC.subject.includes('Interested in Swiggy') && resC.subject.includes('3+ Years'), 'JSON subject extracted cleanly with requested format');
     assert(!resC.body.includes('{') && !resC.body.includes('"greeting"'), 'JSON artifacts 100% stripped from body');
+
+    // Case D: New Template Verification
+    const templateRaw = `Subject: Software Developer | 3+ Years | React / Node.js / MERN | Interested in Swiggy
+
+Hi Priya,
+
+I’m Santhosh T K, a Software Developer with 3+ years of experience in React, Node.js, and Express, currently working on high-throughput backend services.
+
+I’m reaching out regarding Software Developer opportunities at Swiggy. Your team’s work in high-scale logistics caught my attention, and I believe my experience could be relevant.
+
+**What I bring:**
+• 3+ years of experience with Node.js, React.js, and REST APIs
+• Built/owned enterprise clinical data platforms
+• Reduced API latency by ~20% and cut defects by ~30%
+• Experience with AWS, microservices, and databases
+
+I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
+
+**Resume:** Attached (1-Page ATS PDF)
+**LinkedIn:** https://linkedin.com/in/santhosh-tk
+**GitHub:** https://github.com/TKSanthosh
+
+If there’s a suitable opening, I’d be happy to discuss how I could contribute to the team.
+
+Best regards,
+Santhosh T K
++91 8825802707 | tksanthosh494@gmail.com`;
+
+    const resD = sanitizeAndExtractEmail(templateRaw, 'Priya', 'Swiggy', candidate);
+    assert(resD.subject === 'Software Developer | 3+ Years | React / Node.js / MERN | Interested in Swiggy', 'Subject matches [Role] | [X Years] | [Key Tech] | Interested in [Company]');
+    assert(resD.body.includes('**What I bring:**'), 'Email body contains **What I bring:** section');
+    assert(resD.body.includes('**Resume:**') && resD.body.includes('**LinkedIn:**') && resD.body.includes('**GitHub:**'), 'Email body contains Resume, LinkedIn, and GitHub links');
+    assert(resD.body.includes('Hi Priya,'), 'Greeting matches recipient recruiter name');
 
   } catch (e) {
     assert(false, `Test 14 threw error: ${e.message}`);

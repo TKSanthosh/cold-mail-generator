@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, ExternalLink, Briefcase } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -2968,21 +2968,198 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 
       {/* 2. Discovered Recruiter Leads Feed */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-sky-500" />
-            <span>Discovered Hiring Posts & Extracted HR Emails ({leads.length})</span>
-          </h3>
-          <span className="text-xs text-slate-400">
-            {leads.filter(l => !l.alreadyContacted).length} fresh uncontacted leads ready
-          </span>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-sky-500" />
+              <span>Live LinkedIn Job Posts & Extracted HR Contacts ({leads.length})</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {leads.filter(l => !l.alreadyContacted).length} fresh leads queued for 100% automatic background email dispatch
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg border border-slate-200 dark:border-slate-700 flex text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('cards')}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  viewMode === 'cards'
+                    ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                📇 LinkedIn Post Cards
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('table')}
+                className={`px-3 py-1 rounded-md font-bold transition-all cursor-pointer ${
+                  viewMode === 'table'
+                    ? 'bg-white dark:bg-slate-900 text-sky-600 dark:text-sky-400 shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                📋 Compact Table
+              </button>
+            </div>
+          </div>
         </div>
 
         {leads.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
             {scanning ? 'Searching live LinkedIn recruiter posts matching your keywords...' : 'No leads discovered yet. Click "Discover Live Posts" above to find fresh hiring posts!'}
           </div>
+        ) : viewMode === 'cards' ? (
+          /* Rich LinkedIn Social Post Cards Grid */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {leads.map((lead) => {
+              const currentStatus = batchStatusMap[lead.id];
+              const initials = (lead.recruiterName || lead.company || 'HR')
+                .split(' ')
+                .map(w => w[0])
+                .slice(0, 2)
+                .join('')
+                .toUpperCase();
+
+              return (
+                <div
+                  key={lead.id}
+                  className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-3 relative overflow-hidden"
+                >
+                  {/* LinkedIn Header */}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-sky-600 to-indigo-600 text-white font-bold flex items-center justify-center text-xs shrink-0 shadow-sm">
+                        {initials}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{lead.recruiterName || 'Talent Acquisition'}</span>
+                          <span className="text-[10px] text-slate-400">• Hiring at</span>
+                          <span className="font-bold text-xs text-sky-600 dark:text-sky-400">{lead.company}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-[10px] text-slate-400 mt-0.5">
+                          <span>{lead.postedDaysAgo ? `${lead.postedDaysAgo}d ago` : 'Recent'}</span>
+                          <span>•</span>
+                          <span className="flex items-center gap-0.5"><Globe className="w-2.5 h-2.5" /> Public Post</span>
+                          {lead.isLive && (
+                            <span className="bg-sky-50 dark:bg-sky-950/50 text-sky-700 dark:text-sky-300 font-bold px-1.5 py-0.2 rounded text-[9px] border border-sky-200 dark:border-sky-800">
+                              LIVE DISCOVERY
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <a
+                      href={lead.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(lead.company)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-slate-400 hover:text-sky-600 dark:hover:text-sky-400 p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Open job post on LinkedIn"
+                    >
+                      <ExternalLink className="w-4 h-4" />
+                    </a>
+                  </div>
+
+                  {/* Target Role Pill */}
+                  <div className="inline-flex items-center gap-1.5 bg-indigo-50/70 dark:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 px-2.5 py-1 rounded-lg text-[11px] font-bold border border-indigo-200/80 dark:border-indigo-800/60 self-start">
+                    <Briefcase className="w-3 h-3 text-indigo-500" />
+                    <span>{lead.role}</span>
+                  </div>
+
+                  {/* Verbatim LinkedIn Post Snippet Box */}
+                  <div className="bg-slate-50 dark:bg-slate-800/50 p-3 rounded-lg border border-slate-100 dark:border-slate-800/80 text-xs text-slate-700 dark:text-slate-300 leading-relaxed italic">
+                    "{lead.postSnippet}"
+                  </div>
+
+                  {/* Extracted Contact Email Badge */}
+                  <div className="flex items-center justify-between gap-2 bg-sky-50/50 dark:bg-sky-950/20 p-2.5 rounded-lg border border-sky-100 dark:border-sky-900/40">
+                    <div className="flex items-center gap-1.5 font-mono text-xs font-bold text-sky-900 dark:text-sky-300">
+                      <Mail className="w-3.5 h-3.5 text-sky-600 dark:text-sky-400" />
+                      <span>{lead.email}</span>
+                    </div>
+                    {lead.isVerified && (
+                      <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                        <CheckCircle className="w-2.5 h-2.5" /> MX Verified
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Direct LinkedIn Job Post Link Bar */}
+                  <div className="flex items-center justify-between gap-2 bg-slate-50 dark:bg-slate-800/70 p-2 rounded-lg border border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-1.5 min-w-0 text-slate-700 dark:text-slate-300">
+                      <Globe className="w-3.5 h-3.5 text-[#0A66C2] shrink-0" />
+                      <span className="text-[11px] font-bold shrink-0">Job Link:</span>
+                      <a
+                        href={lead.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(lead.company + ' ' + lead.role)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[11px] text-[#0A66C2] dark:text-sky-400 hover:underline font-mono truncate"
+                      >
+                        {lead.sourceUrl ? lead.sourceUrl.replace(/^https?:\/\/(www\.)?/, '').slice(0, 32) + '...' : `linkedin.com/jobs/${lead.company.toLowerCase()}`}
+                      </a>
+                    </div>
+
+                    <a
+                      href={lead.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(lead.company + ' ' + lead.role)}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="bg-[#0A66C2] hover:bg-[#004182] text-white text-[10px] font-bold px-2.5 py-1 rounded flex items-center gap-1 shrink-0 transition-colors shadow-xs"
+                      title="Open job post directly on LinkedIn"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>View on LinkedIn</span>
+                    </a>
+                  </div>
+
+                  {/* Outreach Status & Actions Footer */}
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-[10px]">
+                      {currentStatus === 'tailoring' ? (
+                        <span className="text-amber-600 font-bold flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Tailoring PDF...</span>
+                      ) : currentStatus === 'sending' ? (
+                        <span className="text-sky-600 font-bold flex items-center gap-1"><Send className="w-3 h-3 animate-pulse" /> Sending Mail...</span>
+                      ) : currentStatus === 'success' ? (
+                        <span className="text-emerald-600 font-bold flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Sent Just Now</span>
+                      ) : lead.alreadyContacted ? (
+                        <span className="text-slate-400 font-semibold flex items-center gap-1"><ShieldCheck className="w-3 h-3" /> Already Contacted</span>
+                      ) : (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1">
+                          <Sparkles className="w-3 h-3" /> Ready for Auto-Pilot
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => handlePreviewLead(lead)}
+                        className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 px-2.5 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
+                        title="Preview Tailored Resume & Cold Email"
+                      >
+                        <Eye className="w-3 h-3" /> <span>Preview</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleSendSingleLead(lead)}
+                        disabled={dispatching || lead.alreadyContacted}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 disabled:opacity-40 cursor-pointer"
+                        title="Tailor and send 1-page PDF directly to recruiter"
+                      >
+                        <Send className="w-3 h-3" /> <span>Send Now</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         ) : (
+          /* Compact Table View */
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
             <table className="w-full text-left text-xs border-collapse min-w-[750px]">
               <thead>
@@ -2990,8 +3167,8 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                   <th className="p-3">Company & Recruiter</th>
                   <th className="p-3">Extracted Contact Email</th>
                   <th className="p-3">Posted Window</th>
-                  <th className="p-3">Post Hiring Snippet</th>
-                  <th className="p-3">Outreach Status</th>
+                  <th className="p-3">LinkedIn Hiring Post</th>
+                  <th className="p-3">Auto-Pilot Status</th>
                   <th className="p-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -3031,6 +3208,16 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                         <p className="text-slate-600 dark:text-slate-300 text-[11px] line-clamp-2 leading-relaxed">
                           {lead.postSnippet}
                         </p>
+                        <a
+                          href={lead.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(lead.company + ' ' + lead.role)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[#0A66C2] dark:text-sky-400 hover:underline font-bold text-[10px] mt-1"
+                          title="Open job post on LinkedIn"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          <span>View Post on LinkedIn ↗</span>
+                        </a>
                       </td>
                       <td className="p-3">
                         {currentStatus === 'tailoring' ? (
@@ -3055,7 +3242,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded font-semibold text-[10px] border border-emerald-200 dark:border-emerald-800">
-                            <Sparkles className="w-3 h-3 text-emerald-500" /> Fresh Lead
+                            <Sparkles className="w-3 h-3 text-emerald-500" /> Auto-Pilot Ready
                           </span>
                         )}
                       </td>
@@ -3107,6 +3294,23 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             </div>
 
             <div className="flex flex-col gap-3 text-xs">
+              {/* Direct LinkedIn Job Link Bar in Modal */}
+              <div className="flex items-center justify-between p-2.5 bg-sky-50 dark:bg-sky-950/40 rounded-lg border border-sky-200 dark:border-sky-800">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Globe className="w-4 h-4 text-[#0A66C2] shrink-0" />
+                  <span className="font-bold text-sky-900 dark:text-sky-200 truncate">LinkedIn Recruiter Post</span>
+                </div>
+                <a
+                  href={selectedLead.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(selectedLead.company + ' ' + selectedLead.role)}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="bg-[#0A66C2] hover:bg-[#004182] text-white font-bold px-3 py-1 rounded-md text-xs flex items-center gap-1 transition-colors shadow-xs shrink-0"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Open Post on LinkedIn ↗</span>
+                </a>
+              </div>
+
               <div>
                 <span className="font-bold text-slate-500 uppercase tracking-wider block mb-1">Recruiter Post Context</span>
                 <p className="p-3 bg-slate-50 dark:bg-slate-800/60 rounded border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 leading-relaxed italic">
