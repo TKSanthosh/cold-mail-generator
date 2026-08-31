@@ -366,9 +366,13 @@ function getNaukriSessionCookies(userKey = 'default_user') {
       }
     } catch (e) {}
   }
-  const config = getNaukriConfig(userKey);
-  if (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
-    return config.sessionCookies;
+  if (fs.existsSync(paths.naukriConfigPath)) {
+    try {
+      const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
+      if (Array.isArray(saved.sessionCookies) && saved.sessionCookies.length > 0) {
+        return saved.sessionCookies;
+      }
+    } catch (e) {}
   }
   return [];
 }
@@ -392,6 +396,9 @@ function clearNaukriSession(userKey = 'default_user') {
 
 function getNaukriConfig(userKey = 'default_user') {
   const paths = getUserPaths(userKey);
+  const activeCookies = getNaukriSessionCookies(userKey);
+  const hasActiveSession = Array.isArray(activeCookies) && activeCookies.length > 0;
+
   if (fs.existsSync(paths.naukriConfigPath)) {
     try {
       const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
@@ -404,15 +411,19 @@ function getNaukriConfig(userKey = 'default_user') {
         intervalMinutes: 360,
         username: '',
         password: '',
-        hasSession: false,
+        hasSession: hasActiveSession,
+        sessionCookies: activeCookies,
         headless: true,
         lastUploadAt: null,
         nextUploadAt: null,
-        lastStatus: null,
+        lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
         lastError: null,
         ...saved,
-        hasSession: hasValidNaukriSession(userKey)
+        hasSession: hasActiveSession || (Array.isArray(saved.sessionCookies) && saved.sessionCookies.length > 0)
       };
+      if (hasActiveSession) {
+        conf.sessionCookies = activeCookies;
+      }
       if (!conf.nextUploadAt) {
         conf.nextUploadAt = calculateNextUploadTime(conf).toISOString();
       }
@@ -428,10 +439,11 @@ function getNaukriConfig(userKey = 'default_user') {
     intervalMinutes: 360,
     username: '',
     password: '',
-    hasSession: false,
+    hasSession: hasActiveSession,
+    sessionCookies: activeCookies,
     headless: true,
     lastUploadAt: null,
-    lastStatus: null,
+    lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
     lastError: null
   };
   defaultConf.nextUploadAt = calculateNextUploadTime(defaultConf).toISOString();
@@ -442,7 +454,22 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   ensureUserSandbox(userKey);
   const paths = getUserPaths(userKey);
   const current = getNaukriConfig(userKey);
-  const updated = { ...current, ...config };
+  const existingCookies = getNaukriSessionCookies(userKey);
+
+  const cookiesToKeep = (config.sessionCookies && config.sessionCookies.length > 0)
+    ? config.sessionCookies
+    : (existingCookies.length > 0 ? existingCookies : (current.sessionCookies || []));
+
+  const updated = {
+    ...current,
+    ...config,
+    sessionCookies: cookiesToKeep
+  };
+
+  updated.hasSession = Array.isArray(updated.sessionCookies) && updated.sessionCookies.length > 0;
+  if (updated.hasSession && (!updated.lastStatus || updated.lastStatus.includes('Disconnected'))) {
+    updated.lastStatus = 'Session Connected (Cookies)';
+  }
 
   // Always recalculate nextUploadAt if scheduleMode or customSlots changed
   if (config.scheduleMode || config.customSlots || !updated.nextUploadAt) {
@@ -451,9 +478,16 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
 
   fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(updated, null, 2), 'utf8');
 
+  // Save session file if cookies are present
+  if (Array.isArray(updated.sessionCookies) && updated.sessionCookies.length > 0) {
+    fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(updated.sessionCookies, null, 2), 'utf8');
+  }
+
   // Supabase Cloud Multi-Device Sync
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, updated).catch(() => {});
+    supabaseSaveNaukriConfig(userKey, updated).catch((err) => {
+      console.warn('[SUPABASE] saveNaukriConfig background sync notice:', err.message);
+    });
   }
 
   return updated;

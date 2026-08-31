@@ -298,13 +298,32 @@ async function supabaseGetLinkedInConfig() {
 async function supabaseSaveNaukriConfig(userKey, config) {
   if (!isSupabaseConfigured()) return false;
   try {
-    // Encrypt sensitive passwords and session cookies before storing in DB
-    const secureConfig = { ...config };
-    if (secureConfig.password && typeof secureConfig.password === 'string') {
-      secureConfig.password = encryptText(secureConfig.password);
+    // 1. Fetch existing cloud config to merge and avoid overwriting session cookies / passwords with undefined
+    let existingRaw = null;
+    try {
+      const getRes = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config?user_key=eq.${encodeURIComponent(userKey)}&select=config_data`, {
+        headers: getHeaders()
+      });
+      if (getRes.ok) {
+        const d = await getRes.json();
+        if (d && d[0] && d[0].config_data) existingRaw = d[0].config_data;
+      }
+    } catch (e) {}
+
+    const secureConfig = { ...(existingRaw || {}), ...config };
+
+    // Encrypt sensitive password before storing in DB
+    if (config.password && typeof config.password === 'string' && !config.password.startsWith('enc:v1:')) {
+      secureConfig.password = encryptText(config.password);
+    } else if (!config.password && existingRaw?.password) {
+      secureConfig.password = existingRaw.password;
     }
-    if (secureConfig.sessionCookies && (Array.isArray(secureConfig.sessionCookies) || typeof secureConfig.sessionCookies === 'object')) {
-      secureConfig.sessionCookies = encryptData(secureConfig.sessionCookies);
+
+    // Encrypt sensitive session cookies before storing in DB
+    if (config.sessionCookies && (Array.isArray(config.sessionCookies) || typeof config.sessionCookies === 'object')) {
+      secureConfig.sessionCookies = encryptData(config.sessionCookies);
+    } else if (!config.sessionCookies && existingRaw?.sessionCookies) {
+      secureConfig.sessionCookies = existingRaw.sessionCookies;
     }
 
     const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {

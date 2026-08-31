@@ -280,10 +280,13 @@ async function hydrateUserSandboxFromDatabase(userKey) {
     // 5. Hydrate Naukri Config & Session Cookies
     const dbNaukriConfig = await supabaseGetNaukriConfig(userKey);
     if (dbNaukriConfig && typeof dbNaukriConfig === 'object') {
-      fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(dbNaukriConfig, null, 2), 'utf8');
-      if (Array.isArray(dbNaukriConfig.sessionCookies) && dbNaukriConfig.sessionCookies.length > 0) {
+      const hasCookies = Array.isArray(dbNaukriConfig.sessionCookies) && dbNaukriConfig.sessionCookies.length > 0;
+      if (hasCookies) {
         fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(dbNaukriConfig.sessionCookies, null, 2), 'utf8');
+        dbNaukriConfig.hasSession = true;
+        dbNaukriConfig.lastStatus = dbNaukriConfig.lastStatus || 'Session Connected (Cookies)';
       }
+      fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(dbNaukriConfig, null, 2), 'utf8');
     }
 
     // 6. Hydrate Naukri History
