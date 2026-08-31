@@ -215,6 +215,58 @@ function appendNaukriHistory(userKey = 'default_user', record = {}) {
 }
 
 /**
+ * Dismisses promotional overlays, feedback lightboxes, chatbots, and "Skip/Later" banners
+ */
+async function dismissNaukriPopups(page) {
+  if (!page || page.isClosed()) return;
+  try {
+    await page.evaluate(() => {
+      const selectors = [
+        '.crossIcon',
+        '.close-btn',
+        '.modal-close',
+        'button[title="Close"]',
+        '#deny',
+        '.lightbox-close',
+        '.chat-close',
+        '.chatbot_close',
+        '.layer .close',
+        'button.skip',
+        'a.skip',
+        '.skip-btn',
+        'a[href*="skip"]',
+        'button.later',
+        'a.later'
+      ];
+      for (const s of selectors) {
+        try {
+          const elems = document.querySelectorAll(s);
+          elems.forEach(el => {
+            if (el && typeof el.click === 'function') el.click();
+          });
+        } catch (e) {}
+      }
+    });
+  } catch (e) {}
+}
+
+/**
+ * Safely clears and closes any pending 2FA OTP session for a specific user
+ */
+function clearActiveOtpSession(userKey) {
+  if (activeOtpSessions.has(userKey)) {
+    const session = activeOtpSessions.get(userKey);
+    if (session.timeoutTimer) clearTimeout(session.timeoutTimer);
+    if (session.browser) {
+      try {
+        session.browser.close().catch(() => {});
+      } catch (e) {}
+    }
+    activeOtpSessions.delete(userKey);
+  }
+}
+
+/**
  * 1-Click Interactive Google SSO Sign-in Helper for specific user sandbox
  */
 let activeSsoBrowser = null;
@@ -249,7 +301,7 @@ async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
 
   const pages = await browser.pages();
   const page = pages.length > 0 ? pages[0] : await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
+  await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
   await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded' });
 
@@ -273,6 +325,15 @@ async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
 
     checkInterval = setInterval(async () => {
       try {
+        if (!page || page.isClosed()) {
+          await cleanup();
+          resolve({
+            success: hasValidNaukriSession(userKey),
+            message: hasValidNaukriSession(userKey) ? 'Session saved successfully.' : 'Browser window was closed.'
+          });
+          return;
+        }
+
         const currentUrl = page.url();
         const cookies = await page.cookies();
         const hasAuthCookie = cookies.some(c => 
@@ -306,7 +367,7 @@ async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
           });
         }
       } catch (err) {
-        if (err.message.includes('Session closed') || err.message.includes('Target closed')) {
+        if (err.message.includes('Session closed') || err.message.includes('Target closed') || err.message.includes('destroyed')) {
           if (timeoutTimer) clearTimeout(timeoutTimer);
           if (checkInterval) clearInterval(checkInterval);
           activeSsoBrowser = null;
@@ -321,9 +382,157 @@ async function startInteractiveGoogleSsoLogin(userKey = 'default_user') {
 }
 
 /**
+ * Executes the resume upload on the active Naukri profile page
+ */
+async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime) {
+  // 1. Navigate to Naukri Profile if not already there
+  if (!page.url().includes('mnjuser/profile')) {
+    console.log('[NAUKRI UPLOADER] Navigating to profile page for upload...');
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
+    await delay(2500);
+  }
+
+  // 2. Dismiss any overlay popups or banners
+  await dismissNaukriPopups(page);
+
+  // 3. Scroll down slightly to trigger lazy-loaded sections
+  try {
+    await page.evaluate(() => window.scrollBy(0, 400));
+    await delay(1000);
+  } catch (e) {}
+
+  await dismissNaukriPopups(page);
+
+  // 4. Locate Resume Upload Input Element
+  console.log('[NAUKRI UPLOADER] Locating resume upload input element...');
+
+  try {
+    await page.waitForSelector('input#attachCV, input[type="file"], input[name="attachCV"], .updateResume, .uploadBtn, [title*="Update resume" i]', { timeout: 12000 });
+  } catch (e) {}
+
+  // 1st priority: direct file input elements
+  let fileInput = await page.$('input#attachCV') ||
+                  await page.$('input[name="attachCV"]') ||
+                  await page.$('input[accept*=".pdf"]') ||
+                  await page.$('input[type="file"]');
+
+  // 2nd priority: click "Update resume" button if input is hidden
+  if (!fileInput) {
+    const updateBtn = await page.$('.updateResume') ||
+                      await page.$('.uploadBtn') ||
+                      await page.$('[title*="Update resume" i]') ||
+                      await page.$('a[href*="attachCV"]') ||
+                      await page.$('button.updateResume');
+    if (updateBtn) {
+      await updateBtn.click();
+      await delay(1500);
+      fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
+    }
+  }
+
+  // 3rd priority: evaluate handle across document
+  if (!fileInput) {
+    const inputHandle = await page.evaluateHandle(() => {
+      return document.querySelector('#attachCV') ||
+             document.querySelector('input[type="file"]') ||
+             document.querySelector('input[name="attachCV"]') ||
+             document.querySelector('input[accept*="pdf"]');
+    });
+    if (inputHandle && inputHandle.asElement()) {
+      fileInput = inputHandle.asElement();
+    }
+  }
+
+  if (!fileInput) {
+    const currentFinalUrl = page.url();
+    const pageTitle = await page.title().catch(() => 'Unknown');
+    throw new Error(`Could not locate the resume upload element on Naukri (Page: "${pageTitle}" at ${currentFinalUrl}). Please verify your Naukri session or credentials in the settings tab.`);
+  }
+
+  console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
+  await fileInput.uploadFile(uploadPdfPath);
+
+  // Dispatch change and input events with bubbling to trigger React state updates
+  try {
+    await page.evaluate((el) => {
+      if (el) {
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }, fileInput);
+  } catch (e) {}
+
+  // Check if a modal Save/Upload button is displayed
+  try {
+    const saveBtn = await page.$('button.saveBtn, button.upload-save, .upload-modal button[type="submit"], button.btn-save');
+    if (saveBtn) {
+      await saveBtn.click();
+    }
+  } catch (e) {}
+
+  // Wait for Naukri AJAX document upload and processing to finish (6-8 seconds)
+  console.log('[NAUKRI UPLOADER] Waiting for Naukri backend AJAX upload processing...');
+  await delay(7000);
+
+  const updatedStatusText = await page.evaluate(() => {
+    const selectors = ['.updateOn', '.lastUpdated', '.msg', '.success-msg', '.msg-box', '.status-msg', '.toast', '.snackbar', '.server-msg'];
+    for (const s of selectors) {
+      const el = document.querySelector(s);
+      if (el && el.innerText && el.innerText.trim().length > 0) {
+        return el.innerText.trim();
+      }
+    }
+    return 'Resume uploaded successfully';
+  });
+
+  const durationSec = Math.round((Date.now() - startTime) / 1000);
+  console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
+
+  // Save session cookies
+  const sessionCookies = await page.cookies();
+  const userPaths = getUserPaths(userKey);
+  fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
+  }
+
+  const config = getNaukriConfig(userKey);
+  const nextRunDate = (config.scheduleMode === 'quarter_day')
+    ? getNextQuarterDayTime()
+    : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
+
+  config.hasSession = true;
+  config.lastUploadAt = new Date().toISOString();
+  config.lastStatus = 'Success';
+  config.lastError = null;
+  config.nextUploadAt = nextRunDate.toISOString();
+  saveNaukriConfig(userKey, config);
+
+  appendNaukriHistory(userKey, {
+    status: 'success',
+    fileName: resumeFileName,
+    message: `Resume refreshed on Naukri as ${resumeFileName} (Active Just Now)`,
+    duration: `${durationSec}s`,
+    profileStatus: updatedStatusText
+  });
+
+  return {
+    status: 'success',
+    fileName: resumeFileName,
+    message: `Resume updated successfully on Naukri profile as ${resumeFileName} (Active Just Now)`,
+    duration: `${durationSec}s`,
+    timestamp: new Date().toISOString(),
+    profileStatus: updatedStatusText
+  };
+}
+
+/**
  * Automates logging into Naukri & uploading fresh 1-page PDF resume for specific user
  */
 async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = {}) {
+  // Clear any existing orphaned OTP session before starting a fresh run
+  clearActiveOtpSession(userKey);
+
   const config = getNaukriConfig(userKey);
   const username = overrideOptions.username || config.username;
   const password = overrideOptions.password || config.password;
@@ -362,6 +571,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
   let browser = null;
   let uploadResult = null;
+  let isOtpWaiting = false;
 
   try {
     const launchOptions = {
@@ -387,19 +597,9 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     browser = await puppeteer.launch(launchOptions);
 
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36');
-
-    // Performance Optimization: Block heavy media and fonts to speed up load time by 3-5x
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const resourceType = req.resourceType();
-      if (['image', 'media', 'font'].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
     // 3. Load Saved User Session Cookies (Google SSO / Session)
     if (fs.existsSync(userPaths.naukriSessionPath)) {
@@ -414,15 +614,15 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     // 4. Navigate to Naukri Profile
     console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
-    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await delay(2000);
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
+    await delay(2500);
 
     // 5. Check if redirected to login page or unauthenticated state
     let currentUrl = page.url();
     let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
     if (!isLoginPage && !currentUrl.includes('mnjuser/profile')) {
       if (currentUrl.includes('naukri.com/homepage') || currentUrl.includes('mynaukri') || currentUrl.includes('naukri.com')) {
-        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
         await delay(2000);
         currentUrl = page.url();
         isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
@@ -442,15 +642,19 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       }
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
-        await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
         await delay(1500);
       }
 
-      await page.waitForSelector('#usernameField, input[placeholder*="Email" i]', { timeout: 15000 });
-      await page.type('#usernameField, input[placeholder*="Email" i]', username, { delay: 30 });
+      await page.waitForSelector('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]', { timeout: 15000 });
+      const userEl = await page.$('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
+      await userEl.click({ clickCount: 3 });
+      await userEl.type(username, { delay: 25 });
 
-      await page.waitForSelector('#passwordField, input[type="password"]', { timeout: 15000 });
-      await page.type('#passwordField, input[type="password"]', password, { delay: 30 });
+      await page.waitForSelector('#passwordField, input[type="password"], input[name="password"]', { timeout: 15000 });
+      const passEl = await page.$('#passwordField, input[type="password"], input[name="password"]');
+      await passEl.click({ clickCount: 3 });
+      await passEl.type(password, { delay: 25 });
 
       const loginBtn = await page.$('button[type="submit"], .btn-primary, .loginButton');
       if (loginBtn) {
@@ -473,7 +677,15 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
                           (await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i]'));
 
       if (isOtpScreen) {
-        console.log(`[NAUKRI UPLOADER] 2FA OTP verification required for user ${userKey}. Storing session for user submission...`);
+        console.log(`[NAUKRI UPLOADER] 2FA OTP verification required for user ${userKey}. Keeping browser open for user submission...`);
+        isOtpWaiting = true;
+
+        // Auto-cleanup timer after 5 minutes if OTP is never submitted
+        const timeoutTimer = setTimeout(() => {
+          console.log(`[NAUKRI UPLOADER] OTP session timed out after 5 minutes for user ${userKey}. Closing browser...`);
+          clearActiveOtpSession(userKey);
+        }, 300000);
+
         activeOtpSessions.set(userKey, {
           browser,
           page,
@@ -481,7 +693,8 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
           resumeFileName,
           uploadPdfPath,
           startTime,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          timeoutTimer
         });
 
         return {
@@ -497,114 +710,10 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
       }
       console.log(`[NAUKRI UPLOADER] Authentication successful. Session cookies saved for user ${userKey}.`);
-
-      if (!page.url().includes('mnjuser/profile')) {
-        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await delay(2000);
-      }
     }
 
-    // 6. Locate Resume Upload Input Element with Multi-Selector Discovery & Modal Dismissal
-    console.log('[NAUKRI UPLOADER] Locating resume upload input element...');
-
-    // Dismiss any promotional overlay popups or banners
-    try {
-      await page.evaluate(() => {
-        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close, .chatbot_close, .layer .close');
-        dismissBtns.forEach(btn => btn?.click?.());
-      });
-    } catch (e) {}
-
-    // Scroll down slightly to trigger lazy-loaded profile sections
-    try {
-      await page.evaluate(() => window.scrollBy(0, 400));
-      await delay(1000);
-    } catch (e) {}
-
-    // Wait for any resume upload input or update button
-    try {
-      await page.waitForSelector('input#attachCV, input[type="file"], input[name="attachCV"], .updateResume, .uploadBtn, [title*="Update resume" i]', { timeout: 10000 });
-    } catch (e) {}
-
-    // 1st priority: direct file input elements
-    let fileInput = await page.$('input#attachCV') ||
-                    await page.$('input[name="attachCV"]') ||
-                    await page.$('input[accept*=".pdf"]') ||
-                    await page.$('input[type="file"]');
-
-    // 2nd priority: click "Update resume" button if input is hidden
-    if (!fileInput) {
-      const updateBtn = await page.$('.updateResume') ||
-                        await page.$('.uploadBtn') ||
-                        await page.$('[title*="Update resume" i]') ||
-                        await page.$('a[href*="attachCV"]') ||
-                        await page.$('button.updateResume');
-      if (updateBtn) {
-        await updateBtn.click();
-        await delay(1500);
-        fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
-      }
-    }
-
-    // 3rd priority: query across document handle
-    if (!fileInput) {
-      const inputHandle = await page.evaluateHandle(() => {
-        return document.querySelector('#attachCV') ||
-               document.querySelector('input[type="file"]') ||
-               document.querySelector('input[name="attachCV"]') ||
-               document.querySelector('input[accept*="pdf"]');
-      });
-      if (inputHandle && inputHandle.asElement()) {
-        fileInput = inputHandle.asElement();
-      }
-    }
-
-    if (!fileInput) {
-      const currentFinalUrl = page.url();
-      const pageTitle = await page.title().catch(() => 'Unknown');
-      throw new Error(`Could not locate the resume upload element on Naukri (Page: "${pageTitle}" at ${currentFinalUrl}). Please ensure your Naukri credentials are correct in the settings tab.`);
-    }
-
-    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
-    await fileInput.uploadFile(uploadPdfPath);
-
-    await delay(4000);
-
-    const updatedStatusText = await page.evaluate(() => {
-      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg, .msg-box, .status-msg');
-      return el ? el.innerText.trim() : 'Resume uploaded successfully';
-    });
-
-    const durationSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
-
-    uploadResult = {
-      status: 'success',
-      fileName: resumeFileName,
-      message: `Resume updated successfully on Naukri profile as ${resumeFileName} (Active Just Now)`,
-      duration: `${durationSec}s`,
-      timestamp: new Date().toISOString(),
-      profileStatus: updatedStatusText
-    };
-
-    const nextRunDate = (config.scheduleMode === 'quarter_day')
-      ? getNextQuarterDayTime()
-      : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
-
-    config.hasSession = true;
-    config.lastUploadAt = new Date().toISOString();
-    config.lastStatus = 'Success';
-    config.lastError = null;
-    config.nextUploadAt = nextRunDate.toISOString();
-    saveNaukriConfig(userKey, config);
-
-    appendNaukriHistory(userKey, {
-      status: 'success',
-      fileName: resumeFileName,
-      message: `Resume refreshed on Naukri as ${resumeFileName} (Active Just Now)`,
-      duration: `${durationSec}s`,
-      profileStatus: updatedStatusText
-    });
+    // 6. Perform Resume Upload on Profile Page
+    uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
 
   } catch (err) {
     console.error(`[NAUKRI UPLOADER ERROR for ${userKey}]`, err.message);
@@ -630,7 +739,8 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     throw err;
   } finally {
-    if (browser) {
+    // Only close browser if NOT currently waiting for user 2FA OTP submission
+    if (browser && !isOtpWaiting) {
       try { await browser.close(); } catch (e) {}
     }
   }
@@ -687,37 +797,40 @@ function initNaukriScheduler() {
  */
 async function verifyNaukriOtp(userKey, otpCode) {
   const session = activeOtpSessions.get(userKey);
-  if (!session) {
-    throw new Error('No active OTP verification session found or session timed out. Please click "Upload to Naukri" again to generate a fresh OTP.');
+  if (!session || !session.browser || !session.page || session.page.isClosed()) {
+    clearActiveOtpSession(userKey);
+    throw new Error('No active OTP verification session found or session timed out. Please click "Boost Profile Now" again to receive a fresh OTP.');
   }
 
-  const { browser, page, userPaths, resumeFileName, uploadPdfPath, startTime } = session;
+  const { browser, page, uploadPdfPath, resumeFileName, startTime } = session;
 
   try {
-    console.log(`[NAUKRI UPLOADER] Submitting 2FA OTP for user ${userKey}...`);
+    console.log(`[NAUKRI UPLOADER] Submitting 2FA OTP (${otpCode}) for user ${userKey}...`);
 
-    await page.waitForSelector('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"]', { timeout: 10000 });
+    await page.waitForSelector('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"], input[type="number"]', { timeout: 12000 });
 
-    const digitInputs = await page.$$('input[maxlength="1"], .otp-digit, input.otpBox');
-    if (digitInputs.length >= 6) {
+    // Handle 6-digit individual box inputs vs single text input
+    const digitInputs = await page.$$('input[maxlength="1"], .otp-digit, input.otpBox, input.digit-input, input[id*="otp" i][maxlength="1"]');
+    if (digitInputs && digitInputs.length >= 6) {
       const chars = otpCode.split('');
       for (let i = 0; i < Math.min(chars.length, digitInputs.length); i++) {
-        await digitInputs[i].type(chars[i]);
+        await digitInputs[i].click();
+        await digitInputs[i].type(chars[i], { delay: 25 });
       }
     } else {
-      const otpInput = await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"]');
+      const otpInput = await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"], input[type="number"]');
       if (otpInput) {
         await otpInput.click({ clickCount: 3 });
-        await otpInput.type(otpCode, { delay: 30 });
+        await otpInput.type(otpCode, { delay: 25 });
       }
     }
 
-    let verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn');
+    let verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn, button.submitBtn');
     if (!verifyBtn) {
       const buttons = await page.$$('button');
       for (const btn of buttons) {
-        const text = await page.evaluate(el => el.innerText.toLowerCase(), btn);
-        if (text.includes('verify') || text.includes('submit')) {
+        const text = await page.evaluate(el => el.innerText.toLowerCase(), btn).catch(() => '');
+        if (text.includes('verify') || text.includes('submit') || text.includes('continue') || text.includes('login')) {
           verifyBtn = btn;
           break;
         }
@@ -725,109 +838,37 @@ async function verifyNaukriOtp(userKey, otpCode) {
     }
     if (verifyBtn) {
       await verifyBtn.click();
-      await delay(4000);
+      await delay(3500);
     }
 
-    const sessionCookies = await page.cookies();
-    fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
-    if (isSupabaseConfigured()) {
-      supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
-    }
-    console.log(`[NAUKRI UPLOADER] 2FA OTP Verified! Permanent session cookies saved for user ${userKey}.`);
-
-    if (!page.url().includes('mnjuser/profile')) {
-      await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
-      await delay(2000);
-    }
-
-    // Dismiss overlay popups
-    try {
-      await page.evaluate(() => {
-        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close, .chatbot_close, .layer .close');
-        dismissBtns.forEach(btn => btn?.click?.());
-      });
-    } catch (e) {}
-
-    // Locate file input
-    let fileInput = await page.$('input#attachCV') ||
-                    await page.$('input[name="attachCV"]') ||
-                    await page.$('input[accept*=".pdf"]') ||
-                    await page.$('input[type="file"]');
-
-    if (!fileInput) {
-      const updateBtn = await page.$('.updateResume') ||
-                        await page.$('.uploadBtn') ||
-                        await page.$('[title*="Update resume" i]') ||
-                        await page.$('a[href*="attachCV"]') ||
-                        await page.$('button.updateResume');
-      if (updateBtn) {
-        await updateBtn.click();
-        await delay(1500);
-        fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
+    // Check for OTP error messages
+    const otpErrorEl = await page.$('.server-err, .err, .error, .login-error, .errMsg, .error-msg, .otp-error');
+    if (otpErrorEl) {
+      const errText = await page.evaluate(el => el.innerText.trim(), otpErrorEl).catch(() => '');
+      if (errText && (errText.toLowerCase().includes('otp') || errText.toLowerCase().includes('invalid') || errText.toLowerCase().includes('expired') || errText.toLowerCase().includes('incorrect'))) {
+        throw new Error(`Naukri OTP Verification Failed: ${errText}`);
       }
     }
 
-    if (!fileInput) {
-      const inputHandle = await page.evaluateHandle(() => {
-        return document.querySelector('#attachCV') ||
-               document.querySelector('input[type="file"]') ||
-               document.querySelector('input[name="attachCV"]') ||
-               document.querySelector('input[accept*="pdf"]');
-      });
-      if (inputHandle && inputHandle.asElement()) {
-        fileInput = inputHandle.asElement();
-      }
-    }
+    // Auto-dismiss interstitial modals (e.g. "Verify Mobile", "Skip", etc.)
+    await dismissNaukriPopups(page);
 
-    if (!fileInput) {
-      throw new Error('OTP verified successfully, but could not locate the resume upload button on your Naukri profile. Please click "Upload to Naukri" again.');
-    }
+    // Perform the resume upload
+    const uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
 
-    console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
-    await fileInput.uploadFile(uploadPdfPath);
-    await delay(4000);
-
-    const updatedStatusText = await page.evaluate(() => {
-      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg, .msg-box, .status-msg');
-      return el ? el.innerText.trim() : 'Resume uploaded successfully';
-    });
-
-    const durationSec = Math.round((Date.now() - startTime) / 1000);
-    console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
-
-    const config = getNaukriConfig(userKey);
-    const nextRunDate = (config.scheduleMode === 'quarter_day')
-      ? getNextQuarterDayTime()
-      : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
-
-    config.hasSession = true;
-    config.lastUploadAt = new Date().toISOString();
-    config.lastStatus = 'Success';
-    config.lastError = null;
-    config.nextUploadAt = nextRunDate.toISOString();
-    saveNaukriConfig(userKey, config);
-
-    appendNaukriHistory(userKey, {
-      status: 'success',
-      fileName: resumeFileName,
-      profileStatus: updatedStatusText,
-      duration: `${durationSec}s`
-    });
-
-    activeOtpSessions.delete(userKey);
-    await browser.close().catch(() => {});
+    // Clean up OTP session and browser
+    clearActiveOtpSession(userKey);
 
     return {
       status: 'success',
       fileName: resumeFileName,
       message: `2FA OTP Verified! Resume successfully uploaded as ${resumeFileName} (Active Just Now). Future scheduled boosts will run automatically!`,
-      duration: `${durationSec}s`,
+      duration: uploadResult.duration,
       timestamp: new Date().toISOString(),
-      profileStatus: updatedStatusText
+      profileStatus: uploadResult.profileStatus
     };
   } catch (err) {
-    activeOtpSessions.delete(userKey);
-    await browser.close().catch(() => {});
+    clearActiveOtpSession(userKey);
     throw err;
   }
 }

@@ -213,6 +213,9 @@ async function testPdfSinglePage() {
     assert(typeof naukriService.findBrowserExecutable === 'function', 'naukri.service exports findBrowserExecutable');
     assert(typeof naukriService.getNaukriConfig === 'function', 'naukri.service exports getNaukriConfig');
     assert(typeof naukriService.getNextQuarterDayTime === 'function', 'naukri.service exports getNextQuarterDayTime');
+    assert(typeof naukriService.uploadResumeToNaukri === 'function', 'naukri.service exports uploadResumeToNaukri');
+    assert(typeof naukriService.verifyNaukriOtp === 'function', 'naukri.service exports verifyNaukriOtp');
+    assert(typeof naukriService.startInteractiveGoogleSsoLogin === 'function', 'naukri.service exports startInteractiveGoogleSsoLogin');
     
     const browserPath = naukriService.findBrowserExecutable();
     assert(browserPath !== undefined, `Browser executable discovered: ${browserPath || 'Puppeteer default (Render Linux)'}`);
