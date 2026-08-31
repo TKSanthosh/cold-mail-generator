@@ -200,17 +200,28 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
   let cookiesToSave = [];
 
   if (Array.isArray(cookieInput)) {
-    cookiesToSave = cookieInput;
+    cookiesToSave = cookieInput.map(c => ({
+      name: c.name || c.key || '',
+      value: c.value || '',
+      domain: c.domain || '.naukri.com',
+      path: c.path || '/'
+    })).filter(c => c.name && c.value);
   } else if (typeof cookieInput === 'string') {
     const trimmed = cookieInput.trim();
     if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
       try {
         const parsed = JSON.parse(trimmed);
-        cookiesToSave = Array.isArray(parsed) ? parsed : [parsed];
+        const arr = Array.isArray(parsed) ? parsed : [parsed];
+        cookiesToSave = arr.map(c => ({
+          name: c.name || c.key || '',
+          value: c.value || '',
+          domain: c.domain || '.naukri.com',
+          path: c.path || '/'
+        })).filter(c => c.name && c.value);
       } catch (e) {}
     }
 
-    if (cookiesToSave.length === 0) {
+    if (cookiesToSave.length === 0 && trimmed.includes('=')) {
       // Parse document.cookie string (e.g. "nauk_session=abc; ubt_user=xyz; ...")
       const pairs = trimmed.split(';');
       for (const pair of pairs) {
@@ -228,6 +239,16 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
           }
         }
       }
+    }
+
+    // Fallback: single raw token
+    if (cookiesToSave.length === 0 && trimmed.length > 10 && !trimmed.includes(' ') && !trimmed.includes('\n')) {
+      cookiesToSave.push({
+        name: 'nauk_session',
+        value: trimmed,
+        domain: '.naukri.com',
+        path: '/'
+      });
     }
   }
 
@@ -788,7 +809,12 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     if (isLoginPage) {
       console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials authentication...`);
       if (!username || !password) {
-        throw new Error('Naukri credentials not configured or session expired. Please save your Naukri username & password in the Naukri Booster settings tab or sign in with Google SSO.');
+        const cfg = getNaukriConfig(userKey);
+        cfg.hasSession = false;
+        cfg.lastStatus = 'Session Expired / Not Linked';
+        saveNaukriConfig(userKey, cfg);
+
+        throw new Error('Naukri session is unauthenticated. Please enter your Naukri username & password in the authorization card, or click "Paste Session Cookie" to connect via your active browser session.');
       }
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
