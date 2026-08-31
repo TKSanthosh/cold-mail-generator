@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -815,6 +815,30 @@ app.post('/api/naukri/verify-otp', async (req, res) => {
   try {
     const result = await verifyNaukriOtp(userKey, otp.trim());
     res.json({ success: true, result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/naukri/import-session', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { cookies } = req.body;
+  if (!cookies) {
+    return res.status(400).json({ error: 'Please provide session cookies.' });
+  }
+  try {
+    const result = saveNaukriSessionCookies(userKey, cookies);
+    res.json(result);
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/naukri/clear-session', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const result = clearNaukriSession(userKey);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3047,10 +3047,13 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   };
 
   const [connectingSso, setConnectingSso] = useState(false);
+  const [showCookieModal, setShowCookieModal] = useState(false);
+  const [cookieInput, setCookieInput] = useState('');
+  const [savingCookie, setSavingCookie] = useState(false);
 
   const handleLaunchGoogleSso = async () => {
     setConnectingSso(true);
-    showToast('🚀 Chrome opened! Click "Sign in with Google" in the Chrome window to complete authentication.', 'info');
+    showToast('🚀 Launching desktop Chrome for Google SSO sign-in...', 'info');
     try {
       const res = await apiFetch('/api/naukri/launch-sso', {
         method: 'POST'
@@ -3067,9 +3070,46 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     }
   };
 
+  const handleImportCookies = async (e) => {
+    e?.preventDefault();
+    if (!cookieInput.trim()) {
+      return showToast('Please paste your Naukri session cookies.', 'error');
+    }
+    setSavingCookie(true);
+    try {
+      const res = await apiFetch('/api/naukri/import-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cookies: cookieInput.trim() })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      setShowCookieModal(false);
+      setCookieInput('');
+      showToast(data.message || '🎉 Naukri session linked successfully! Auto-boosts are now active.', 'success');
+      fetchConfigAndHistory();
+    } catch (err) {
+      showToast(err.message || 'Failed to import session cookies', 'error');
+    } finally {
+      setSavingCookie(false);
+    }
+  };
+
+  const handleDisconnectSession = async () => {
+    if (!window.confirm('Disconnect your active Naukri session?')) return;
+    try {
+      await apiFetch('/api/naukri/clear-session', { method: 'POST' });
+      showToast('Naukri session disconnected.', 'info');
+      fetchConfigAndHistory();
+    } catch (e) {
+      showToast('Failed to disconnect session', 'error');
+    }
+  };
+
   const handleTriggerUpload = async () => {
     if (!config.hasSession && !config.username && !formData.username) {
-      return showToast('Please enter your Naukri username & password first or click 1-Click Connect with Google SSO.', 'error');
+      return showToast('Please enter your Naukri credentials or link your session cookie first.', 'error');
     }
     setUploading(true);
     setOtpError('');
@@ -3262,39 +3302,65 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </span>
             </div>
 
-            {/* 1-Click Google SSO Connection */}
+            {/* Quick Connection Options (Google SSO & Session Cookie) */}
             <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex flex-col gap-2 shadow-xs">
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Google SSO / Session Status:</span>
+                  <span>Session Status:</span>
                 </span>
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                  config.hasSession
-                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                    : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                }`}>
-                  {config.hasSession ? '🟢 Connected (No 2FA Required)' : '⚪ Not Linked (1-Click Link Below)'}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    config.hasSession
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                  }`}>
+                    {config.hasSession ? '🟢 Active (Auto-Boost Ready)' : '⚪ Not Linked'}
+                  </span>
+                  {config.hasSession && (
+                    <button
+                      type="button"
+                      onClick={handleDisconnectSession}
+                      className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold underline"
+                    >
+                      Disconnect
+                    </button>
+                  )}
+                </div>
               </div>
-              <button
-                type="button"
-                onClick={handleLaunchGoogleSso}
-                disabled={connectingSso || uploading}
-                className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg py-2 px-3 font-bold text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-              >
-                {connectingSso ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
-                ) : (
-                  <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-                )}
-                <span>{connectingSso ? 'Chrome Opened: Click Google SSO in Window...' : '1-Click Connect with Google SSO (Instant)'}</span>
-              </button>
+
+              <div className="grid grid-cols-2 gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setShowCookieModal(true)}
+                  disabled={uploading}
+                  className="flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg py-2 px-2 font-bold text-[11px] shadow-xs transition-all cursor-pointer"
+                  title="Paste session cookie from your browser - ideal for Google SSO accounts on cloud"
+                >
+                  <Key className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                  <span>Paste Session Cookie</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleLaunchGoogleSso}
+                  disabled={connectingSso || uploading}
+                  className="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg py-2 px-2 font-bold text-[11px] shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+                  title="Launch Google SSO in local Chrome browser (Desktop App)"
+                >
+                  {connectingSso ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                  ) : (
+                    <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                  )}
+                  <span>1-Click Desktop SSO</span>
+                </button>
+              </div>
             </div>
 
-            <div className="flex items-center gap-2 my-1">
+            <div className="flex items-center gap-2 my-0.5">
               <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase">Or Save Login Credentials</span>
+              <span className="text-[10px] text-slate-400 font-semibold uppercase">Or Login with Password</span>
               <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
             </div>
 
@@ -3526,6 +3592,71 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 >
                   {verifyingOtp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{verifyingOtp ? 'Verifying...' : 'Verify & Boost Profile'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Session Cookie Import Dialog Modal */}
+      {showCookieModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-emerald-200 dark:border-emerald-800 flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-emerald-50 dark:bg-emerald-950/60 text-emerald-600 dark:text-emerald-400 rounded-xl">
+                <Key className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Paste Naukri Session Cookie</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Direct Link for Google SSO Accounts (Zero Passwords / OTPs)</p>
+              </div>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex flex-col gap-1.5">
+              <span className="font-bold text-slate-800 dark:text-slate-200">How to get your cookie in 5 seconds:</span>
+              <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <li>Open <a href="https://www.naukri.com" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">naukri.com</a> in your Chrome browser where you are logged in.</li>
+                <li>Press <kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600 font-mono text-[10px]">F12</kbd> (or Right Click → <strong>Inspect</strong>) and click the <strong>Console</strong> tab.</li>
+                <li>Type <code className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-600 dark:text-indigo-300 font-bold">copy(document.cookie)</code> and hit <kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono text-[10px]">Enter</kbd>.</li>
+                <li>Paste the copied text below and click <strong>Save & Link Session</strong>.</li>
+              </ol>
+            </div>
+
+            <form onSubmit={handleImportCookies} className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Paste Session Cookies / String:
+                </label>
+                <textarea
+                  rows={4}
+                  value={cookieInput}
+                  onChange={(e) => setCookieInput(e.target.value)}
+                  placeholder="e.g. nauk_session=...; ubt_user=... or JSON cookie array"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
+                  autoFocus
+                />
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCookieModal(false);
+                    setCookieInput('');
+                  }}
+                  disabled={savingCookie}
+                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCookie || !cookieInput.trim()}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                >
+                  {savingCookie && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  <span>{savingCookie ? 'Linking...' : 'Save & Link Session'}</span>
                 </button>
               </div>
             </form>
