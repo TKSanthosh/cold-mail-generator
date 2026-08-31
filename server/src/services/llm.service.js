@@ -69,6 +69,21 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
   return content;
 }
 
+function sanitizeHrName(rawName) {
+  if (!rawName) return 'Hiring Team';
+  let clean = rawName
+    .replace(/\([^)]*\)/g, '') // remove parenthetical role suffixes like (Staff Technical Recruiter)
+    .replace(/\[[^\]]*\]/g, '')
+    .replace(/(?:Senior|Staff|Lead|Principal|Associate)?\s*(?:Technical|Tech|Engineering|Talent|HR|Recruiter|Hiring|Talent Acquisition|Recruitment)\s*(?:Specialist|Manager|Lead|Partner|Team|Recruiter)?/gi, '')
+    .replace(/[\,\-\|].*$/g, '') // remove anything after commas, dashes, or pipes
+    .trim();
+
+  if (!clean || clean.length < 2 || ['hr', 'careers', 'talent', 'jobs', 'noreply', 'recruiting', 'admin', 'team', 'contact', 'info', 'hiring team', 'recruitment team'].includes(clean.toLowerCase())) {
+    return 'Hiring Team';
+  }
+  return clean;
+}
+
 /**
  * Generates a tailored, plain-text cold email strictly adhering to the user's fixed template format.
  */
@@ -80,10 +95,7 @@ async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) 
   const candidateLinkedin = resumeData?.personalInfo?.linkedin || 'https://linkedin.com/in/santhosh-tk';
   const candidateGithub = resumeData?.personalInfo?.github || 'https://github.com/TKSanthosh';
 
-  const genericKeywords = ['hr', 'careers', 'talent', 'jobs', 'noreply', 'recruiting', 'admin', 'team', 'contact', 'info'];
-  const cleanHrName = (hrName && !genericKeywords.includes(hrName.toLowerCase().trim())) 
-    ? hrName.trim() 
-    : 'Hiring Team';
+  const cleanHrName = sanitizeHrName(hrName);
 
   const systemPrompt = `You are an elite tech recruiter and cold email specialist. Output PLAIN TEXT ONLY.
 
@@ -231,10 +243,13 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     .trim();
 
   // 5. Ensure single clean greeting & deduplicate all greeting occurrences
-  let finalGreeting = `Hi ${hrName || 'Hiring Team'},`;
+  const cleanRecipientName = sanitizeHrName(hrName);
+  let finalGreeting = `Hi ${cleanRecipientName},`;
   const firstGreetingMatch = mainBody.match(/^(Hi\s+[^,\n]+,|Dear\s+[^,\n]+,|Hello\s+[^,\n]+,|Hey\s+[^,\n]+,)/i);
   if (firstGreetingMatch) {
-    finalGreeting = firstGreetingMatch[1].trim();
+    const rawGreet = firstGreetingMatch[1].trim();
+    const extractedName = rawGreet.replace(/^(?:Hi|Dear|Hello|Hey)\s+/i, '').replace(/,/g, '').trim();
+    finalGreeting = `Hi ${sanitizeHrName(extractedName)},`;
   }
 
   let bodyWithoutGreetings = mainBody

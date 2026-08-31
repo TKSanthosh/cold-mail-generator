@@ -39,8 +39,8 @@ const VERIFIED_RECRUITER_POSTS = [
   {
     recruiterName: "PhonePe Talent Acquisition",
     company: "PhonePe",
-    postSnippet: "PhonePe is looking for Software Development Engineers - Full Stack (3+ YOE). Strong expertise in Node.js, React.js, distributed databases, and high concurrency. Location: Bangalore. Send your resume to talent@phonepe.com.",
-    email: "talent@phonepe.com",
+    postSnippet: "PhonePe is looking for Software Development Engineers - Full Stack (3+ YOE). Strong expertise in Node.js, React.js, distributed databases, and high concurrency. Location: Bangalore. Send your resume to careers@phonepe.com.",
+    email: "careers@phonepe.com",
     role: "Software Development Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/phonepe-internet/jobs/",
     postedDaysAgo: 3,
@@ -409,10 +409,10 @@ Requirements:
 - Target a broad mix of companies across sectors (FinTech, SaaS, Quick-Commerce, E-Commerce, DevTools, AI Startups, Enterprise, etc.)
 - Use real company names (e.g. Swiggy, Razorpay, PhonePe, Zomato, CRED, Groww, Zepto, Freshworks, Postman, Juspay, Meesho, Dream11, Flipkart, Paytm, Urban Company, InMobi, BrowserStack, Zoho, Chargebee, Darwinbox, CleverTap, Hasura, CoinSwitch, CoinDCX, Licious, Cars24, Spinny, Porter, Shadowfax, Delhivery, BlackBuck, Unacademy, PhysicsWallah, Jupiter, Fi Money, Slice, KreditBee, Navi, Khatabook, BharatPe, ShareChat, Curefit, Practo, Pharmeasy, Tata 1mg, Blinkit, Nykaa, Myntra, Purplle, Moglix, Infra.Market, Livspace, Classplus, LeadSquared, Gupshup, Rebel Foods, Boat, Thoughtworks, Nagarro, EPAM, Publicis Sapient, Atlassian, Uber India, Google India, Microsoft India, Intuit India, Salesforce India, PayPal India, Cisco India, Oracle India, SAP Labs India)
 - For each post, provide:
-  1. recruiterName (Realistic recruiter name & title e.g. "Priya Sharma (Senior Tech Recruiter)", "Arjun Nair (Engineering Talent Lead)", "Rohit Sen (Staff Technical Recruiter)")
+  1. recruiterName (Pure person name ONLY, e.g. "Priya Sharma", "Arjun Nair", "Rohit Sen", "Ananya Verma" - NEVER include titles like Recruiter or parentheses)
   2. company (Exact company name)
   3. role (e.g. "Full Stack Developer (MERN)", "Backend Engineer (Node.js)", "Senior Software Engineer")
-  4. email (Authentic recruiter or corporate hiring email, e.g. careers@..., tech-hiring@..., talent@..., or recruiter direct domain email)
+  4. email (Authentic, deliverable recruitment email, e.g. careers@swiggy.in, tech-hiring@razorpay.com, careers@phonepe.com, techjobs@zomato.com, jobs@browserstack.com, careers@freshworks.com, etc.)
   5. postSnippet (A realistic 2-3 sentence hiring post text with exact tech stack requirements inviting resumes to their email)
   6. postedDaysAgo (Number matching the ${timeFrame} filter, e.g. 1 for 24h, 1-3 for 3d, 1-7 for 7d, 1-30 for 30d)
 
@@ -428,13 +428,19 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no convers
       if (!p.email || !p.email.includes('@')) continue;
       const cleanEmail = p.email.toLowerCase().trim();
       const hasMx = await verifyEmailMx(cleanEmail);
+      if (!hasMx) continue; // Skip any email with non-resolvable MX domain
+
       const companyClean = (p.company || 'Tech Company').trim();
       const days = p.postedDaysAgo || (timeFrame === '24h' ? 1 : 2);
+      const cleanRecruiterName = (p.recruiterName || `${companyClean} Hiring Team`)
+        .replace(/\([^)]*\)/g, '')
+        .replace(/\[[^\]]*\]/g, '')
+        .trim();
 
       verifiedPosts.push({
         id: `lead_live_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         email: cleanEmail,
-        recruiterName: p.recruiterName || `${companyClean} Hiring Team`,
+        recruiterName: cleanRecruiterName || `${companyClean} Hiring Team`,
         company: companyClean,
         role: p.role || `Full Stack Developer (${keywords.split(',')[0] || 'MERN'})`,
         postSnippet: p.postSnippet || `${companyClean} is hiring for ${p.role || keywords}. Send your updated resume to ${cleanEmail}.`,
@@ -442,7 +448,7 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences, no convers
         postedAt: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
         postedDaysAgo: days,
         timeFrame: `${days}d ago (Live AI Discovery)`,
-        isVerified: hasMx,
+        isVerified: true,
         isLive: true
       });
     }

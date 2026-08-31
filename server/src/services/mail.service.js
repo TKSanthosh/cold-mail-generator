@@ -5,9 +5,61 @@ const { getOAuth2Client } = require('./oauth.service');
 const { getUserOAuthClient } = require('./user.service');
 
 /**
+ * Converts Markdown formatting to clean, elegant HTML for Gmail rendering.
+ */
+function markdownToHtml(text) {
+  if (!text) return '';
+
+  let html = text
+    // Replace **bold** with <strong>bold</strong>
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    // Replace *italic* with <em>italic</em>
+    .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+    // Replace [label](url) with <a href="url">label</a>
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\)]+)\)/g, '<a href="$2" style="color: #0b57d0; text-decoration: underline;">$1</a>')
+    // Replace bare URLs (not already inside href) with clickable links
+    .replace(/(?<!href=")(https?:\/\/[^\s<]+)/g, '<a href="$1" style="color: #0b57d0; text-decoration: underline;">$1</a>');
+
+  const paragraphs = html.split(/\n\s*\n/);
+  const formattedSections = [];
+
+  for (const para of paragraphs) {
+    const lines = para.split('\n').map(l => l.trim()).filter(Boolean);
+    const bulletLines = [];
+    const regularLines = [];
+
+    for (const line of lines) {
+      if (line.startsWith('•') || line.startsWith('* ') || line.startsWith('- ')) {
+        bulletLines.push(line.replace(/^[•\*\-]\s*/, '').trim());
+      } else {
+        if (bulletLines.length > 0) {
+          const items = bulletLines.map(b => `<li style="margin-bottom: 6px; line-height: 1.5;">${b}</li>`).join('\n');
+          formattedSections.push(`<ul style="margin: 6px 0 14px 20px; padding: 0; color: #202124;">\n${items}\n</ul>`);
+          bulletLines.length = 0;
+        }
+        regularLines.push(line);
+      }
+    }
+
+    if (regularLines.length > 0) {
+      formattedSections.push(`<p style="margin: 0 0 14px 0; line-height: 1.6; color: #202124;">${regularLines.join('<br/>')}</p>`);
+    }
+
+    if (bulletLines.length > 0) {
+      const items = bulletLines.map(b => `<li style="margin-bottom: 6px; line-height: 1.5;">${b}</li>`).join('\n');
+      formattedSections.push(`<ul style="margin: 6px 0 14px 20px; padding: 0; color: #202124;">\n${items}\n</ul>`);
+    }
+  }
+
+  return `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14px; color: #202124; line-height: 1.6; max-width: 650px;">
+${formattedSections.join('\n')}
+</div>`;
+}
+
+/**
  * Builds a MIME message string containing headers, HTML body, and a file attachment.
  */
-function buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentDisplayName = 'santhosh_t_k.pdf') {
+function buildMimeMessage(to, subject, rawOrHtmlBody, attachmentPath, attachmentDisplayName = 'santhosh_t_k.pdf') {
   const boundary = 'cold_email_boundary_xxxxxx';
   const filename = attachmentDisplayName || (attachmentPath ? path.basename(attachmentPath) : 'santhosh_t_k.pdf');
 
@@ -18,14 +70,10 @@ function buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentDispl
     `Content-Type: multipart/mixed; boundary="${boundary}"`
   ].join('\r\n');
 
-  // Convert plain text breaks to elegant HTML paragraphs
-  let formattedBody = htmlBody;
+  // Convert plain text / markdown to elegant HTML
+  let formattedBody = rawOrHtmlBody;
   if (!formattedBody.includes('<p>') && !formattedBody.includes('<div>')) {
-    const parts = formattedBody.split(/\n\s*\n/);
-    const htmlParagraphs = parts.map(p => `<p style="margin: 0 0 14px 0; line-height: 1.6; color: #222222;">${p.replace(/\n/g, '<br/>')}</p>`);
-    formattedBody = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; font-size: 14.5px; color: #222222; max-width: 650px;">
-      ${htmlParagraphs.join('\n')}
-    </div>`;
+    formattedBody = markdownToHtml(formattedBody);
   }
 
   const bodySection = [
