@@ -3127,6 +3127,17 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     }
   };
 
+  const handleClearHistory = async () => {
+    if (!window.confirm('Are you sure you want to clear the Naukri upload history?')) return;
+    try {
+      await apiFetch('/api/naukri/history', { method: 'DELETE' });
+      setHistory([]);
+      showToast('Naukri upload history cleared.', 'info');
+    } catch (e) {
+      showToast('Failed to clear history', 'error');
+    }
+  };
+
   if (!currentUser) {
     return (
       <div className="bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center flex flex-col items-center justify-center gap-4 max-w-lg mx-auto my-12 shadow-sm">
@@ -3345,12 +3356,23 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <History className="w-4 h-4 text-emerald-500" />
             <span>Naukri Upload & Profile Boost History ({history.length})</span>
           </h3>
-          <button
-            onClick={fetchConfigAndHistory}
-            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
-          >
-            <RefreshCw className="w-3 h-3" /> Refresh
-          </button>
+          <div className="flex items-center gap-2">
+            {history.length > 0 && (
+              <button
+                onClick={handleClearHistory}
+                className="text-xs text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 flex items-center gap-1 font-semibold transition-colors"
+                title="Clear upload history"
+              >
+                <Trash2 className="w-3 h-3" /> Clear
+              </button>
+            )}
+            <button
+              onClick={fetchConfigAndHistory}
+              className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
+            >
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
         </div>
 
         {history.length === 0 ? (

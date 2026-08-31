@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -774,6 +774,16 @@ app.post('/api/naukri/config', (req, res) => {
 app.get('/api/naukri/history', (req, res) => {
   const userKey = resolveUserKey(req, res);
   res.json({ history: getNaukriHistory(userKey) });
+});
+
+app.delete('/api/naukri/history', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    clearNaukriHistory(userKey);
+    res.json({ success: true, history: [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/naukri/launch-sso', async (req, res) => {

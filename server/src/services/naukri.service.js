@@ -178,6 +178,8 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   return updated;
 }
 
+const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 function getNaukriHistory(userKey = 'default_user') {
   const paths = getUserPaths(userKey);
   if (fs.existsSync(paths.naukriHistoryPath)) {
@@ -185,6 +187,13 @@ function getNaukriHistory(userKey = 'default_user') {
       return JSON.parse(fs.readFileSync(paths.naukriHistoryPath, 'utf8'));
     } catch (e) {}
   }
+  return [];
+}
+
+function clearNaukriHistory(userKey = 'default_user') {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  fs.writeFileSync(paths.naukriHistoryPath, JSON.stringify([], null, 2), 'utf8');
   return [];
 }
 
@@ -406,22 +415,35 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     // 4. Navigate to Naukri Profile
     console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
     await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await delay(2000);
 
     // 5. Check if redirected to login page or unauthenticated state
-    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth') || !currentUrl.includes('mnjuser/profile');
+    let currentUrl = page.url();
+    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
+    if (!isLoginPage && !currentUrl.includes('mnjuser/profile')) {
+      if (currentUrl.includes('naukri.com/homepage') || currentUrl.includes('mynaukri') || currentUrl.includes('naukri.com')) {
+        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await delay(2000);
+        currentUrl = page.url();
+        isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
+      } else {
+        isLoginPage = true;
+      }
+    }
     if (!isLoginPage) {
-      const loginField = await page.$('#usernameField, input[type="password"], .loginButton');
+      const loginField = await page.$('#usernameField, input[type="password"], .loginButton, a[href*="nlogin"]');
       if (loginField) isLoginPage = true;
     }
 
     if (isLoginPage) {
       console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials authentication...`);
       if (!username || !password) {
-        throw new Error('Naukri credentials not configured. Please save your Naukri username & password in the Naukri Booster settings tab.');
+        throw new Error('Naukri credentials not configured or session expired. Please save your Naukri username & password in the Naukri Booster settings tab or sign in with Google SSO.');
       }
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
         await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await delay(1500);
       }
 
       await page.waitForSelector('#usernameField, input[placeholder*="Email" i]', { timeout: 15000 });
@@ -433,11 +455,21 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       const loginBtn = await page.$('button[type="submit"], .btn-primary, .loginButton');
       if (loginBtn) {
         await loginBtn.click();
-        await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+        await delay(3500);
       }
 
-      const isOtpScreen = page.url().includes('otp') ||
-                          page.url().includes('verification') ||
+      // Check for login errors
+      const loginErrorEl = await page.$('.server-err, .err, .error, .login-error, .errMsg');
+      if (loginErrorEl) {
+        const errorText = await page.evaluate(el => el.innerText.trim(), loginErrorEl);
+        if (errorText) {
+          throw new Error(`Naukri Login Failed: ${errorText}`);
+        }
+      }
+
+      currentUrl = page.url();
+      const isOtpScreen = currentUrl.includes('otp') ||
+                          currentUrl.includes('verification') ||
                           (await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i]'));
 
       if (isOtpScreen) {
@@ -468,6 +500,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
       if (!page.url().includes('mnjuser/profile')) {
         await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await delay(2000);
       }
     }
 
@@ -477,7 +510,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     // Dismiss any promotional overlay popups or banners
     try {
       await page.evaluate(() => {
-        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close');
+        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close, .chatbot_close, .layer .close');
         dismissBtns.forEach(btn => btn?.click?.());
       });
     } catch (e) {}
@@ -485,7 +518,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     // Scroll down slightly to trigger lazy-loaded profile sections
     try {
       await page.evaluate(() => window.scrollBy(0, 400));
-      await page.waitForTimeout(1000);
+      await delay(1000);
     } catch (e) {}
 
     // Wait for any resume upload input or update button
@@ -508,7 +541,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
                         await page.$('button.updateResume');
       if (updateBtn) {
         await updateBtn.click();
-        await page.waitForTimeout(1500);
+        await delay(1500);
         fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
       }
     }
@@ -535,10 +568,10 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
     await fileInput.uploadFile(uploadPdfPath);
 
-    await page.waitForTimeout(4000);
+    await delay(4000);
 
     const updatedStatusText = await page.evaluate(() => {
-      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg');
+      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg, .msg-box, .status-msg');
       return el ? el.innerText.trim() : 'Resume uploaded successfully';
     });
 
@@ -679,10 +712,20 @@ async function verifyNaukriOtp(userKey, otpCode) {
       }
     }
 
-    const verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn, button:has-text("Verify"), button:has-text("Submit")');
+    let verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn');
+    if (!verifyBtn) {
+      const buttons = await page.$$('button');
+      for (const btn of buttons) {
+        const text = await page.evaluate(el => el.innerText.toLowerCase(), btn);
+        if (text.includes('verify') || text.includes('submit')) {
+          verifyBtn = btn;
+          break;
+        }
+      }
+    }
     if (verifyBtn) {
       await verifyBtn.click();
-      await page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 25000 }).catch(() => {});
+      await delay(4000);
     }
 
     const sessionCookies = await page.cookies();
@@ -694,12 +737,13 @@ async function verifyNaukriOtp(userKey, otpCode) {
 
     if (!page.url().includes('mnjuser/profile')) {
       await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await delay(2000);
     }
 
     // Dismiss overlay popups
     try {
       await page.evaluate(() => {
-        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close');
+        const dismissBtns = document.querySelectorAll('.crossIcon, .close-btn, .modal-close, button[title="Close"], #deny, .lightbox-close, .chat-close, .chatbot_close, .layer .close');
         dismissBtns.forEach(btn => btn?.click?.());
       });
     } catch (e) {}
@@ -718,7 +762,7 @@ async function verifyNaukriOtp(userKey, otpCode) {
                         await page.$('button.updateResume');
       if (updateBtn) {
         await updateBtn.click();
-        await page.waitForTimeout(1500);
+        await delay(1500);
         fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
       }
     }
@@ -741,10 +785,10 @@ async function verifyNaukriOtp(userKey, otpCode) {
 
     console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
     await fileInput.uploadFile(uploadPdfPath);
-    await page.waitForTimeout(4000);
+    await delay(4000);
 
     const updatedStatusText = await page.evaluate(() => {
-      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg');
+      const el = document.querySelector('.updateOn, .lastUpdated, .msg, .success-msg, .msg-box, .status-msg');
       return el ? el.innerText.trim() : 'Resume uploaded successfully';
     });
 
@@ -795,6 +839,8 @@ module.exports = {
   getNaukriConfig,
   saveNaukriConfig,
   getNaukriHistory,
+  clearNaukriHistory,
+  appendNaukriHistory,
   startInteractiveGoogleSsoLogin,
   uploadResumeToNaukri,
   verifyNaukriOtp,
