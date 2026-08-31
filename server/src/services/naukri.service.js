@@ -807,56 +807,137 @@ async function verifyNaukriOtp(userKey, otpCode) {
   try {
     console.log(`[NAUKRI UPLOADER] Submitting 2FA OTP (${otpCode}) for user ${userKey}...`);
 
-    await page.waitForSelector('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"], input[type="number"]', { timeout: 12000 });
+    // 1. Wait for any OTP input elements to appear on screen
+    try {
+      await page.waitForSelector('input[maxlength="1"], input.otpBox, input.otp-digit, input[placeholder*="OTP" i], input[placeholder*="verification" i], input[name*="otp" i], input[id*="otp" i], input[type="tel"]:not(#usernameField)', { timeout: 15000 });
+    } catch (e) {}
 
-    // Handle 6-digit individual box inputs vs single text input
-    const digitInputs = await page.$$('input[maxlength="1"], .otp-digit, input.otpBox, input.digit-input, input[id*="otp" i][maxlength="1"]');
+    // 2. Locate and fill OTP input
+    // Strategy A: 6 individual digit boxes
+    const digitInputs = await page.$$('input[maxlength="1"], .otp-digit, input.otpBox, input.digit-input, input[id*="otp" i][maxlength="1"], .otp-input input');
     if (digitInputs && digitInputs.length >= 6) {
+      console.log(`[NAUKRI UPLOADER] Entering OTP into 6-digit box layout...`);
       const chars = otpCode.split('');
       for (let i = 0; i < Math.min(chars.length, digitInputs.length); i++) {
-        await digitInputs[i].click();
-        await digitInputs[i].type(chars[i], { delay: 25 });
+        try {
+          await digitInputs[i].click();
+          await page.keyboard.press('Backspace');
+          await digitInputs[i].type(chars[i], { delay: 25 });
+          await page.evaluate((el) => {
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }, digitInputs[i]);
+        } catch (e) {}
       }
     } else {
-      const otpInput = await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i], input[type="text"], input[type="number"]');
+      // Strategy B: Dedicated single OTP text/tel field (strictly excluding username and password fields)
+      let otpInput = await page.$('input[placeholder*="OTP" i], input[placeholder*="verification" i], input[placeholder*="code" i], input[name*="otp" i], input[id*="otp" i], input.otp-input, input[type="tel"]:not(#usernameField), input.otpField, input[data-test*="otp" i]');
+
+      if (!otpInput) {
+        // Fallback: query any visible text/tel/number input that is NOT #usernameField and NOT #passwordField
+        const handle = await page.evaluateHandle(() => {
+          const inputs = Array.from(document.querySelectorAll('input'));
+          return inputs.find(i => {
+            const id = (i.id || '').toLowerCase();
+            const name = (i.name || '').toLowerCase();
+            const type = (i.type || '').toLowerCase();
+            const style = window.getComputedStyle(i);
+            const isVisible = style.display !== 'none' && style.visibility !== 'hidden' && i.offsetWidth > 0;
+            return isVisible && !id.includes('username') && !id.includes('password') && !name.includes('username') && !name.includes('password') && (type === 'text' || type === 'tel' || type === 'number');
+          });
+        });
+        if (handle && handle.asElement()) {
+          otpInput = handle.asElement();
+        }
+      }
+
       if (otpInput) {
+        console.log(`[NAUKRI UPLOADER] Entering OTP into single input field...`);
         await otpInput.click({ clickCount: 3 });
+        await page.keyboard.press('Backspace');
         await otpInput.type(otpCode, { delay: 25 });
+        await page.evaluate((el) => {
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
+        }, otpInput);
+      } else {
+        throw new Error('Could not locate the OTP input field on Naukri. Please ensure the OTP prompt is still active.');
       }
     }
 
-    let verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn, button.submitBtn');
+    // 3. Submit OTP (Press Enter and Click Verify Button)
+    await page.keyboard.press('Enter');
+    await delay(1000);
+
+    let verifyBtn = await page.$('button[type="submit"], button.btn-primary, button.loginButton, .verifyOtpBtn, button.submitBtn, button.verifyBtn');
     if (!verifyBtn) {
-      const buttons = await page.$$('button');
+      const buttons = await page.$$('button, a.btn, input[type="submit"]');
       for (const btn of buttons) {
-        const text = await page.evaluate(el => el.innerText.toLowerCase(), btn).catch(() => '');
-        if (text.includes('verify') || text.includes('submit') || text.includes('continue') || text.includes('login')) {
+        const text = await page.evaluate(el => (el.innerText || el.value || '').toLowerCase(), btn).catch(() => '');
+        if ((text.includes('verify') || text.includes('submit') || text.includes('continue') || text.includes('login') || text.includes('proceed')) && !text.includes('resend')) {
           verifyBtn = btn;
           break;
         }
       }
     }
     if (verifyBtn) {
-      await verifyBtn.click();
-      await delay(3500);
+      await verifyBtn.click().catch(() => {});
     }
 
-    // Check for OTP error messages
-    const otpErrorEl = await page.$('.server-err, .err, .error, .login-error, .errMsg, .error-msg, .otp-error');
-    if (otpErrorEl) {
-      const errText = await page.evaluate(el => el.innerText.trim(), otpErrorEl).catch(() => '');
-      if (errText && (errText.toLowerCase().includes('otp') || errText.toLowerCase().includes('invalid') || errText.toLowerCase().includes('expired') || errText.toLowerCase().includes('incorrect'))) {
-        throw new Error(`Naukri OTP Verification Failed: ${errText}`);
+    // 4. Dynamically poll for authentication success or error message
+    console.log('[NAUKRI UPLOADER] Verifying OTP response and waiting for authentication...');
+    let isAuthenticated = false;
+    let failureReason = null;
+
+    for (let attempt = 0; attempt < 24; attempt++) {
+      await delay(600);
+
+      // Check for on-screen OTP error elements
+      const otpErrorEl = await page.$('.server-err, .err, .error, .login-error, .errMsg, .error-msg, .otp-error, [role="alert"], .err-msg, .error-message');
+      if (otpErrorEl) {
+        const errText = await page.evaluate(el => el.innerText.trim(), otpErrorEl).catch(() => '');
+        if (errText && (errText.toLowerCase().includes('otp') || errText.toLowerCase().includes('invalid') || errText.toLowerCase().includes('expired') || errText.toLowerCase().includes('incorrect') || errText.toLowerCase().includes('wrong'))) {
+          failureReason = `Naukri OTP Verification Failed: ${errText}`;
+          break;
+        }
+      }
+
+      const currentUrl = page.url();
+      const cookies = await page.cookies();
+      const hasAuthCookie = cookies.some(c => 
+        c.name.includes('nauk_session') || 
+        c.name.includes('ubt_user') || 
+        c.name.includes('isLoggedIn') || 
+        c.name.includes('TOKEN')
+      );
+
+      if (hasAuthCookie || currentUrl.includes('mnjuser/profile') || currentUrl.includes('mnjuser/homepage') || currentUrl.includes('mynaukri') || (!currentUrl.includes('nlogin') && !currentUrl.includes('login') && !currentUrl.includes('otp'))) {
+        isAuthenticated = true;
+        break;
       }
     }
 
-    // Auto-dismiss interstitial modals (e.g. "Verify Mobile", "Skip", etc.)
+    if (failureReason) {
+      throw new Error(failureReason);
+    }
+
+    if (!isAuthenticated) {
+      // Check if still stuck on login or OTP page
+      const currentUrl = page.url();
+      if (currentUrl.includes('login') || currentUrl.includes('otp')) {
+        throw new Error('Naukri did not accept the OTP. Please verify the 6-digit code and try again.');
+      }
+    }
+
+    console.log(`[NAUKRI UPLOADER] OTP verified successfully for user ${userKey}!`);
+
+    // 5. Auto-dismiss interstitial modals (e.g. "Verify Mobile", "Skip", etc.)
     await dismissNaukriPopups(page);
 
-    // Perform the resume upload
+    // 6. Perform the resume upload
     const uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
 
-    // Clean up OTP session and browser
+    // 7. Clean up OTP session and close browser
     clearActiveOtpSession(userKey);
 
     return {

@@ -2924,6 +2924,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [showOtpModal, setShowOtpModal] = useState(false);
   const [otpInput, setOtpInput] = useState('');
   const [otpMessage, setOtpMessage] = useState('');
+  const [otpError, setOtpError] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
   const fetchConfigAndHistory = async () => {
@@ -3068,9 +3069,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   const handleTriggerUpload = async () => {
     if (!config.hasSession && !config.username && !formData.username) {
-      return showToast('Please enter your Naukri username & password first.', 'error');
+      return showToast('Please enter your Naukri username & password first or click 1-Click Connect with Google SSO.', 'error');
     }
     setUploading(true);
+    setOtpError('');
     try {
       const res = await apiFetch('/api/naukri/trigger', {
         method: 'POST',
@@ -3085,7 +3087,9 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (data.error) throw new Error(data.error);
 
       if (data.result?.status === 'otp_required' || data.result?.requiresOtp) {
-        setOtpMessage(data.result.message || 'Naukri has sent a 6-digit OTP to your registered email/phone.');
+        setOtpMessage(data.result.message || 'Naukri sent a 6-digit OTP to your registered email/phone.');
+        setOtpError('');
+        setOtpInput('');
         setShowOtpModal(true);
         showToast('🔑 Naukri requested 2FA OTP verification. Please enter the OTP code.', 'info');
         return;
@@ -3104,9 +3108,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const handleVerifyOtp = async (e) => {
     e?.preventDefault();
     if (!otpInput || otpInput.trim().length === 0) {
+      setOtpError('Please enter the 6-digit OTP code.');
       return showToast('Please enter the 6-digit OTP code.', 'error');
     }
     setVerifyingOtp(true);
+    setOtpError('');
     try {
       const res = await apiFetch('/api/naukri/verify-otp', {
         method: 'POST',
@@ -3118,9 +3124,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
       setShowOtpModal(false);
       setOtpInput('');
+      setOtpError('');
       showToast(data.result?.message || '🎉 2FA OTP Verified! Resume uploaded and session saved permanently.', 'success');
       fetchConfigAndHistory();
     } catch (err) {
+      setOtpError(err.message || 'Failed to verify OTP');
       showToast(err.message || 'Failed to verify OTP', 'error');
     } finally {
       setVerifyingOtp(false);
@@ -3247,11 +3255,47 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <div className="flex justify-between items-center">
               <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
                 <Lock className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Naukri Account Credentials</span>
+                <span>Naukri Account Authorization</span>
               </span>
               <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
                 📄 {currentUser?.name ? `${currentUser.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_resume.pdf` : 'candidate_resume.pdf'}
               </span>
+            </div>
+
+            {/* 1-Click Google SSO Connection */}
+            <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex flex-col gap-2 shadow-xs">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <Globe className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Google SSO / Session Status:</span>
+                </span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                  config.hasSession
+                    ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                    : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                }`}>
+                  {config.hasSession ? '🟢 Connected (No 2FA Required)' : '⚪ Not Linked (1-Click Link Below)'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={handleLaunchGoogleSso}
+                disabled={connectingSso || uploading}
+                className="w-full flex items-center justify-center gap-2 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg py-2 px-3 font-bold text-xs shadow-xs transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {connectingSso ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
+                ) : (
+                  <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+                )}
+                <span>{connectingSso ? 'Chrome Opened: Click Google SSO in Window...' : '1-Click Connect with Google SSO (Instant)'}</span>
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 my-1">
+              <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
+              <span className="text-[10px] text-slate-400 font-semibold uppercase">Or Save Login Credentials</span>
+              <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
             </div>
 
             <div>
@@ -3422,7 +3466,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       {/* 2FA OTP Verification Dialog Modal */}
       {showOtpModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-5">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4">
             <div className="flex items-center gap-3">
               <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
                 <ShieldCheck className="w-6 h-6" />
@@ -3434,8 +3478,15 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             </div>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed bg-slate-50 dark:bg-slate-800/50 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
-              {otpMessage || 'Naukri has sent a 6-digit OTP to your registered email/phone. Enter it below to link your account once. Future boosts will run automatically without OTP!'}
+              {otpMessage || 'Naukri sent a 6-digit OTP to your registered email/phone. Enter it below to link your account once. Future boosts will run automatically without OTP!'}
             </p>
+
+            {otpError && (
+              <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl text-xs font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{otpError}</span>
+              </div>
+            )}
 
             <form onSubmit={handleVerifyOtp} className="flex flex-col gap-4">
               <div>
@@ -3446,7 +3497,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   type="text"
                   maxLength={6}
                   value={otpInput}
-                  onChange={(e) => setOtpInput(e.target.value.replace(/[^0-9]/g, ''))}
+                  onChange={(e) => {
+                    setOtpInput(e.target.value.replace(/[^0-9]/g, ''));
+                    setOtpError('');
+                  }}
                   placeholder="e.g. 123456"
                   autoFocus
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-4 py-3 text-center text-xl tracking-widest font-mono font-bold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
@@ -3456,7 +3510,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <div className="flex justify-end gap-2.5 pt-2">
                 <button
                   type="button"
-                  onClick={() => setShowOtpModal(false)}
+                  onClick={() => {
+                    setShowOtpModal(false);
+                    setOtpError('');
+                  }}
                   disabled={verifyingOtp}
                   className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
                 >
@@ -3465,7 +3522,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 <button
                   type="submit"
                   disabled={verifyingOtp || otpInput.length < 4}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 disabled:opacity-50 cursor-pointer"
                 >
                   {verifyingOtp && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   <span>{verifyingOtp ? 'Verifying...' : 'Verify & Boost Profile'}</span>
