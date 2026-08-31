@@ -2369,7 +2369,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     }
   };
 
-  const handleScanLeads = async (queryOverride = null, timeFrameOverride = null) => {
+  const handleScanLeads = async (queryOverride = null, timeFrameOverride = null, triggerAutoSend = false) => {
     const query = queryOverride || searchKeywords || config.keywords || 'MERN Stack Developer React Node.js';
     const tf = timeFrameOverride || config.timeFrame || '3d';
     setScanning(true);
@@ -2381,8 +2381,21 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
-      setLeads(data.leads || []);
-      showToast(`Discovered ${data.leads?.length || 0} live recruiter hiring posts (${tf.toUpperCase()})!`, 'success');
+      const fetchedLeads = data.leads || [];
+      setLeads(fetchedLeads);
+      showToast(`Discovered ${fetchedLeads.length} live recruiter hiring posts (${tf.toUpperCase()})!`, 'success');
+
+      // 100% Autonomous Send: If Auto-Dispatch is active or explicitly triggered, send one-by-one immediately!
+      const shouldAutoSend = triggerAutoSend || (config.autoDispatch !== false && config.enabled);
+      if (shouldAutoSend && fetchedLeads.length > 0 && isAuthorized) {
+        const uncontacted = fetchedLeads.filter(l => !l.alreadyContacted);
+        if (uncontacted.length > 0) {
+          showToast(`⚡ Auto-Pilot: Automatically sending tailored 1-page PDF emails to ${uncontacted.length} HRs one-by-one...`, 'info');
+          setTimeout(() => {
+            handleRunBatchOutreach(fetchedLeads);
+          }, 600);
+        }
+      }
     } catch (e) {
       showToast(e.message || 'Failed to discover LinkedIn posts', 'error');
     } finally {
@@ -2401,7 +2414,10 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
       });
       const data = await res.json();
       if (data.config) setConfig(data.config);
-      showToast(updated.enabled ? 'LinkedIn Auto-Pilot is now ACTIVE!' : 'LinkedIn Auto-Pilot paused.', 'info');
+      showToast(updated.enabled ? 'LinkedIn Auto-Pilot is now ACTIVE! Searching & auto-sending...' : 'LinkedIn Auto-Pilot paused.', 'info');
+      if (updated.enabled) {
+        handleScanLeads(null, null, true);
+      }
     } catch (e) {
       showToast('Failed to update config', 'error');
     }
@@ -2553,17 +2569,18 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast('Updated LinkedIn search keywords! Discovering fresh live posts...', 'success');
-      handleScanLeads(newKeywords);
+      showToast('Updated LinkedIn search keywords! Discovering fresh live posts & sending...', 'success');
+      handleScanLeads(newKeywords, null, true);
     } catch (e) {
       showToast('Failed to update keywords', 'error');
     }
   };
 
-  const handleRunBatchOutreach = async () => {
+  const handleRunBatchOutreach = async (leadsOverride = null) => {
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
 
-    const uncontacted = leads.filter(l => !l.alreadyContacted).slice(0, config.targetPerRun || 10);
+    const sourceLeads = leadsOverride || leads;
+    const uncontacted = sourceLeads.filter(l => !l.alreadyContacted).slice(0, config.targetPerRun || 15);
     if (uncontacted.length === 0) {
       return showToast('No fresh uncontacted leads available in this batch. Click Discover Live Posts to find more!', 'info');
     }
@@ -2630,7 +2647,6 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 
     setDispatching(false);
     showToast(`Continuous dispatch complete! Successfully processed ${successCount}/${uncontacted.length} emails.`, 'success');
-    handleScanLeads();
     fetchConfig();
   };
 

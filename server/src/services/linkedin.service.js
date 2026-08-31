@@ -760,6 +760,42 @@ function initLinkedInScheduler() {
 
   console.log('[LINKEDIN SCHEDULER] Initialized automated 24/7 background LinkedIn Recruiter Auto-Pilot daemon.');
 
+  // Immediate server startup check (executes after 15 seconds if Auto-Pilot is enabled and due/fresh)
+  setTimeout(async () => {
+    try {
+      const config = getLinkedInConfig();
+      if (!config.enabled) return;
+      const now = new Date();
+      const nextRun = config.nextRunAt ? new Date(config.nextRunAt) : new Date(0);
+
+      if (!config.lastRunAt || now >= nextRun) {
+        console.log('[LINKEDIN SCHEDULER] Immediate boot cycle triggered! Searching recruiter posts & dispatching emails...');
+        const discoveredUsers = getAllUserKeys();
+        const targetUsers = discoveredUsers.length > 0 ? discoveredUsers : ['tksanthosh494_gmail_com'];
+
+        for (const userKey of targetUsers) {
+          if (isUserAuthorized(userKey)) {
+            try {
+              await runLinkedInOutreachJob(userKey, {
+                targetCount: config.targetPerRun || 10,
+                mode: config.mode || 'send',
+                query: config.keywords,
+                timeFrame: config.timeFrame || '3d'
+              });
+            } catch (err) {
+              console.warn('[LINKEDIN BOOT RUN WARN]', err.message);
+            }
+          }
+        }
+
+        const nextRunDate = calculateNextLinkedInRunTime(config, now);
+        config.lastRunAt = now.toISOString();
+        config.nextRunAt = nextRunDate.toISOString();
+        saveLinkedInConfig(config);
+      }
+    } catch (e) {}
+  }, 15000);
+
   schedulerTimer = setInterval(async () => {
     const config = getLinkedInConfig();
     if (!config.enabled) return;
