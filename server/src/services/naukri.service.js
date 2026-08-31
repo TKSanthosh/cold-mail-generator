@@ -810,6 +810,13 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   const password = overrideOptions.password || config.password;
   const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
 
+  if (overrideOptions.username || overrideOptions.password) {
+    saveNaukriConfig(userKey, {
+      username: username || config.username,
+      password: password || config.password
+    });
+  }
+
   const startTime = Date.now();
   console.log(`[NAUKRI UPLOADER] Starting resume upload workflow for user ${userKey}...`);
 
@@ -845,12 +852,11 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         '--disable-accelerated-2d-canvas',
         '--no-first-run',
         '--no-zygote',
-        '--single-process',
         '--disable-gpu',
         '--disable-blink-features=AutomationControlled',
-        '--window-size=1280,800'
+        '--window-size=1366,768'
       ],
-      defaultViewport: { width: 1280, height: 800 }
+      defaultViewport: { width: 1366, height: 768 }
     };
 
     if (browserPath) {
@@ -876,21 +882,54 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
+    // Anti-bot detection stealth scripts
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      window.chrome = { runtime: {} };
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+    });
+
     // 3. Load Saved User Session Cookies (Google SSO / Session)
+    let cookies = [];
     if (fs.existsSync(userPaths.naukriSessionPath)) {
       try {
-        const cookies = JSON.parse(fs.readFileSync(userPaths.naukriSessionPath, 'utf8'));
-        if (Array.isArray(cookies) && cookies.length > 0) {
-          await page.setCookie(...cookies);
-          console.log(`[NAUKRI UPLOADER] Restored existing session cookies for user ${userKey}.`);
-        }
+        cookies = JSON.parse(fs.readFileSync(userPaths.naukriSessionPath, 'utf8'));
       } catch (e) {}
+    }
+    if ((!cookies || cookies.length === 0) && Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
+      cookies = config.sessionCookies;
+    }
+
+    if (Array.isArray(cookies) && cookies.length > 0) {
+      for (const c of cookies) {
+        if (!c.name || !c.value) continue;
+        const dom = c.domain || '.naukri.com';
+        try {
+          await page.setCookie({
+            name: c.name,
+            value: c.value,
+            domain: dom.startsWith('.') ? dom : `.${dom}`,
+            path: c.path || '/'
+          });
+        } catch (err) {
+          try {
+            await page.setCookie({
+              name: c.name,
+              value: c.value,
+              domain: 'www.naukri.com',
+              path: c.path || '/'
+            });
+          } catch (e2) {}
+        }
+      }
+      console.log(`[NAUKRI UPLOADER] Injected ${cookies.length} session cookies for user ${userKey}.`);
     }
 
     // 4. Navigate to Naukri Profile
     console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
     await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await delay(2500);
+    await delay(3000);
 
     // 5. Check if redirected to login page or unauthenticated state
     let currentUrl = page.url();
