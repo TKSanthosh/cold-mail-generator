@@ -628,9 +628,11 @@ function saveLinkedInConfig(config = {}) {
  * Executes batch LinkedIn outreach for a user continuously one-after-one.
  */
 async function runLinkedInOutreachJob(userKey, options = {}) {
-  const targetCount = options.targetCount || 10;
-  const mode = options.mode || 'send'; // 'send' or 'draft'
-  const customQuery = options.query || null;
+  const config = getLinkedInConfig();
+  const targetCount = options.targetCount || config.targetPerRun || 10;
+  const mode = options.mode || config.mode || 'send'; // 100% Autonomous send
+  const customQuery = options.query || config.keywords || null;
+  const timeFrame = options.timeFrame || config.timeFrame || '3d';
 
   const userResume = getUserResume(userKey);
   const pastLogs = getUserLogs(userKey);
@@ -639,9 +641,9 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
     pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
   );
 
-  console.log(`[LINKEDIN OUTREACH] Starting live recruiter discovery for ${userKey} with keywords: "${customQuery || 'Default MERN'}". Past contacted: ${contactedEmails.size}`);
+  console.log(`[LINKEDIN OUTREACH] Starting autonomous live recruiter discovery for ${userKey} with keywords: "${customQuery || 'Default MERN'}" (Timeframe: ${timeFrame}). Past contacted: ${contactedEmails.size}`);
 
-  const harvestedLeads = await harvestRecruiterPosts(customQuery, targetCount + 5, userKey);
+  const harvestedLeads = await harvestRecruiterPosts(customQuery, targetCount + 8, userKey, timeFrame);
   const freshLeads = harvestedLeads.filter(lead => !contactedEmails.has(lead.email.toLowerCase()));
 
   console.log(`[LINKEDIN OUTREACH] Found ${harvestedLeads.length} live leads. Fresh uncontacted: ${freshLeads.length}`);
@@ -756,7 +758,7 @@ let schedulerTimer = null;
 function initLinkedInScheduler() {
   if (schedulerTimer) clearInterval(schedulerTimer);
 
-  console.log('[LINKEDIN SCHEDULER] Initialized automated background LinkedIn Recruiter Auto-Pilot daemon.');
+  console.log('[LINKEDIN SCHEDULER] Initialized automated 24/7 background LinkedIn Recruiter Auto-Pilot daemon.');
 
   schedulerTimer = setInterval(async () => {
     const config = getLinkedInConfig();
@@ -782,7 +784,8 @@ function initLinkedInScheduler() {
             const runReport = await runLinkedInOutreachJob(userKey, {
               targetCount: config.targetPerRun || 10,
               mode: config.mode || 'send', // Automatic direct Gmail send (no click required)
-              query: config.keywords
+              query: config.keywords,
+              timeFrame: config.timeFrame || '3d'
             });
             console.log(`[LINKEDIN AUTO-PILOT] Successfully dispatched ${runReport.processedCount} tailored outreach emails directly to HRs for user ${userKey}.`);
           } catch (e) {
