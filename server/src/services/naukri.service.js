@@ -900,6 +900,15 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     if ((!cookies || cookies.length === 0) && Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
       cookies = config.sessionCookies;
     }
+    if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
+      try {
+        const cloudConf = await supabaseGetNaukriConfig(userKey);
+        if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+          cookies = cloudConf.sessionCookies;
+          fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
+        }
+      } catch (e) {}
+    }
 
     if (Array.isArray(cookies) && cookies.length > 0) {
       for (const c of cookies) {

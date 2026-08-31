@@ -26,7 +26,9 @@ const {
   supabaseAppendLog,
   supabaseGetLogs,
   supabaseSaveApplications,
-  supabaseGetApplications
+  supabaseGetApplications,
+  supabaseGetNaukriConfig,
+  supabaseGetNaukriHistory
 } = require('./supabase.service');
 
 function getUserPaths(userKey) {
@@ -273,6 +275,21 @@ async function hydrateUserSandboxFromDatabase(userKey) {
     const dbLogs = await supabaseGetLogs(userKey);
     if (Array.isArray(dbLogs) && dbLogs.length > 0) {
       writeCompressedJson(paths.logsPathGz, paths.logsPath, dbLogs);
+    }
+
+    // 5. Hydrate Naukri Config & Session Cookies
+    const dbNaukriConfig = await supabaseGetNaukriConfig(userKey);
+    if (dbNaukriConfig && typeof dbNaukriConfig === 'object') {
+      fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(dbNaukriConfig, null, 2), 'utf8');
+      if (Array.isArray(dbNaukriConfig.sessionCookies) && dbNaukriConfig.sessionCookies.length > 0) {
+        fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(dbNaukriConfig.sessionCookies, null, 2), 'utf8');
+      }
+    }
+
+    // 6. Hydrate Naukri History
+    const dbNaukriHistory = await supabaseGetNaukriHistory(userKey);
+    if (Array.isArray(dbNaukriHistory) && dbNaukriHistory.length > 0) {
+      fs.writeFileSync(paths.naukriHistoryPath, JSON.stringify(dbNaukriHistory, null, 2), 'utf8');
     }
 
     return true;

@@ -1,4 +1,5 @@
 const path = require('path');
+const { encryptData, decryptData, encryptText, decryptText } = require('./crypto.service');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
 
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
@@ -297,6 +298,15 @@ async function supabaseGetLinkedInConfig() {
 async function supabaseSaveNaukriConfig(userKey, config) {
   if (!isSupabaseConfigured()) return false;
   try {
+    // Encrypt sensitive passwords and session cookies before storing in DB
+    const secureConfig = { ...config };
+    if (secureConfig.password && typeof secureConfig.password === 'string') {
+      secureConfig.password = encryptText(secureConfig.password);
+    }
+    if (secureConfig.sessionCookies && (Array.isArray(secureConfig.sessionCookies) || typeof secureConfig.sessionCookies === 'object')) {
+      secureConfig.sessionCookies = encryptData(secureConfig.sessionCookies);
+    }
+
     const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
       method: 'POST',
       headers: {
@@ -305,7 +315,7 @@ async function supabaseSaveNaukriConfig(userKey, config) {
       },
       body: JSON.stringify({
         user_key: userKey,
-        config_data: config,
+        config_data: secureConfig,
         updated_at: new Date().toISOString()
       })
     });
@@ -314,7 +324,7 @@ async function supabaseSaveNaukriConfig(userKey, config) {
     // Fallback: Store into users.tokens.naukri_config if standalone table is not yet created
     const user = await supabaseGetUser(userKey);
     if (user) {
-      const updatedTokens = { ...(user.tokens || {}), naukri_config: config };
+      const updatedTokens = { ...(user.tokens || {}), naukri_config: secureConfig };
       await supabaseUpsertUser(userKey, user, updatedTokens);
       return true;
     }
@@ -328,20 +338,35 @@ async function supabaseSaveNaukriConfig(userKey, config) {
 async function supabaseGetNaukriConfig(userKey) {
   if (!isSupabaseConfigured()) return null;
   try {
+    let rawConfig = null;
     const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config?user_key=eq.${encodeURIComponent(userKey)}&select=config_data`, {
       headers: getHeaders()
     });
     if (res.ok) {
       const data = await res.json();
-      if (data && data[0] && data[0].config_data) return data[0].config_data;
+      if (data && data[0] && data[0].config_data) rawConfig = data[0].config_data;
     }
 
-    // Fallback: Retrieve from users.tokens.naukri_config
-    const user = await supabaseGetUser(userKey);
-    if (user && user.tokens && user.tokens.naukri_config) {
-      return user.tokens.naukri_config;
+    if (!rawConfig) {
+      // Fallback: Retrieve from users.tokens.naukri_config
+      const user = await supabaseGetUser(userKey);
+      if (user && user.tokens && user.tokens.naukri_config) {
+        rawConfig = user.tokens.naukri_config;
+      }
     }
-    return null;
+
+    if (!rawConfig) return null;
+
+    // Decrypt credentials and session cookies
+    const decryptedConfig = { ...rawConfig };
+    if (decryptedConfig.password && typeof decryptedConfig.password === 'string' && decryptedConfig.password.startsWith('enc:v1:')) {
+      decryptedConfig.password = decryptText(decryptedConfig.password);
+    }
+    if (decryptedConfig.sessionCookies && typeof decryptedConfig.sessionCookies === 'string' && decryptedConfig.sessionCookies.startsWith('enc:v1:')) {
+      decryptedConfig.sessionCookies = decryptData(decryptedConfig.sessionCookies);
+    }
+
+    return decryptedConfig;
   } catch (e) {
     console.warn('[SUPABASE] getNaukriConfig error:', e.message);
     return null;

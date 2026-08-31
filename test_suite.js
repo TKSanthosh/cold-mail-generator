@@ -387,6 +387,25 @@ Santhosh T K
     assert(false, `Test 14 threw error: ${e.message}`);
   }
 
+  // TEST 15: Crypto Vault & Secure Credential Encryption Verification
+  try {
+    const { encryptText, decryptText, encryptData, decryptData } = require('./server/src/services/crypto.service');
+    const secretPass = 'superSecretNaukriPassword123!@#';
+    const encrypted = encryptText(secretPass);
+    assert(encrypted.startsWith('enc:v1:'), 'Encrypted password starts with versioned prefix enc:v1:');
+    assert(encrypted !== secretPass, 'Encrypted password does not expose plain text');
+    const decrypted = decryptText(encrypted);
+    assert(decrypted === secretPass, 'Decrypted password exactly matches original plain text');
+
+    const sampleCookies = [{ name: 'nauk_session', value: 'xyz987', domain: '.naukri.com', path: '/' }];
+    const encCookies = encryptData(sampleCookies);
+    assert(typeof encCookies === 'string' && encCookies.startsWith('enc:v1:'), 'Cookies securely encrypted to ciphertext string');
+    const decCookies = decryptData(encCookies);
+    assert(Array.isArray(decCookies) && decCookies[0].value === 'xyz987', 'Decrypted cookies array restored accurately');
+  } catch (e) {
+    assert(false, `Test 15 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }
