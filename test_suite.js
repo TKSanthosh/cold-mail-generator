@@ -223,8 +223,16 @@ async function testPdfSinglePage() {
     const nextSlot = naukriService.getNextQuarterDayTime();
     assert(nextSlot instanceof Date && nextSlot > new Date(), `Next Quarter-Day slot calculated: ${nextSlot.toLocaleTimeString()}`);
 
+    assert(typeof naukriService.calculateNextUploadTime === 'function', 'naukri.service exports calculateNextUploadTime');
+    const customNext = naukriService.calculateNextUploadTime({
+      scheduleMode: 'custom',
+      customSlots: ['09:30 AM', '02:15 PM', '06:45 PM', '11:00 PM']
+    });
+    assert(customNext instanceof Date && customNext > new Date(), `Custom Timings next slot calculated: ${customNext.toLocaleTimeString()}`);
+
     const config = naukriService.getNaukriConfig();
     assert(config.scheduleMode === 'quarter_day' || config.enabled !== undefined, 'Naukri Quarter-Day config verified');
+    assert(Array.isArray(config.customSlots), 'Naukri customSlots array initialized');
   } catch (e) {
     assert(false, `Test 11 threw error: ${e.message}`);
   }

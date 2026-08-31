@@ -3018,18 +3018,101 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     }
   };
 
+  const [newCustomTime, setNewCustomTime] = useState('09:30');
+
+  const formatTime24to12 = (t24) => {
+    if (!t24) return '';
+    const [hStr, mStr] = t24.split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr || '00';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    return `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+  };
+
   const handleScheduleModeChange = async (mode) => {
     const updated = { ...config, scheduleMode: mode };
     setConfig(updated);
     try {
-      await apiFetch('/api/naukri/config', {
+      const res = await apiFetch('/api/naukri/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast(`Schedule set to ${mode === 'quarter_day' ? 'Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM)' : 'Every 1 Hour'}`, 'success');
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      const modeLabels = {
+        quarter_day: 'Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM)',
+        custom: 'Custom Timings (Add Your Own Exact Times)',
+        hourly: 'Every 1 Hour',
+        half_hour: 'Every 30 Minutes'
+      };
+      showToast(`Schedule set to ${modeLabels[mode] || mode}!`, 'success');
     } catch (e) {
       showToast('Failed to update schedule mode', 'error');
+    }
+  };
+
+  const handleAddCustomSlot = async (slotTime24) => {
+    if (!slotTime24) return;
+    const formatted = formatTime24to12(slotTime24);
+    const current = Array.isArray(config.customSlots) ? config.customSlots : ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'];
+    if (current.includes(formatted)) {
+      return showToast(`Slot ${formatted} is already in your schedule!`, 'info');
+    }
+    const updatedSlots = [...current, formatted];
+    const updated = { ...config, scheduleMode: 'custom', customSlots: updatedSlots };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Added custom timing: ${formatted}! Next upload recalculated.`, 'success');
+    } catch (e) {
+      showToast('Failed to add custom slot', 'error');
+    }
+  };
+
+  const handleRemoveCustomSlot = async (slotToRemove) => {
+    const current = Array.isArray(config.customSlots) ? config.customSlots : [];
+    const updatedSlots = current.filter(s => s !== slotToRemove);
+    if (updatedSlots.length === 0) {
+      return showToast('You must keep at least 1 active time slot.', 'error');
+    }
+    const updated = { ...config, scheduleMode: 'custom', customSlots: updatedSlots };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Removed time slot: ${slotToRemove}`, 'info');
+    } catch (e) {
+      showToast('Failed to update custom timings', 'error');
+    }
+  };
+
+  const handleApplyPresetSlots = async (presetList, presetName) => {
+    const updated = { ...config, scheduleMode: 'custom', customSlots: presetList };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/naukri/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Applied preset: ${presetName}! (${presetList.length} slots)`, 'success');
+    } catch (e) {
+      showToast('Failed to apply preset', 'error');
     }
   };
 
@@ -3239,10 +3322,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <select
               value={config.scheduleMode || 'quarter_day'}
               onChange={(e) => handleScheduleModeChange(e.target.value)}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
               title="Upload Schedule Mode"
             >
-              <option value="quarter_day">⏱️ Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM)</option>
+              <option value="quarter_day">⏱️ Quarter-Day Resdex Hack (10 AM, 4 PM, 10 PM, 4 AM)</option>
+              <option value="custom">🎯 Custom Timings (Choose Your Own Exact Times)</option>
               <option value="hourly">⏱️ Every 1 Hour (Continuous Hourly)</option>
               <option value="half_hour">⏱️ Every 30 Minutes</option>
             </select>
@@ -3421,39 +3505,132 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             </div>
           </form>
 
-          {/* Quarter-Day Resdex Hack Strategy Info Card */}
-          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col justify-between gap-2">
-            <div>
-              <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5 mb-1.5">
-                <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span>Quarter-Day Upload Schedule (Every 6 Hours)</span>
-              </span>
-              <p className="text-xs text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
-                Naukri ranks candidate profiles by <strong>Last Active / Updated timestamp</strong>. Your resume will be uploaded across 4 daily peak recruiter search windows:
-              </p>
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌅 Slot 1: 10:00 AM</span>
-                  <span className="text-[10px] text-slate-500">Peak Morning Search</span>
+          {/* Schedule Strategy & Custom Timings Card */}
+          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col justify-between gap-3">
+            {config.scheduleMode === 'custom' ? (
+              <div className="flex flex-col gap-3">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
+                      <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span>Custom Daily Upload Timings ({(config.customSlots || []).length} Slots)</span>
+                    </span>
+                    <p className="text-[11px] text-emerald-800 dark:text-emerald-300/90">
+                      Add specific times of day for automated resume uploads on Naukri.
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
+                    Custom Active
+                  </span>
                 </div>
-                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">☀️ Slot 2: 04:00 PM</span>
-                  <span className="text-[10px] text-slate-500">Afternoon Hiring Review</span>
+
+                {/* Add Custom Time Input Row */}
+                <div className="flex items-center gap-2 bg-white/90 dark:bg-slate-900/90 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
+                  <input
+                    type="time"
+                    value={newCustomTime}
+                    onChange={(e) => setNewCustomTime(e.target.value)}
+                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleAddCustomSlot(newCustomTime)}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add Time Slot</span>
+                  </button>
                 </div>
-                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌙 Slot 3: 10:00 PM</span>
-                  <span className="text-[10px] text-slate-500">Late Evening Sourcing</span>
+
+                {/* Active Custom Slot Chips */}
+                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                  {(config.customSlots || ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM']).map((slot, idx) => (
+                    <span
+                      key={idx}
+                      className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 px-2.5 py-1 rounded-lg text-xs font-mono font-bold shadow-xs group"
+                    >
+                      <Clock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
+                      <span>{slot}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveCustomSlot(slot)}
+                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs ml-0.5"
+                        title={`Remove ${slot}`}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
                 </div>
-                <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                  <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌌 Slot 4: 04:00 AM</span>
-                  <span className="text-[10px] text-slate-500">Early Index Freshness</span>
+
+                {/* Quick Presets */}
+                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-emerald-200 dark:border-emerald-800/40">
+                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase">Presets:</span>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetSlots(['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'], 'Peak Hiring')}
+                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
+                  >
+                    ✨ 4 Peak Hiring
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetSlots(['10:00 AM', '01:00 PM', '04:00 PM', '07:00 PM'], 'Workday')}
+                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
+                  >
+                    🏢 Workday
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetSlots(['08:30 AM', '11:30 AM', '02:30 PM', '05:30 PM', '08:30 PM', '11:30 PM'], '6 Daily Slots')}
+                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
+                  >
+                    ⚡ 6 Daily Slots
+                  </button>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    <span>Quarter-Day Upload Schedule (Every 6 Hours)</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleScheduleModeChange('custom')}
+                    className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold underline hover:text-emerald-900 cursor-pointer"
+                  >
+                    ⚙️ Set Custom Times
+                  </button>
+                </div>
+                <p className="text-xs text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
+                  Naukri ranks candidate profiles by <strong>Last Active / Updated timestamp</strong>. Your resume will be uploaded across 4 daily peak recruiter search windows:
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌅 Slot 1: 10:00 AM</span>
+                    <span className="text-[10px] text-slate-500">Peak Morning Search</span>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">☀️ Slot 2: 04:00 PM</span>
+                    <span className="text-[10px] text-slate-500">Afternoon Hiring Review</span>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌙 Slot 3: 10:00 PM</span>
+                    <span className="text-[10px] text-slate-500">Late Evening Sourcing</span>
+                  </div>
+                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
+                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌌 Slot 4: 04:00 AM</span>
+                    <span className="text-[10px] text-slate-500">Early Index Freshness</span>
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60 flex justify-between items-center text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
-              <span>Last Upload: {config.lastUploadAt ? new Date(config.lastUploadAt).toLocaleTimeString() : 'Not yet'}</span>
-              <span>Next Upload Slot: {config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString() : '10:00 AM'}</span>
+              <span>Last Upload: {config.lastUploadAt ? new Date(config.lastUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not yet'}</span>
+              <span>Next Upload Slot: {config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</span>
             </div>
           </div>
         </div>

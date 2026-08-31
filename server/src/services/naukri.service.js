@@ -38,6 +38,73 @@ function getNextQuarterDayTime(baseDate = new Date()) {
 }
 
 /**
+ * Calculates the next schedule slot based on config (Quarter-Day, Hourly, Half-Hour, or Custom Timings)
+ */
+function calculateNextUploadTime(config = {}, baseDate = new Date()) {
+  const scheduleMode = config.scheduleMode || 'quarter_day';
+
+  if (scheduleMode === 'half_hour') {
+    return new Date(baseDate.getTime() + 30 * 60 * 1000);
+  }
+
+  if (scheduleMode === 'hourly') {
+    const mins = config.intervalMinutes || 60;
+    return new Date(baseDate.getTime() + mins * 60 * 1000);
+  }
+
+  if (scheduleMode === 'custom') {
+    const rawSlots = Array.isArray(config.customSlots) && config.customSlots.length > 0
+      ? config.customSlots
+      : ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'];
+
+    const parsedSlots = [];
+    for (const slot of rawSlots) {
+      if (!slot || typeof slot !== 'string') continue;
+      const str = slot.trim().toUpperCase();
+      let hour = 0;
+      let minute = 0;
+
+      if (str.includes('AM') || str.includes('PM')) {
+        const isPM = str.includes('PM');
+        const clean = str.replace(/AM|PM/g, '').trim();
+        const parts = clean.split(':').map(n => parseInt(n, 10) || 0);
+        hour = parts[0] || 0;
+        minute = parts[1] || 0;
+        if (isPM && hour < 12) hour += 12;
+        if (!isPM && hour === 12) hour = 0;
+      } else if (str.includes(':')) {
+        const parts = str.split(':').map(n => parseInt(n, 10) || 0);
+        hour = parts[0] || 0;
+        minute = parts[1] || 0;
+      } else {
+        hour = parseInt(str, 10) || 0;
+      }
+
+      parsedSlots.push({ hour, minute, original: slot });
+    }
+
+    parsedSlots.sort((a, b) => (a.hour * 60 + a.minute) - (b.hour * 60 + b.minute));
+
+    for (const s of parsedSlots) {
+      const candidate = new Date(baseDate);
+      candidate.setHours(s.hour, s.minute, 0, 0);
+      if (candidate > baseDate) {
+        return candidate;
+      }
+    }
+
+    if (parsedSlots.length > 0) {
+      const tomorrow = new Date(baseDate);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      tomorrow.setHours(parsedSlots[0].hour, parsedSlots[0].minute, 0, 0);
+      return tomorrow;
+    }
+  }
+
+  return getNextQuarterDayTime(baseDate);
+}
+
+/**
  * Recursively scans directory for chrome/chromium executable
  */
 function findChromeInDirectory(dir) {
@@ -296,17 +363,35 @@ function getNaukriConfig(userKey = 'default_user') {
   if (fs.existsSync(paths.naukriConfigPath)) {
     try {
       const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
-      return {
+      const conf = {
+        enabled: true,
+        scheduleMode: 'quarter_day',
+        slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+        customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
+        intervalHours: 6,
+        intervalMinutes: 360,
+        username: '',
+        password: '',
+        hasSession: false,
+        headless: true,
+        lastUploadAt: null,
+        nextUploadAt: null,
+        lastStatus: null,
+        lastError: null,
         ...saved,
         hasSession: hasValidNaukriSession(userKey)
       };
+      if (!conf.nextUploadAt) {
+        conf.nextUploadAt = calculateNextUploadTime(conf).toISOString();
+      }
+      return conf;
     } catch (e) {}
   }
-  const nextQuarterRun = getNextQuarterDayTime();
-  return {
+  const defaultConf = {
     enabled: true,
     scheduleMode: 'quarter_day',
     slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+    customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
     intervalHours: 6,
     intervalMinutes: 360,
     username: '',
@@ -314,10 +399,11 @@ function getNaukriConfig(userKey = 'default_user') {
     hasSession: false,
     headless: true,
     lastUploadAt: null,
-    nextUploadAt: nextQuarterRun.toISOString(),
     lastStatus: null,
     lastError: null
   };
+  defaultConf.nextUploadAt = calculateNextUploadTime(defaultConf).toISOString();
+  return defaultConf;
 }
 
 function saveNaukriConfig(userKey = 'default_user', config = {}) {
@@ -325,6 +411,12 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   const paths = getUserPaths(userKey);
   const current = getNaukriConfig(userKey);
   const updated = { ...current, ...config };
+
+  // Always recalculate nextUploadAt if scheduleMode or customSlots changed
+  if (config.scheduleMode || config.customSlots || !updated.nextUploadAt) {
+    updated.nextUploadAt = calculateNextUploadTime(updated).toISOString();
+  }
+
   fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(updated, null, 2), 'utf8');
 
   // Supabase Cloud Multi-Device Sync
@@ -665,9 +757,7 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   }
 
   const config = getNaukriConfig(userKey);
-  const nextRunDate = (config.scheduleMode === 'quarter_day')
-    ? getNextQuarterDayTime()
-    : new Date(Date.now() + (config.intervalMinutes || 60) * 60 * 1000);
+  const nextRunDate = calculateNextUploadTime(config);
 
   config.hasSession = true;
   config.lastUploadAt = new Date().toISOString();
@@ -1200,6 +1290,7 @@ async function verifyNaukriOtp(userKey, otpCode) {
 
 module.exports = {
   getNextQuarterDayTime,
+  calculateNextUploadTime,
   findBrowserExecutable,
   hasValidNaukriSession,
   saveNaukriSessionCookies,
