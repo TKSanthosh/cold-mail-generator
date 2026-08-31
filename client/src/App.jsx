@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, ExternalLink, Briefcase } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3653,8 +3653,25 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   const [connectingSso, setConnectingSso] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
+  const [showViewCookiesModal, setShowViewCookiesModal] = useState(false);
+  const [activeSessionCookiesData, setActiveSessionCookiesData] = useState(null);
+  const [loadingViewCookies, setLoadingViewCookies] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [savingCookie, setSavingCookie] = useState(false);
+
+  const handleOpenViewCookiesModal = async () => {
+    setShowViewCookiesModal(true);
+    setLoadingViewCookies(true);
+    try {
+      const res = await apiFetch('/api/naukri/session/cookies');
+      const data = await res.json();
+      setActiveSessionCookiesData(data);
+    } catch (e) {
+      showToast('Failed to fetch stored session cookies', 'error');
+    } finally {
+      setLoadingViewCookies(false);
+    }
+  };
 
   const handleLaunchGoogleSso = async () => {
     setConnectingSso(true);
@@ -3915,7 +3932,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   <Globe className="w-3.5 h-3.5 text-indigo-500" />
                   <span>Session Status:</span>
                 </span>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                     config.hasSession
                       ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
@@ -3926,8 +3943,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   {config.hasSession && (
                     <button
                       type="button"
+                      onClick={handleOpenViewCookiesModal}
+                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
+                      title="View active session cookies retrieved from Cloud Database"
+                    >
+                      <Eye className="w-3 h-3" />
+                      <span>View Cookie</span>
+                    </button>
+                  )}
+                  {config.hasSession && (
+                    <button
+                      type="button"
                       onClick={handleDisconnectSession}
-                      className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold underline"
+                      className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold underline cursor-pointer ml-0.5"
                     >
                       Disconnect
                     </button>
@@ -4359,6 +4387,133 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Session Cookies Modal */}
+      {showViewCookiesModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <Key className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Active Naukri Session Cookies</span>
+                    <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
+                      ☁️ Synced to DB
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Encrypted with AES-256-GCM and preserved in Supabase Cloud DB for 24/7 background boosts.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowViewCookiesModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {loadingViewCookies ? (
+              <div className="p-8 flex flex-col items-center justify-center gap-2 text-slate-500">
+                <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
+                <span className="text-xs">Fetching active cookies from Cloud Database...</span>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                {/* Status bar */}
+                <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs">
+                  <span className="text-emerald-800 dark:text-emerald-300 font-medium">
+                    🔒 <strong>{activeSessionCookiesData?.cookieCount || 0} Cookies Loaded</strong> from isolated cloud sandbox.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleOpenViewCookiesModal}
+                    className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3 h-3" />
+                    <span>Refresh</span>
+                  </button>
+                </div>
+
+                {/* Cookie String View */}
+                <div>
+                  <div className="flex justify-between items-center mb-1">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                      Document Cookie String:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (activeSessionCookiesData?.cookieString) {
+                          navigator.clipboard.writeText(activeSessionCookiesData.cookieString);
+                          showToast('📋 Cookie string copied to clipboard!', 'success');
+                        }
+                      }}
+                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 flex items-center gap-1 cursor-pointer"
+                    >
+                      <Copy className="w-3 h-3" />
+                      <span>Copy Cookie String</span>
+                    </button>
+                  </div>
+                  <pre className="w-full bg-slate-900 text-emerald-400 p-3 rounded-xl text-[11px] font-mono whitespace-pre-wrap break-all max-h-36 overflow-y-auto border border-slate-700">
+                    {activeSessionCookiesData?.cookieString || 'No active cookies found.'}
+                  </pre>
+                </div>
+
+                {/* Structured Cookies List */}
+                {Array.isArray(activeSessionCookiesData?.cookies) && activeSessionCookiesData.cookies.length > 0 && (
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
+                      Individual Cookies ({activeSessionCookiesData.cookies.length}):
+                    </label>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                      {activeSessionCookiesData.cookies.map((c, idx) => (
+                        <div
+                          key={idx}
+                          className="p-2 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs font-mono"
+                        >
+                          <div className="flex flex-col min-w-0 pr-2">
+                            <span className="font-bold text-indigo-600 dark:text-indigo-400 truncate">{c.name}</span>
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{c.domain || '.naukri.com'}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 truncate max-w-[200px]">
+                            {c.value ? `${c.value.substring(0, 16)}...` : '(empty)'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowViewCookiesModal(false);
+                      setShowCookieModal(true);
+                    }}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+                  >
+                    ✏️ Update / Replace Cookies
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowViewCookiesModal(false)}
+                    className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

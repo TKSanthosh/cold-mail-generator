@@ -355,6 +355,24 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
   throw new Error('Could not parse session cookies. Please paste your cookies as a document.cookie string (e.g. "nauk_session=...") or JSON array.');
 }
 
+function getNaukriSessionCookies(userKey = 'default_user') {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  if (fs.existsSync(paths.naukriSessionPath)) {
+    try {
+      const cookies = JSON.parse(fs.readFileSync(paths.naukriSessionPath, 'utf8'));
+      if (Array.isArray(cookies) && cookies.length > 0) {
+        return cookies;
+      }
+    } catch (e) {}
+  }
+  const config = getNaukriConfig(userKey);
+  if (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
+    return config.sessionCookies;
+  }
+  return [];
+}
+
 function clearNaukriSession(userKey = 'default_user') {
   ensureUserSandbox(userKey);
   const paths = getUserPaths(userKey);
@@ -1355,6 +1373,7 @@ module.exports = {
   calculateNextUploadTime,
   findBrowserExecutable,
   hasValidNaukriSession,
+  getNaukriSessionCookies,
   saveNaukriSessionCookies,
   clearNaukriSession,
   getNaukriConfig,

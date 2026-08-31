@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -841,6 +841,34 @@ app.post('/api/naukri/verify-otp', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get('/api/naukri/session/cookies', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  let cookies = getNaukriSessionCookies(userKey);
+  if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
+    try {
+      const cloudConf = await supabaseGetNaukriConfig(userKey);
+      if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+        cookies = cloudConf.sessionCookies;
+        const paths = getUserPaths(userKey);
+        fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
+      }
+    } catch (e) {}
+  }
+
+  const cookieString = Array.isArray(cookies)
+    ? cookies.map(c => `${c.name}=${c.value}`).join('; ')
+    : '';
+
+  res.json({
+    success: true,
+    hasSession: Array.isArray(cookies) && cookies.length > 0,
+    cookieCount: Array.isArray(cookies) ? cookies.length : 0,
+    cookies: cookies || [],
+    cookieString,
+    storedInDb: isSupabaseConfigured()
+  });
 });
 
 app.post('/api/naukri/import-session', (req, res) => {
