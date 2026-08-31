@@ -558,7 +558,7 @@ app.post('/api/linkedin/harvest', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const { query, count } = req.body;
   try {
-    const leads = await harvestRecruiterPosts(query, count || 10);
+    const leads = await harvestRecruiterPosts(query, count || 10, userKey);
     const pastLogs = getUserLogs(userKey);
     const contactedEmails = new Set(
       pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)

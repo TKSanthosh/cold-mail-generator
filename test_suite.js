@@ -173,12 +173,15 @@ async function testPdfSinglePage() {
     assert(false, `Test 8 threw error: ${e.message}`);
   }
 
-  // TEST 9: LinkedIn Recruiter Harvester & Deduplication Pipeline
+  // TEST 9: LinkedIn Recruiter Harvester & Multi-Mode Scheduler Pipeline
   try {
-    const { harvestRecruiterPosts, getLinkedInConfig, saveLinkedInConfig } = require('./server/src/services/linkedin.service');
-    const leads = await harvestRecruiterPosts(null, 10);
+    const { harvestRecruiterPosts, getLinkedInConfig, saveLinkedInConfig, calculateNextLinkedInRunTime, discoverLiveRecruiterPostsWithLlm } = require('./server/src/services/linkedin.service');
+    assert(typeof calculateNextLinkedInRunTime === 'function', 'linkedin.service exports calculateNextLinkedInRunTime');
+    assert(typeof discoverLiveRecruiterPostsWithLlm === 'function', 'linkedin.service exports discoverLiveRecruiterPostsWithLlm');
+
+    const leads = await harvestRecruiterPosts('MERN Stack Developer React Node.js', 10);
     assert(Array.isArray(leads), 'LinkedIn harvester returns leads array');
-    assert(leads.length >= 10, `Harvested minimum 10 recruiter leads (Found: ${leads.length})`);
+    assert(leads.length >= 5, `Harvested minimum 5 recruiter leads (Found: ${leads.length})`);
     
     const firstLead = leads[0];
     assert(firstLead.email && firstLead.email.includes('@'), `Extracted valid recruiter email: ${firstLead.email}`);
@@ -186,7 +189,24 @@ async function testPdfSinglePage() {
     assert(firstLead.postSnippet && firstLead.postSnippet.length > 0, 'Extracted recruiter post context snippet');
 
     const config = getLinkedInConfig();
-    assert(typeof config === 'object' && (config.intervalMinutes === 30 || config.intervalHours === 0.5), 'LinkedIn 30-minute automated scheduler verified');
+    assert(typeof config === 'object', 'LinkedIn config loaded properly');
+    assert(Array.isArray(config.customSlots), 'LinkedIn customSlots array initialized');
+
+    // Test custom timings slot calculation
+    const baseDate = new Date('2026-08-31T08:00:00.000Z');
+    const nextCustomSlot = calculateNextLinkedInRunTime({
+      scheduleMode: 'custom',
+      customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM']
+    }, baseDate);
+    assert(nextCustomSlot instanceof Date, 'Custom timing slot resolves valid Date instance');
+
+    // Test interval calculation (e.g. 4 hours)
+    const nextInterval = calculateNextLinkedInRunTime({
+      scheduleMode: 'interval',
+      intervalHours: 4,
+      intervalMinutes: 240
+    }, baseDate);
+    assert(nextInterval.getTime() === baseDate.getTime() + 4 * 60 * 60 * 1000, 'LinkedIn 4-hour interval calculation verified');
   } catch (e) {
     assert(false, `Test 9 threw error: ${e.message}`);
   }

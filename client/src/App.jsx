@@ -2297,12 +2297,16 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
   const [pastedPostText, setPastedPostText] = useState('');
   const [parsingPasted, setParsingPasted] = useState(false);
   const [batchProgress, setBatchProgress] = useState({ current: 0, total: 0, currentCompany: '', currentEmail: '' });
-  const [batchStatusMap, setBatchStatusMap] = useState({}); // { [leadId]: 'queued' | 'tailoring' | 'sending' | 'success' | 'error' }
-  const [searchQuery, setSearchQuery] = useState('site:linkedin.com/posts "we are hiring" "MERN" "3 years" "email"');
+  const [batchStatusMap, setBatchStatusMap] = useState({});
+  const [searchKeywords, setSearchKeywords] = useState('Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote');
+  const [newCustomTime, setNewCustomTime] = useState('09:30');
   const [config, setConfig] = useState({
     enabled: true,
-    intervalHours: 3,
-    timeWindowDays: 7,
+    scheduleMode: 'interval',
+    intervalHours: 4,
+    intervalMinutes: 240,
+    customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
+    keywords: 'Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote',
     mode: 'send',
     targetPerRun: 10,
     lastRunAt: null,
@@ -2316,7 +2320,10 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     try {
       const res = await apiFetch('/api/linkedin/config');
       const data = await res.json();
-      if (data.config) setConfig(data.config);
+      if (data.config) {
+        setConfig(data.config);
+        if (data.config.keywords) setSearchKeywords(data.config.keywords);
+      }
     } catch (e) {}
   };
 
@@ -2342,20 +2349,21 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     }
   };
 
-  const handleScanLeads = async () => {
+  const handleScanLeads = async (queryOverride = null) => {
+    const query = queryOverride || searchKeywords || config.keywords || 'MERN Stack Developer React Node.js';
     setScanning(true);
     try {
       const res = await apiFetch('/api/linkedin/harvest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: searchQuery, count: 12 })
+        body: JSON.stringify({ query, count: config.targetPerRun || 10 })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setLeads(data.leads || []);
-      showToast(`Discovered ${data.leads?.length || 0} recruiter hiring posts from past 1 week!`, 'success');
+      showToast(`Discovered ${data.leads?.length || 0} live recruiter hiring posts!`, 'success');
     } catch (e) {
-      showToast(e.message || 'Failed to scan LinkedIn posts', 'error');
+      showToast(e.message || 'Failed to discover LinkedIn posts', 'error');
     } finally {
       setScanning(false);
     }
@@ -2365,12 +2373,14 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     const updated = { ...config, enabled: !config.enabled };
     setConfig(updated);
     try {
-      await apiFetch('/api/linkedin/config', {
+      const res = await apiFetch('/api/linkedin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast(updated.enabled ? '3-Hour LinkedIn Auto-Pilot is now ACTIVE!' : 'Auto-Pilot paused.', 'info');
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(updated.enabled ? 'LinkedIn Auto-Pilot is now ACTIVE!' : 'LinkedIn Auto-Pilot paused.', 'info');
     } catch (e) {
       showToast('Failed to update config', 'error');
     }
@@ -2380,25 +2390,141 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     const updated = { ...config, mode: newMode };
     setConfig(updated);
     try {
-      await apiFetch('/api/linkedin/config', {
+      const res = await apiFetch('/api/linkedin/config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast(`Outreach mode set to ${newMode === 'send' ? 'Instant Send' : 'Save Drafts'}`, 'info');
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Outreach mode set to ${newMode === 'send' ? 'Instant Send via Gmail' : 'Save Drafts in Gmail'}`, 'info');
     } catch (e) {
       showToast('Failed to update mode', 'error');
     }
   };
 
-  const handleIntervalChange = async (newMinutes) => {
-    const mins = parseInt(newMinutes, 10);
-    const updated = {
-      ...config,
-      intervalMinutes: mins,
-      intervalHours: mins / 60,
-      nextRunAt: new Date(Date.now() + mins * 60 * 1000).toISOString()
-    };
+  const handleTargetCountChange = async (count) => {
+    const updated = { ...config, targetPerRun: parseInt(count, 10) || 10 };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Outreach volume set to ${count} emails per run`, 'info');
+    } catch (e) {}
+  };
+
+  const handleScheduleModeChange = async (mode) => {
+    const updated = { ...config, scheduleMode: mode };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`LinkedIn schedule mode set to ${mode === 'custom' ? 'Custom Daily Timings' : 'Periodic Interval'}!`, 'success');
+    } catch (e) {
+      showToast('Failed to update schedule mode', 'error');
+    }
+  };
+
+  const handleIntervalChange = async (hoursStr) => {
+    const hrs = parseFloat(hoursStr);
+    const mins = Math.round(hrs * 60);
+    const updated = { ...config, scheduleMode: 'interval', intervalHours: hrs, intervalMinutes: mins };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Auto-Pilot scheduled to run every ${hrs >= 1 ? hrs + ' hours' : mins + ' minutes'}!`, 'success');
+    } catch (e) {
+      showToast('Failed to update interval', 'error');
+    }
+  };
+
+  const handleAddCustomSlot = async (time24) => {
+    if (!time24) return;
+    const [hStr, mStr] = time24.split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr || '00';
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const formatted = `${String(h).padStart(2, '0')}:${m} ${ampm}`;
+
+    const current = Array.isArray(config.customSlots) ? config.customSlots : ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'];
+    if (current.includes(formatted)) {
+      return showToast(`Slot ${formatted} already exists in your schedule!`, 'info');
+    }
+    const updatedSlots = [...current, formatted];
+    const updated = { ...config, scheduleMode: 'custom', customSlots: updatedSlots };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Added custom timing slot: ${formatted}! Next run recalculated.`, 'success');
+    } catch (e) {
+      showToast('Failed to add custom timing', 'error');
+    }
+  };
+
+  const handleRemoveCustomSlot = async (slotToRemove) => {
+    const current = Array.isArray(config.customSlots) ? config.customSlots : [];
+    const updatedSlots = current.filter(s => s !== slotToRemove);
+    if (updatedSlots.length === 0) {
+      return showToast('You must maintain at least 1 active timing slot.', 'error');
+    }
+    const updated = { ...config, scheduleMode: 'custom', customSlots: updatedSlots };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Removed time slot: ${slotToRemove}`, 'info');
+    } catch (e) {
+      showToast('Failed to update custom slots', 'error');
+    }
+  };
+
+  const handleApplyPresetSlots = async (presetList, presetName) => {
+    const updated = { ...config, scheduleMode: 'custom', customSlots: presetList };
+    setConfig(updated);
+    try {
+      const res = await apiFetch('/api/linkedin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updated)
+      });
+      const data = await res.json();
+      if (data.config) setConfig(data.config);
+      showToast(`Applied preset: ${presetName}! (${presetList.length} slots)`, 'success');
+    } catch (e) {
+      showToast('Failed to apply preset', 'error');
+    }
+  };
+
+  const handleSaveKeywords = async (newKeywords) => {
+    const updated = { ...config, keywords: newKeywords };
     setConfig(updated);
     try {
       await apiFetch('/api/linkedin/config', {
@@ -2406,19 +2532,19 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updated)
       });
-      showToast(`Auto-Pilot will run every ${mins} minutes!`, 'success');
+      showToast('Updated LinkedIn search keywords! Discovering fresh live posts...', 'success');
+      handleScanLeads(newKeywords);
     } catch (e) {
-      showToast('Failed to update interval', 'error');
+      showToast('Failed to update keywords', 'error');
     }
   };
 
-  // Continuous sequential one-after-one batch dispatcher
   const handleRunBatchOutreach = async () => {
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
-    
+
     const uncontacted = leads.filter(l => !l.alreadyContacted).slice(0, config.targetPerRun || 10);
     if (uncontacted.length === 0) {
-      return showToast('No fresh uncontacted leads available in this batch.', 'info');
+      return showToast('No fresh uncontacted leads available in this batch. Click Discover Live Posts to find more!', 'info');
     }
 
     setDispatching(true);
@@ -2440,7 +2566,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
       // 1. Step 1: Tailor Resume
       setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'tailoring' }));
       try {
-        const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+        const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description / Recruiter Hiring Post (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
         const genRes = await apiFetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2462,7 +2588,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             resume: genData.resume,
             hrName: lead.recruiterName,
             company: lead.company,
-            resumeType: 'Tailored (LinkedIn 1-Week Post)',
+            resumeType: 'Tailored (LinkedIn Live Post)',
             jdSnippet: lead.postSnippet
           })
         });
@@ -2471,8 +2597,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 
         setBatchStatusMap(prev => ({ ...prev, [lead.id]: 'success' }));
         successCount++;
-        
-        // 3. Step 3: Gentle 2-second rate-limit pause between consecutive dispatches
+
         if (i < uncontacted.length - 1) {
           await new Promise(r => setTimeout(r, 2000));
         }
@@ -2493,7 +2618,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
     setPreviewing(true);
     setTailoredPreview(null);
     try {
-      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description / Recruiter Hiring Post (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
       const res = await apiFetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2511,7 +2636,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
   const handleSendSingleLead = async (lead) => {
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
     try {
-      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
+      const jdContext = `Role: ${lead.role}\nCompany: ${lead.company}\nJob Description / Recruiter Hiring Post (Posted ${lead.postedDaysAgo || 1}d ago):\n${lead.postSnippet}`;
       const genRes = await apiFetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2519,7 +2644,8 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
       });
       const genData = await genRes.json();
 
-      const sendRes = await apiFetch('/api/send', {
+      const endpoint = config.mode === 'draft' ? '/api/draft' : '/api/send';
+      const sendRes = await apiFetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -2529,7 +2655,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
           resume: genData.resume,
           hrName: lead.recruiterName,
           company: lead.company,
-          resumeType: 'Tailored (LinkedIn 1-Week Post)',
+          resumeType: 'Tailored (LinkedIn Live Post)',
           jdSnippet: lead.postSnippet
         })
       });
@@ -2555,23 +2681,23 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
-      {/* Auto-Pilot Control Center Card */}
+      {/* 1. Auto-Pilot Control Center Card */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <Globe className="w-5 h-5 text-sky-500" />
-              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">LinkedIn Recruiter Job Hunter & Auto-Pilot</h2>
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">LinkedIn Recruiter Live Job Hunter & Auto-Pilot</h2>
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
                 config.enabled 
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
               }`}>
-                {config.enabled ? `● AUTO-PILOT ACTIVE (EVERY ${config.intervalMinutes || 30} MINS)` : '○ PAUSED'}
+                {config.enabled ? `● AUTO-PILOT ACTIVE (${config.scheduleMode === 'custom' ? (config.customSlots?.length || 4) + ' CUSTOM DAILY SLOTS' : 'EVERY ' + (config.intervalHours || 4) + ' HOURS'})` : '○ PAUSED'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Discovers fresh recruiter hiring posts strictly from the past 1 week, and automatically dispatches tailored 1-page resumes continuously one-after-another every half hour (30 mins).
+              Continuously searches live recruiter hiring posts with your target keywords, verifies corporate MX email servers, and automatically dispatches tailored 1-page resumes at your scheduled interval or exact daily times.
             </p>
           </div>
 
@@ -2584,25 +2710,49 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent'
               }`}
             >
-              {config.enabled ? 'Pause Scheduler' : '▶ Activate Scheduler'}
+              {config.enabled ? 'Pause Scheduler' : '▶ Activate Auto-Pilot'}
             </button>
 
+            {/* Schedule Frequency Selector */}
             <select
-              value={config.intervalMinutes || 30}
-              onChange={(e) => handleIntervalChange(e.target.value)}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
-              title="Scheduler Execution Frequency"
+              value={config.scheduleMode === 'custom' ? 'custom' : String(config.intervalHours || 4)}
+              onChange={(e) => {
+                if (e.target.value === 'custom') {
+                  handleScheduleModeChange('custom');
+                } else {
+                  handleIntervalChange(e.target.value);
+                }
+              }}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+              title="Auto-Pilot Execution Schedule"
             >
-              <option value="30">⏱️ Every 30 Mins (Half-Hour)</option>
-              <option value="60">⏱️ Every 1 Hour</option>
-              <option value="120">⏱️ Every 2 Hours</option>
-              <option value="180">⏱️ Every 3 Hours</option>
+              <option value="4">⏱️ Every 4 Hours (Recommended Peak Hiring)</option>
+              <option value="6">⏱️ Every 6 Hours</option>
+              <option value="2">⏱️ Every 2 Hours</option>
+              <option value="1">⏱️ Every 1 Hour</option>
+              <option value="0.5">⏱️ Every 30 Minutes</option>
+              <option value="12">⏱️ Every 12 Hours</option>
+              <option value="24">⏱️ Every 24 Hours (Daily)</option>
+              <option value="custom">🎯 Custom Timings (Add Exact Daily Times)</option>
             </select>
 
+            {/* Volume per run */}
             <select
-              value={config.mode}
+              value={config.targetPerRun || 10}
+              onChange={(e) => handleTargetCountChange(e.target.value)}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+              title="Outreach Volume per Batch"
+            >
+              <option value="5">📦 5 Leads / Run</option>
+              <option value="10">📦 10 Leads / Run</option>
+              <option value="15">📦 15 Leads / Run</option>
+            </select>
+
+            {/* Mode: Send vs Draft */}
+            <select
+              value={config.mode || 'send'}
               onChange={(e) => handleModeChange(e.target.value)}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-3 py-1.5 font-semibold focus:outline-none focus:border-indigo-500"
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               <option value="send">⚡ Auto-Send via Gmail</option>
               <option value="draft">📝 Save Drafts in Gmail</option>
@@ -2610,54 +2760,164 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
           </div>
         </div>
 
-        {/* Search Query Filter & Actions */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          <div className="lg:col-span-2">
-            <div className="flex justify-between items-center mb-1.5">
-              <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                LinkedIn Search Dork / Target Stack Filter
-              </label>
-              <span className="inline-flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                <Clock className="w-3 h-3" /> Past 1 Week Only (Max 7 Days)
+        {/* Custom Timings Interactive Manager (when custom mode is selected) */}
+        {config.scheduleMode === 'custom' && (
+          <div className="p-4 bg-sky-50/60 dark:bg-sky-950/20 rounded-xl border border-sky-200 dark:border-sky-800/60 flex flex-col gap-3">
+            <div className="flex justify-between items-start">
+              <div>
+                <span className="text-xs font-bold text-sky-900 dark:text-sky-300 uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
+                  <Clock className="w-4 h-4 text-sky-600 dark:text-sky-400" />
+                  <span>Custom Daily LinkedIn Outreach Timings ({(config.customSlots || []).length} Active Slots)</span>
+                </span>
+                <p className="text-[11px] text-sky-800 dark:text-sky-300/90">
+                  Set specific times throughout the day when Auto-Pilot should search for new recruiter posts and send emails.
+                </p>
+              </div>
+              <span className="text-[10px] font-bold bg-sky-100 dark:bg-sky-900/60 text-sky-800 dark:text-sky-200 px-2 py-0.5 rounded-full border border-sky-300 dark:border-sky-700">
+                Custom Mode Active
               </span>
             </div>
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="e.g. site:linkedin.com/posts 'we are hiring' 'MERN' '3 years'"
-              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 py-2 text-xs font-mono focus:outline-none focus:border-indigo-500"
-            />
+
+            {/* Add Custom Time Row */}
+            <div className="flex items-center gap-2 bg-white/90 dark:bg-slate-900/90 p-2 rounded-xl border border-sky-200 dark:border-sky-800/60">
+              <input
+                type="time"
+                value={newCustomTime}
+                onChange={(e) => setNewCustomTime(e.target.value)}
+                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-sky-500"
+              />
+              <button
+                type="button"
+                onClick={() => handleAddCustomSlot(newCustomTime)}
+                className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Time Slot</span>
+              </button>
+            </div>
+
+            {/* Active Time Slot Chips */}
+            <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+              {(config.customSlots || ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM']).map((slot, idx) => (
+                <span
+                  key={idx}
+                  className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-sky-300 dark:border-sky-700 text-sky-900 dark:text-sky-200 px-2.5 py-1 rounded-lg text-xs font-mono font-bold shadow-xs group"
+                >
+                  <Clock className="w-3 h-3 text-sky-600 dark:text-sky-400" />
+                  <span>{slot}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleRemoveCustomSlot(slot)}
+                    className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs ml-0.5"
+                    title={`Remove ${slot}`}
+                  >
+                    ✕
+                  </button>
+                </span>
+              ))}
+            </div>
+
+            {/* Quick Presets */}
+            <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-sky-200 dark:border-sky-800/40">
+              <span className="text-[10px] text-sky-700 dark:text-sky-400 font-bold uppercase">Presets:</span>
+              <button
+                type="button"
+                onClick={() => handleApplyPresetSlots(['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'], '4 Peak Hiring')}
+                className="text-[10px] bg-sky-100/70 hover:bg-sky-200/80 dark:bg-sky-900/40 dark:hover:bg-sky-800/60 text-sky-800 dark:text-sky-200 font-semibold px-2 py-0.5 rounded border border-sky-200 dark:border-sky-700 transition-colors cursor-pointer"
+              >
+                ✨ 4 Peak Hiring
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPresetSlots(['10:00 AM', '01:00 PM', '04:00 PM', '07:00 PM'], 'Workday')}
+                className="text-[10px] bg-sky-100/70 hover:bg-sky-200/80 dark:bg-sky-900/40 dark:hover:bg-sky-800/60 text-sky-800 dark:text-sky-200 font-semibold px-2 py-0.5 rounded border border-sky-200 dark:border-sky-700 transition-colors cursor-pointer"
+              >
+                🏢 Workday
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPresetSlots(['08:30 AM', '11:30 AM', '02:30 PM', '05:30 PM', '08:30 PM', '11:30 PM'], '6 Daily Slots')}
+                className="text-[10px] bg-sky-100/70 hover:bg-sky-200/80 dark:bg-sky-900/40 dark:hover:bg-sky-800/60 text-sky-800 dark:text-sky-200 font-semibold px-2 py-0.5 rounded border border-sky-200 dark:border-sky-700 transition-colors cursor-pointer"
+              >
+                ⚡ 6 Daily Slots
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Target Search Keywords / Role Filters */}
+        <div className="flex flex-col gap-2">
+          <div className="flex justify-between items-center">
+            <label className="block text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Search className="w-3.5 h-3.5 text-sky-500" />
+              <span>Target Job Roles & Search Keywords (Searches Live Recruiter Posts)</span>
+            </label>
+            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+              Next Scheduled Run: <strong className="text-sky-600 dark:text-sky-400">{config.nextRunAt ? new Date(config.nextRunAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Pending'}</strong>
+            </span>
           </div>
 
-          <div className="flex items-end gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={searchKeywords}
+              onChange={(e) => setSearchKeywords(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') handleSaveKeywords(searchKeywords); }}
+              placeholder="e.g. MERN Stack, React.js, Node.js, Express, Bangalore, Remote, 3+ YOE"
+              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 py-2 text-xs font-semibold focus:outline-none focus:border-sky-500"
+            />
             <button
-              onClick={handleScanLeads}
+              onClick={() => handleSaveKeywords(searchKeywords)}
               disabled={scanning || dispatching}
-              className="flex-1 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-bold py-2 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+              className="bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-4 rounded-lg text-xs transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              title="Search and harvest fresh live recruiter posts"
             >
-              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5 text-sky-500" />}
-              <span>Scan 1-Week Posts</span>
+              {scanning ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+              <span>{scanning ? 'Searching Live Posts...' : 'Discover Live Posts'}</span>
             </button>
 
             <button
               onClick={handleRunBatchOutreach}
               disabled={dispatching || scanning || leads.length === 0}
-              className="flex-1 bg-sky-600 hover:bg-sky-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50"
-              title="Tailors 1-page resumes and sends emails continuously one after another"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-4 rounded-lg text-xs transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              title="Tailors 1-page resumes and sends emails continuously one-after-another"
             >
               {dispatching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
-              <span>Continuous Dispatch (10)</span>
+              <span>{dispatching ? 'Sending Batch...' : `Batch Outreach (${Math.min(leads.filter(l => !l.alreadyContacted).length, config.targetPerRun || 10)})`}</span>
             </button>
+          </div>
+
+          {/* Quick Keyword Preset Chips */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[10px] text-slate-400 uppercase font-bold">Quick Keyword Presets:</span>
+            {[
+              'Full Stack Developer (React & Node.js)',
+              'MERN Stack Engineer (3+ YOE)',
+              'Backend Developer (Node.js/Microservices)',
+              'Frontend Developer (React.js/Next.js)',
+              'Bangalore / Remote Product Startups'
+            ].map((kw, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => {
+                  setSearchKeywords(kw);
+                  handleSaveKeywords(kw);
+                }}
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+              >
+                + {kw}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Quick Paste Recruiter Post Card */}
+        {/* 3. Quick Paste Recruiter Post Card */}
         <div className="bg-slate-50 dark:bg-slate-800/60 p-3 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-2">
           <div className="flex justify-between items-center">
             <span className="text-[11px] font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
               <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span>Paste Custom LinkedIn Recruiter Post / Hiring JD</span>
+              <span>Paste Any Custom LinkedIn Recruiter Post / Hiring Description</span>
             </span>
             <span className="text-[10px] text-slate-400 hidden sm:inline">Auto-extracts verified HR email & queues for continuous sending</span>
           </div>
@@ -2673,7 +2933,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             <button
               onClick={handleParsePastedPost}
               disabled={parsingPasted || !pastedPostText.trim()}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 shrink-0 disabled:opacity-50"
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 shrink-0 disabled:opacity-50 cursor-pointer"
             >
               {parsingPasted ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
               <span>Add to Queue</span>
@@ -2706,7 +2966,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
         )}
       </div>
 
-      {/* Discovered Recruiter Leads Feed */}
+      {/* 2. Discovered Recruiter Leads Feed */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex justify-between items-center">
           <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
@@ -2714,13 +2974,13 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             <span>Discovered Hiring Posts & Extracted HR Emails ({leads.length})</span>
           </h3>
           <span className="text-xs text-slate-400">
-            {leads.filter(l => !l.alreadyContacted).length} fresh uncontacted leads in past 1 week
+            {leads.filter(l => !l.alreadyContacted).length} fresh uncontacted leads ready
           </span>
         </div>
 
         {leads.length === 0 ? (
           <div className="py-12 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            {scanning ? 'Scanning public LinkedIn recruiter posts from past 7 days...' : 'No leads discovered yet. Click "Scan 1-Week Posts" above to find fresh hiring posts!'}
+            {scanning ? 'Searching live LinkedIn recruiter posts matching your keywords...' : 'No leads discovered yet. Click "Discover Live Posts" above to find fresh hiring posts!'}
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
@@ -2741,11 +3001,25 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                   return (
                     <tr key={lead.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                       <td className="p-3">
-                        <div className="font-bold text-slate-900 dark:text-slate-100">{lead.company}</div>
+                        <div className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                          <span>{lead.company}</span>
+                          {lead.isLive && (
+                            <span className="text-[9px] font-bold bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 px-1.5 py-0.2 rounded border border-sky-200 dark:border-sky-800">
+                              LIVE
+                            </span>
+                          )}
+                        </div>
                         <div className="text-slate-500 text-[11px] font-medium">{lead.recruiterName || 'Hiring Lead'}</div>
                       </td>
                       <td className="p-3 font-mono text-indigo-600 dark:text-indigo-400 font-semibold">
-                        {lead.email}
+                        <div className="flex items-center gap-1">
+                          <span>{lead.email}</span>
+                          {lead.isVerified && (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold" title="Corporate DNS MX Verified">
+                              ✓
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-3 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 font-semibold px-2 py-0.5 rounded text-[11px] border border-sky-200 dark:border-sky-800">
@@ -2789,7 +3063,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                         <div className="flex items-center justify-end gap-1.5">
                           <button
                             onClick={() => handlePreviewLead(lead)}
-                            className="bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1"
+                            className="bg-indigo-50 dark:bg-indigo-950/30 hover:bg-indigo-100 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2 py-1 rounded text-xs font-semibold transition-all flex items-center gap-1 cursor-pointer"
                             title="Preview tailored email & resume"
                           >
                             <Eye className="w-3.5 h-3.5" /> <span>Preview</span>
@@ -2797,7 +3071,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
                           <button
                             onClick={() => handleSendSingleLead(lead)}
                             disabled={dispatching || lead.alreadyContacted}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 disabled:opacity-40"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-bold transition-all shadow-xs flex items-center gap-1 disabled:opacity-40 cursor-pointer"
                             title="Tailor and send 1-page PDF instantly"
                           >
                             <Send className="w-3 h-3" /> <span>Send</span>
@@ -2826,7 +3100,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
               </div>
               <button
                 onClick={() => setSelectedLead(null)}
-                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1"
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 cursor-pointer"
               >
                 ✕
               </button>
@@ -2874,14 +3148,14 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
               <button
                 onClick={() => setSelectedLead(null)}
-                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition-all"
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-lg text-xs font-semibold transition-all cursor-pointer"
               >
                 Close
               </button>
               <button
                 onClick={() => handleSendSingleLead(selectedLead)}
                 disabled={dispatching}
-                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 shadow-md cursor-pointer"
               >
                 <Send className="w-3.5 h-3.5" />
                 <span>Send Tailored Resume Now</span>

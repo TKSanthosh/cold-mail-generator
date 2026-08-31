@@ -322,6 +322,7 @@ Output JSON ONLY matching this format with no other text.`;
 }
 
 module.exports = {
+  callLlm,
   generateColdEmail,
   tailorResume,
   sanitizeAndExtractEmail
