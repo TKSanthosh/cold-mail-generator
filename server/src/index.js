@@ -145,6 +145,11 @@ app.get('/api/auth/callback', async (req, res) => {
 
     const userInfo = await handleCallbackCode(code, redirectUri);
     
+    // Auto-hydrate entire user sandbox from Supabase cloud database
+    if (isSupabaseConfigured()) {
+      await hydrateUserSandboxFromDatabase(userInfo.userKey);
+    }
+
     // Generate 30-Day JWT Tokens
     const { accessToken, refreshToken } = generateTokens(userInfo);
     const isProd = process.env.NODE_ENV === 'production';
@@ -188,10 +193,14 @@ app.get('/api/auth/callback', async (req, res) => {
   }
 });
 
-app.get('/api/auth/status', (req, res) => {
+app.get('/api/auth/status', async (req, res) => {
   const { userKey, user } = resolveUserContext(req, res);
   if (!userKey) {
     return res.json({ authorized: false, user: null, userKey: null });
+  }
+  // Ensure sandbox is fresh from DB for multi-device sync
+  if (isSupabaseConfigured()) {
+    await hydrateUserSandboxFromDatabase(userKey);
   }
   const authorized = isUserAuthorized(userKey);
   const profile = getUserProfile(userKey) || user;
@@ -768,8 +777,14 @@ app.get('/api/supabase/status', (req, res) => {
 });
 
 // --- NAUKRI PROFILE BOOSTER & AUTO-UPLOADER ENDPOINTS ---
-app.get('/api/naukri/config', (req, res) => {
+app.get('/api/naukri/config', async (req, res) => {
   const userKey = resolveUserKey(req, res);
+  if (isSupabaseConfigured()) {
+    const paths = getUserPaths(userKey);
+    if (!fs.existsSync(paths.naukriConfigPath) || !fs.existsSync(paths.naukriSessionPath)) {
+      await hydrateUserSandboxFromDatabase(userKey);
+    }
+  }
   res.json({ config: getNaukriConfig(userKey) });
 });
 
