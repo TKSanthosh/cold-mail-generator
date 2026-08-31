@@ -404,10 +404,103 @@ async function supabaseGetNaukriHistory(userKey) {
   }
 }
 
+/**
+ * SCHEDULED JOBS TABLE
+ */
+async function supabaseSaveScheduledJob(job) {
+  if (!isSupabaseConfigured() || !job) return false;
+  try {
+    const payload = {
+      id: job.id || `sched_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      user_key: job.userKey || 'default_user',
+      job_data: job,
+      scheduled_at: job.scheduledAt ? new Date(job.scheduledAt).toISOString() : new Date().toISOString(),
+      created_at: job.createdAt ? new Date(job.createdAt).toISOString() : new Date().toISOString()
+    };
+
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/scheduled_jobs`, {
+      method: 'POST',
+      headers: {
+        ...getHeaders(),
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(payload)
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[SUPABASE] saveScheduledJob error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetScheduledJobs() {
+  if (!isSupabaseConfigured()) return null;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/scheduled_jobs?select=*&order=scheduled_at.asc`, {
+      headers: getHeaders()
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data) return null;
+
+    return data.map(d => ({
+      id: d.id,
+      userKey: d.user_key,
+      ...d.job_data,
+      scheduledAt: d.scheduled_at,
+      createdAt: d.created_at
+    }));
+  } catch (e) {
+    console.warn('[SUPABASE] getScheduledJobs error:', e.message);
+    return null;
+  }
+}
+
+async function supabaseDeleteScheduledJob(id) {
+  if (!isSupabaseConfigured() || !id) return false;
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/scheduled_jobs?id=eq.${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      headers: getHeaders()
+    });
+    return res.ok;
+  } catch (e) {
+    console.warn('[SUPABASE] deleteScheduledJob error:', e.message);
+    return false;
+  }
+}
+
+/**
+ * GET ALL USERS (Startup Sync)
+ */
+async function supabaseGetAllUsers() {
+  if (!isSupabaseConfigured()) return [];
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/users?select=*`, {
+      headers: getHeaders()
+    });
+    if (!res.ok) return [];
+    const data = await res.json();
+    return Array.isArray(data) ? data.map(d => ({
+      userKey: d.user_key,
+      email: d.email,
+      name: d.name,
+      picture: d.picture,
+      tokens: d.tokens,
+      createdAt: d.created_at,
+      lastActive: d.last_active
+    })) : [];
+  } catch (e) {
+    console.warn('[SUPABASE] getAllUsers error:', e.message);
+    return [];
+  }
+}
+
 module.exports = {
   isSupabaseConfigured,
   supabaseUpsertUser,
   supabaseGetUser,
+  supabaseGetAllUsers,
   supabaseSaveResume,
   supabaseGetResume,
   supabaseAppendLog,
@@ -419,5 +512,8 @@ module.exports = {
   supabaseSaveNaukriConfig,
   supabaseGetNaukriConfig,
   supabaseAppendNaukriHistory,
-  supabaseGetNaukriHistory
+  supabaseGetNaukriHistory,
+  supabaseSaveScheduledJob,
+  supabaseGetScheduledJobs,
+  supabaseDeleteScheduledJob
 };

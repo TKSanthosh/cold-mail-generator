@@ -92,6 +92,18 @@ CREATE TABLE IF NOT EXISTS naukri_history (
 CREATE INDEX IF NOT EXISTS idx_naukri_history_user_key ON naukri_history(user_key);
 CREATE INDEX IF NOT EXISTS idx_naukri_history_timestamp ON naukri_history(timestamp DESC);
 
+-- 8. SCHEDULED OUTREACH JOBS
+CREATE TABLE IF NOT EXISTS scheduled_jobs (
+    id TEXT PRIMARY KEY,
+    user_key TEXT,
+    job_data JSONB NOT NULL,
+    scheduled_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_user_key ON scheduled_jobs(user_key);
+CREATE INDEX IF NOT EXISTS idx_scheduled_jobs_scheduled_at ON scheduled_jobs(scheduled_at);
+
 -- Row-Level Security (Allow Service Role and Public Client Access)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE resumes ENABLE ROW LEVEL SECURITY;
@@ -100,6 +112,7 @@ ALTER TABLE applications ENABLE ROW LEVEL SECURITY;
 ALTER TABLE linkedin_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE naukri_config ENABLE ROW LEVEL SECURITY;
 ALTER TABLE naukri_history ENABLE ROW LEVEL SECURITY;
+ALTER TABLE scheduled_jobs ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow service role and anon read/write" ON users FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON resumes FOR ALL USING (true) WITH CHECK (true);
@@ -108,3 +121,4 @@ CREATE POLICY "Allow service role and anon read/write" ON applications FOR ALL U
 CREATE POLICY "Allow service role and anon read/write" ON linkedin_config FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON naukri_config FOR ALL USING (true) WITH CHECK (true);
 CREATE POLICY "Allow service role and anon read/write" ON naukri_history FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "Allow service role and anon read/write" ON scheduled_jobs FOR ALL USING (true) WITH CHECK (true);

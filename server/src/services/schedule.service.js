@@ -4,6 +4,13 @@ const { generateResumePdf } = require('./pdf.service');
 const { sendGmail } = require('./mail.service');
 const { addUserLog, getUserPaths } = require('./user.service');
 
+const {
+  isSupabaseConfigured,
+  supabaseSaveScheduledJob,
+  supabaseGetScheduledJobs,
+  supabaseDeleteScheduledJob
+} = require('./supabase.service');
+
 const SCHEDULE_FILE = path.join(__dirname, '../../scheduled.json');
 const UPLOADS_DIR = path.join(__dirname, '../../uploads');
 
@@ -36,6 +43,11 @@ function addScheduledJob(job) {
   };
   jobs.push(newJob);
   saveScheduledJobs(jobs);
+
+  if (isSupabaseConfigured()) {
+    supabaseSaveScheduledJob(newJob).catch(() => {});
+  }
+
   return newJob;
 }
 
@@ -43,6 +55,11 @@ function cancelScheduledJob(id) {
   let jobs = getScheduledJobs();
   jobs = jobs.filter(j => j.id !== id);
   saveScheduledJobs(jobs);
+
+  if (isSupabaseConfigured()) {
+    supabaseDeleteScheduledJob(id).catch(() => {});
+  }
+
   return true;
 }
 
@@ -86,10 +103,16 @@ function initScheduler() {
             status: 'Sent (10:00 AM Scheduled Dispatch)'
           });
 
-          console.log(`[SCHEDULER] Successfully dispatched scheduled email to ${job.email}`);
+          if (isSupabaseConfigured() && job.id) {
+            supabaseDeleteScheduledJob(job.id).catch(() => {});
+          }
         } catch (err) {
           console.error(`[SCHEDULER ERROR] Failed to send scheduled email to ${job.email}:`, err.message);
           if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
+
+          if (isSupabaseConfigured() && job.id) {
+            supabaseDeleteScheduledJob(job.id).catch(() => {});
+          }
 
           addUserLog(userKey, {
             hrEmail: job.email,

@@ -5,6 +5,7 @@ const { generateResumePdf } = require('./pdf.service');
 const { sendGmail, createGmailDraft } = require('./mail.service');
 const { tailorResume, generateColdEmail } = require('./llm.service');
 const { getUserResume, getUserLogs, addUserLog, getUserPaths, isUserAuthorized } = require('./user.service');
+const { isSupabaseConfigured, supabaseSaveLinkedInConfig, supabaseGetLinkedInConfig } = require('./supabase.service');
 
 const CONFIG_FILE = path.join(__dirname, '../../linkedin_config.json');
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000; // Strictly within 7 days (1 week)
@@ -416,6 +417,9 @@ function getLinkedInConfig() {
 
 function saveLinkedInConfig(config) {
   fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+  if (isSupabaseConfigured()) {
+    supabaseSaveLinkedInConfig(config).catch(() => {});
+  }
 }
 
 let schedulerTimer = null;

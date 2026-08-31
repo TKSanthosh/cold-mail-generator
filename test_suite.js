@@ -196,13 +196,20 @@ async function testPdfSinglePage() {
     const supabaseService = require('./server/src/services/supabase.service');
     assert(typeof supabaseService.isSupabaseConfigured === 'function', 'supabase.service exports isSupabaseConfigured');
     assert(typeof supabaseService.supabaseUpsertUser === 'function', 'supabase.service exports supabaseUpsertUser');
+    assert(typeof supabaseService.supabaseGetAllUsers === 'function', 'supabase.service exports supabaseGetAllUsers');
     assert(typeof supabaseService.supabaseSaveResume === 'function', 'supabase.service exports supabaseSaveResume');
     assert(typeof supabaseService.supabaseAppendLog === 'function', 'supabase.service exports supabaseAppendLog');
     assert(typeof supabaseService.supabaseSaveApplications === 'function', 'supabase.service exports supabaseSaveApplications');
     assert(typeof supabaseService.supabaseSaveNaukriConfig === 'function', 'supabase.service exports supabaseSaveNaukriConfig');
     assert(typeof supabaseService.supabaseAppendNaukriHistory === 'function', 'supabase.service exports supabaseAppendNaukriHistory');
+    assert(typeof supabaseService.supabaseSaveScheduledJob === 'function', 'supabase.service exports supabaseSaveScheduledJob');
+    assert(typeof supabaseService.supabaseGetScheduledJobs === 'function', 'supabase.service exports supabaseGetScheduledJobs');
+    assert(typeof supabaseService.supabaseDeleteScheduledJob === 'function', 'supabase.service exports supabaseDeleteScheduledJob');
     
     assert(fs.existsSync(path.join(__dirname, 'supabase_schema.sql')), 'supabase_schema.sql exists and is ready for 1-click execution');
+    
+    const userService = require('./server/src/services/user.service');
+    assert(typeof userService.hydrateUserSandboxFromDatabase === 'function', 'user.service exports hydrateUserSandboxFromDatabase');
   } catch (e) {
     assert(false, `Test 10 threw error: ${e.message}`);
   }

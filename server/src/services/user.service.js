@@ -233,6 +233,55 @@ function syncUserApplications(userKey, clientApps = []) {
   return mergedApps;
 }
 
+async function hydrateUserSandboxFromDatabase(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    const paths = getUserPaths(userKey);
+    if (!fs.existsSync(paths.userDir)) fs.mkdirSync(paths.userDir, { recursive: true });
+
+    // 1. Hydrate User Profile & OAuth Tokens
+    const dbUser = await supabaseGetUser(userKey);
+    if (dbUser) {
+      const profile = {
+        userKey,
+        email: dbUser.email || '',
+        name: dbUser.name || 'Candidate',
+        picture: dbUser.picture || '',
+        createdAt: dbUser.createdAt || new Date().toISOString(),
+        lastActive: dbUser.lastActive || new Date().toISOString()
+      };
+      fs.writeFileSync(paths.profilePath, JSON.stringify(profile, null, 2), 'utf8');
+
+      if (dbUser.tokens && (dbUser.tokens.access_token || dbUser.tokens.refresh_token)) {
+        fs.writeFileSync(paths.tokenPath, JSON.stringify(dbUser.tokens, null, 2), 'utf8');
+      }
+    }
+
+    // 2. Hydrate Master Resume
+    const dbResume = await supabaseGetResume(userKey);
+    if (dbResume && typeof dbResume === 'object' && Object.keys(dbResume).length > 0) {
+      fs.writeFileSync(paths.resumePath, JSON.stringify(dbResume, null, 2), 'utf8');
+    }
+
+    // 3. Hydrate Applications
+    const dbApps = await supabaseGetApplications(userKey);
+    if (Array.isArray(dbApps) && dbApps.length > 0) {
+      writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, dbApps);
+    }
+
+    // 4. Hydrate Logs
+    const dbLogs = await supabaseGetLogs(userKey);
+    if (Array.isArray(dbLogs) && dbLogs.length > 0) {
+      writeCompressedJson(paths.logsPathGz, paths.logsPath, dbLogs);
+    }
+
+    return true;
+  } catch (err) {
+    console.warn(`[SUPABASE HYDRATION] Warning for user ${userKey}:`, err.message);
+    return false;
+  }
+}
+
 function getUserOAuthClient(userKey) {
   let clientId = process.env.GOOGLE_CLIENT_ID;
   let clientSecret = process.env.GOOGLE_CLIENT_SECRET;
@@ -336,6 +385,7 @@ module.exports = {
   getUserLogs,
   addUserLog,
   syncUserLogs,
+  hydrateUserSandboxFromDatabase,
   getUserOAuthClient,
   isUserAuthorized,
   listAllProfiles,

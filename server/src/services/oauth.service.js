@@ -2,7 +2,8 @@ const { google } = require('googleapis');
 const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
-const { getUserKeyFromEmail, ensureUserSandbox, getUserPaths, isUserAuthorized } = require('./user.service');
+const { getUserKeyFromEmail, ensureUserSandbox, getUserPaths, isUserAuthorized, hydrateUserSandboxFromDatabase } = require('./user.service');
+const { isSupabaseConfigured, supabaseUpsertUser } = require('./supabase.service');
 
 const SECRET_PATH = process.env.GOOGLE_CLIENT_SECRET_PATH;
 const TOKEN_PATH = process.env.TOKEN_PATH || path.join(__dirname, '../../token.json');
@@ -101,6 +102,16 @@ async function handleCallbackCode(code, customRedirectUri = null) {
 
   // Save tokens inside user's private sandbox
   fs.writeFileSync(userPaths.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
+
+  // Supabase Cloud DB Persistence & Automatic Hydration
+  if (isSupabaseConfigured()) {
+    try {
+      await supabaseUpsertUser(userKey, { email, name, picture }, tokens);
+      await hydrateUserSandboxFromDatabase(userKey);
+    } catch (err) {
+      console.warn('[OAUTH SUPABASE SYNC WARN]', err.message);
+    }
+  }
 
   return {
     userKey,

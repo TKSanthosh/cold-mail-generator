@@ -30,12 +30,21 @@ const {
   getUserLogs,
   addUserLog,
   syncUserLogs,
+  hydrateUserSandboxFromDatabase,
   isUserAuthorized,
   listAllProfiles,
   USERS_DIR,
   createFullBackup,
   restoreFullBackup
 } = require('./services/user.service');
+const {
+  isSupabaseConfigured,
+  supabaseGetAllUsers,
+  supabaseGetNaukriConfig,
+  supabaseGetNaukriHistory,
+  supabaseGetScheduledJobs,
+  supabaseGetLinkedInConfig
+} = require('./services/supabase.service');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -921,6 +930,43 @@ app.get('/demo', (req, res) => {
   res.redirect('/');
 });
 
+// --- DATABASE PERSISTENCE & HYDRATION API ---
+app.get('/api/database/status', (req, res) => {
+  res.json({
+    configured: isSupabaseConfigured(),
+    type: isSupabaseConfigured() ? 'Supabase PostgreSQL (Cloud Persistent)' : 'Local File JSON / Gzip',
+    features: {
+      users: true,
+      resumes: true,
+      applications: true,
+      outreachLogs: true,
+      naukriConfig: true,
+      naukriHistory: true,
+      scheduledJobs: true,
+      linkedInConfig: true
+    }
+  });
+});
+
+app.post('/api/database/sync', async (req, res) => {
+  const { userKey } = resolveUserContext(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Authentication required to trigger database sync.' });
+  }
+
+  try {
+    const success = await hydrateUserSandboxFromDatabase(userKey);
+    res.json({
+      success: true,
+      message: success
+        ? 'User sandbox successfully synced and hydrated from Supabase database.'
+        : 'Local sandbox active (Supabase not configured or already up to date).'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Auto-restore from committed seed backup if present on cold deploy
 const seedBackupPath = path.join(__dirname, '../seed_backup.json');
 if (fs.existsSync(seedBackupPath)) {
@@ -932,6 +978,71 @@ if (fs.existsSync(seedBackupPath)) {
     console.warn('[WARN] Failed to auto-restore from seed backup:', e.message);
   }
 }
+
+/**
+ * Startup 2-Way Database Hydration:
+ * Automatically pulls all users, resumes, applications, outreach logs,
+ * scheduled jobs, and Naukri/LinkedIn configs from Supabase cloud database
+ * so zero data is lost across fresh container builds or redeploys!
+ */
+async function initDatabaseStartupSync() {
+  if (!isSupabaseConfigured()) {
+    console.log('[DATABASE PERSISTENCE] Supabase not configured. Using local JSON / Gzip storage.');
+    return;
+  }
+
+  console.log('[DATABASE PERSISTENCE] Checking Supabase cloud database for existing users & persistent records...');
+  try {
+    const allUsers = await supabaseGetAllUsers();
+    console.log(`[DATABASE PERSISTENCE] Discovered ${allUsers.length} user account(s) in Supabase database.`);
+
+    for (const u of allUsers) {
+      if (!u.userKey) continue;
+      ensureUserSandbox(u.userKey, { email: u.email, name: u.name, picture: u.picture });
+      await hydrateUserSandboxFromDatabase(u.userKey);
+
+      // Hydrate Naukri config and session if present
+      const naukriConf = await supabaseGetNaukriConfig(u.userKey);
+      if (naukriConf) {
+        const uPaths = getUserPaths(u.userKey);
+        fs.writeFileSync(uPaths.naukriConfigPath, JSON.stringify(naukriConf, null, 2), 'utf8');
+        if (Array.isArray(naukriConf.sessionCookies) && naukriConf.sessionCookies.length > 0) {
+          fs.writeFileSync(uPaths.naukriSessionPath, JSON.stringify(naukriConf.sessionCookies, null, 2), 'utf8');
+        }
+      }
+
+      // Hydrate Naukri history if present
+      const naukriHist = await supabaseGetNaukriHistory(u.userKey);
+      if (Array.isArray(naukriHist) && naukriHist.length > 0) {
+        const uPaths = getUserPaths(u.userKey);
+        fs.writeFileSync(uPaths.naukriHistoryPath, JSON.stringify(naukriHist, null, 2), 'utf8');
+      }
+    }
+
+    // Hydrate Scheduled Jobs from Supabase
+    const dbJobs = await supabaseGetScheduledJobs();
+    if (Array.isArray(dbJobs) && dbJobs.length > 0) {
+      const scheduleFile = path.join(__dirname, '../../scheduled.json');
+      fs.writeFileSync(scheduleFile, JSON.stringify(dbJobs, null, 2), 'utf8');
+      console.log(`[DATABASE PERSISTENCE] Restored ${dbJobs.length} scheduled outreach email(s) from Supabase.`);
+    }
+
+    // Hydrate LinkedIn automated outreach config from Supabase
+    const dbLinkedInConf = await supabaseGetLinkedInConfig();
+    if (dbLinkedInConf) {
+      const linkedInFile = path.join(__dirname, '../../linkedin_config.json');
+      fs.writeFileSync(linkedInFile, JSON.stringify(dbLinkedInConf, null, 2), 'utf8');
+      console.log('[DATABASE PERSISTENCE] Restored LinkedIn automated outreach config from Supabase.');
+    }
+
+    console.log('[DATABASE PERSISTENCE] ✅ Full database-first hydration complete. Zero data loss on redeploys!');
+  } catch (err) {
+    console.warn('[DATABASE PERSISTENCE WARN]', err.message);
+  }
+}
+
+// Run Startup Database Hydration
+initDatabaseStartupSync().catch(() => {});
 
 // Initialize background schedulers & 24/7 Keep-Alive Anti-Sleep Heartbeat
 initScheduler();
