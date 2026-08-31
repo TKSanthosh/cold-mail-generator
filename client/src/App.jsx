@@ -2315,6 +2315,7 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
   const [selectedLead, setSelectedLead] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [tailoredPreview, setTailoredPreview] = useState(null);
+  const [viewMode, setViewMode] = useState('cards');
 
   const fetchConfig = async () => {
     try {
