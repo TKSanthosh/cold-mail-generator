@@ -7,7 +7,7 @@ try {
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
-const { getUserResume, getUserPaths, ensureUserSandbox } = require('./user.service');
+const { getUserResume, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys } = require('./user.service');
 const {
   isSupabaseConfigured,
   supabaseSaveNaukriConfig,
@@ -325,16 +325,30 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
     config.hasSession = true;
     config.lastStatus = 'Session Connected (Cookies)';
     config.lastError = null;
+    config.sessionCookies = cookiesToSave;
     saveNaukriConfig(userKey, config);
 
     if (isSupabaseConfigured()) {
-      supabaseSaveNaukriConfig(userKey, { sessionCookies: cookiesToSave, hasSession: true }).catch(() => {});
+      supabaseSaveNaukriConfig(userKey, { ...config, sessionCookies: cookiesToSave, hasSession: true }).catch(() => {});
     }
+
+    appendNaukriHistory(userKey, {
+      status: 'Session Linked',
+      detail: `Linked ${cookiesToSave.length} session cookies via Paste Session Cookie`,
+      profileStatus: 'Session Active & Synced to Cloud DB'
+    });
+
+    addUserLog(userKey, {
+      type: 'naukri_session',
+      status: 'Session Linked',
+      company: 'Naukri.com',
+      detail: `Linked ${cookiesToSave.length} session cookies. 24/7 background auto-uploader active in Cloud DB.`
+    });
 
     return {
       success: true,
       count: cookiesToSave.length,
-      message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Profile boosts will now run silently.`
+      message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Profile boosts will now run 100% automatically in the background even when your laptop is closed.`
     };
   }
 

@@ -1040,25 +1040,34 @@ async function initDatabaseStartupSync() {
   }
 }
 
-// Run Startup Database Hydration
-initDatabaseStartupSync().catch(() => {});
+// Async Database-First Bootstrap
+async function startServer() {
+  // 1. Fully hydrate all users, resumes, applications, logs, session cookies, and configs from Supabase
+  await initDatabaseStartupSync();
 
-// Initialize background schedulers & 24/7 Keep-Alive Anti-Sleep Heartbeat
-initScheduler();
-initLinkedInScheduler();
-initNaukriScheduler();
-initKeepAliveService(PORT);
+  // 2. Initialize background schedulers & 24/7 Keep-Alive Anti-Sleep Heartbeat
+  initScheduler();
+  initLinkedInScheduler();
+  initNaukriScheduler();
+  initKeepAliveService(PORT);
 
-// --- SERVE PRODUCTION CLIENT ASSETS ---
-const clientDistPath = path.join(__dirname, '../../client/dist');
-if (fs.existsSync(clientDistPath)) {
-  app.use(express.static(clientDistPath));
-  app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+  // 3. Serve production client assets
+  const clientDistPath = path.join(__dirname, '../../client/dist');
+  if (fs.existsSync(clientDistPath)) {
+    app.use(express.static(clientDistPath));
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
+      res.sendFile(path.join(clientDistPath, 'index.html'));
+    });
+  }
+
+  // 4. Start HTTP Server
+  app.listen(PORT, () => {
+    console.log(`[INFO] Cold Email Backend running 24/7 on http://localhost:${PORT}`);
   });
 }
 
-app.listen(PORT, () => {
-  console.log(`[INFO] Cold Email Backend listening on http://localhost:${PORT}`);
+startServer().catch(err => {
+  console.error('[FATAL STARTUP ERROR]', err);
+  process.exit(1);
 });
