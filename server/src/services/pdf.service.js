@@ -1,4 +1,4 @@
-﻿const PDFDocument = require('pdfkit');
+const PDFDocument = require('pdfkit');
 const fs = require('fs');
 
 /**
@@ -246,13 +246,51 @@ function generateResumePdf(resumeJson, outputPath) {
         });
       }
 
-      // --- 8. ATS KEYWORDS LAYER (Zero Overflow) ---
-      if (resumeJson.atsKeywords && Array.isArray(resumeJson.atsKeywords) && resumeJson.atsKeywords.length > 0) {
-        const atsText = resumeJson.atsKeywords.join(' • ');
+      // --- 8. INVISIBLE ATS KEYWORDS OPTIMIZATION LAYER (Human-Invisible, 100% ATS-Readable) ---
+      let keywordsToEmbed = [];
+      if (Array.isArray(resumeJson.atsKeywords) && resumeJson.atsKeywords.length > 0) {
+        keywordsToEmbed = resumeJson.atsKeywords;
+      } else {
+        // Automatically compile comprehensive ATS keyword cloud from candidate skills, title, and industry standards
+        const skillsList = [];
+        if (resumeJson.skills && typeof resumeJson.skills === 'object') {
+          Object.values(resumeJson.skills).forEach(val => {
+            if (Array.isArray(val)) skillsList.push(...val);
+            else if (typeof val === 'string') skillsList.push(...val.split(',').map(s => s.trim()));
+          });
+        }
+        
+        const candidateTitle = resumeJson.personalInfo?.title || 'Full Stack Developer / Software Engineer';
+        const titleKeywords = [
+          candidateTitle,
+          'Software Engineer', 'Full Stack Developer', 'Software Development Engineer',
+          'SDE', 'Backend Engineer', 'Frontend Engineer', 'Node.js Developer',
+          'React Developer', 'MERN Stack Developer', 'Web Application Developer'
+        ];
+
+        const industryKeywords = [
+          'Node.js', 'Express.js', 'React.js', 'JavaScript', 'TypeScript', 'HTML5', 'CSS3',
+          'RESTful APIs', 'Microservices', 'System Design', 'MySQL', 'MongoDB', 'PostgreSQL',
+          'AWS', 'Cloud Computing', 'Docker', 'Kubernetes', 'CI/CD', 'Git', 'GitHub',
+          'JWT', 'RBAC', 'Authentication', 'WebSockets', 'Unit Testing', 'Jest',
+          'Agile', 'Scrum', 'Postman', 'Performance Optimization', 'Database Indexing',
+          'Data Structures', 'Algorithms', 'Scalable Architecture'
+        ];
+
+        keywordsToEmbed = Array.from(new Set([...skillsList, ...titleKeywords, ...industryKeywords])).filter(Boolean);
+      }
+
+      if (keywordsToEmbed.length > 0) {
+        const atsText = keywordsToEmbed.join(' • ');
         doc.page.margins.bottom = 0;
-        doc.fontSize(3)
-           .fillColor('#ffffff')
-           .text(atsText, leftMargin, 835, { width: contentWidth, lineBreak: false });
+        doc.font('Helvetica')
+           .fontSize(1)
+           .fillColor('#FFFFFF')
+           .text(atsText, leftMargin, 836, {
+             width: contentWidth,
+             lineBreak: false,
+             ellipsis: false
+           });
       }
 
       doc.end();
