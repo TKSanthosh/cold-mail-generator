@@ -3440,6 +3440,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     enabled: true,
     scheduleMode: 'quarter_day',
     slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+    customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
     intervalHours: 6,
     intervalMinutes: 360,
     username: '',
@@ -3471,6 +3472,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         enabled: true,
         scheduleMode: 'quarter_day',
         slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
+        customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
         intervalHours: 6,
         intervalMinutes: 360,
         username: '',
@@ -3594,7 +3596,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const handleAddCustomSlot = async (slotTime24) => {
     if (!slotTime24) return;
     const formatted = formatTime24to12(slotTime24);
-    const current = Array.isArray(config.customSlots) ? config.customSlots : ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'];
+    const current = Array.isArray(config.customSlots) ? config.customSlots : ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'];
     if (current.includes(formatted)) {
       return showToast(`Slot ${formatted} is already in your schedule!`, 'info');
     }
@@ -4110,7 +4112,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
                 {/* Active Custom Slot Chips */}
                 <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                  {(config.customSlots || ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM']).map((slot, idx) => (
+                  {(config.customSlots || ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM']).map((slot, idx) => (
                     <span
                       key={idx}
                       className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 px-2.5 py-1 rounded-lg text-xs font-mono font-bold shadow-xs group"
@@ -4134,10 +4136,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase">Presets:</span>
                   <button
                     type="button"
-                    onClick={() => handleApplyPresetSlots(['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'], 'Peak Hiring')}
-                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
+                    onClick={() => handleApplyPresetSlots(['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'], 'Target Timings (9:30, 1:30, 4:30, 6:30)')}
+                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-bold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer shadow-xs"
                   >
-                    ✨ 4 Peak Hiring
+                    🎯 4 Target Slots (9:30, 1:30, 4:30, 6:30)
                   </button>
                   <button
                     type="button"

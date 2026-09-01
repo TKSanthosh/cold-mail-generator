@@ -81,7 +81,7 @@ function calculateNextUploadTime(config = {}, baseDate = new Date()) {
   if (scheduleMode === 'custom') {
     const rawSlots = Array.isArray(config.customSlots) && config.customSlots.length > 0
       ? config.customSlots
-      : ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'];
+      : ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'];
 
     const parsedSlots = [];
     for (const slot of rawSlots) {
@@ -430,7 +430,7 @@ function getNaukriConfig(userKey = 'default_user') {
         enabled: true,
         scheduleMode: 'quarter_day',
         slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-        customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
+        customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
         intervalHours: 6,
         intervalMinutes: 360,
         username: '',
@@ -458,7 +458,7 @@ function getNaukriConfig(userKey = 'default_user') {
     enabled: true,
     scheduleMode: 'quarter_day',
     slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-    customSlots: ['09:30 AM', '01:30 PM', '05:30 PM', '09:30 PM'],
+    customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
     intervalHours: 6,
     intervalMinutes: 360,
     username: '',
@@ -1426,6 +1426,81 @@ async function verifyNaukriOtp(userKey, otpCode) {
   }
 }
 
+/**
+ * Triggers resume upload for active users or a specific user on demand (e.g. from an external cron job)
+ */
+async function triggerNaukriUploadForActiveUsers(options = {}) {
+  const { force = false, targetUserKey = null } = options;
+  const results = [];
+
+  let targetUsers = [];
+  if (targetUserKey) {
+    targetUsers = [targetUserKey];
+  } else if (fs.existsSync(USERS_DIR)) {
+    targetUsers = fs.readdirSync(USERS_DIR).filter(u => {
+      try {
+        return fs.statSync(path.join(USERS_DIR, u)).isDirectory();
+      } catch (e) {
+        return false;
+      }
+    });
+  }
+  if (targetUsers.length === 0) {
+    targetUsers = ['tksanthosh494_gmail_com'];
+  }
+
+  for (const userKey of targetUsers) {
+    try {
+      const config = getNaukriConfig(userKey);
+      if (!config.enabled && !force) {
+        results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
+        continue;
+      }
+
+      const paths = getUserPaths(userKey);
+      const hasSession = fs.existsSync(paths.naukriSessionPath) || Boolean(config.username) || Boolean(config.hasSession);
+      if (!hasSession && !force) {
+        results.push({ userKey, skipped: true, reason: 'No active session or credentials found' });
+        continue;
+      }
+
+      const now = new Date();
+      const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
+
+      // Execute if forced, if time passed, or within 15 mins window of the slot
+      const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 15 * 60 * 1000);
+
+      if (force || isDue) {
+        console.log(`[NAUKRI CRON TRIGGER] Executing upload for user ${userKey} (force: ${force})...`);
+        const uploadResult = await uploadResumeToNaukri(userKey);
+        const updatedConfig = getNaukriConfig(userKey);
+        results.push({
+          userKey,
+          status: 'success',
+          uploadResult,
+          nextUploadAt: updatedConfig.nextUploadAt
+        });
+      } else {
+        results.push({
+          userKey,
+          skipped: true,
+          reason: `Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`,
+          nextUploadAt: config.nextUploadAt
+        });
+      }
+    } catch (err) {
+      console.error(`[NAUKRI CRON TRIGGER ERROR for ${userKey}]`, err.message);
+      results.push({
+        userKey,
+        status: 'error',
+        error: err.message
+      });
+    }
+  }
+
+  return results;
+}
+
 module.exports = {
   getNextQuarterDayTime,
   calculateNextUploadTime,
@@ -1442,5 +1517,6 @@ module.exports = {
   startInteractiveGoogleSsoLogin,
   uploadResumeToNaukri,
   verifyNaukriOtp,
-  initNaukriScheduler
+  initNaukriScheduler,
+  triggerNaukriUploadForActiveUsers
 };

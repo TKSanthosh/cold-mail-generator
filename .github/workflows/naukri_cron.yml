@@ -1,0 +1,28 @@
+name: Naukri Daily Auto-Upload Cron (9:30 AM, 1:30 PM, 4:30 PM, 6:30 PM IST)
+
+on:
+  schedule:
+    # Runs daily at:
+    # 04:00 UTC = 09:30 AM IST
+    # 08:00 UTC = 01:30 PM IST
+    # 11:00 UTC = 04:30 PM IST
+    # 13:00 UTC = 06:30 PM IST
+    - cron: '0 4,8,11,13 * * *'
+  # Allows manual 1-click execution from GitHub Actions UI anytime
+  workflow_dispatch:
+
+jobs:
+  trigger-naukri-upload:
+    name: Trigger Naukri Resume Upload
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Ping Server & Trigger Naukri Resume Auto-Upload
+        run: |
+          echo "Triggering Naukri automated profile boost..."
+          curl -s -X POST "https://cold-mail-generator-7ytw.onrender.com/api/naukri/cron-trigger?force=true" \
+            -H "Content-Type: application/json" \
+            --max-time 180 \
+            --retry 2 \
+            --retry-delay 15 \
+            -w "\nHTTP Response Code: %{http_code}\n"

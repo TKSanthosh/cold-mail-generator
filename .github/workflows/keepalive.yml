@@ -1,0 +1,18 @@
+name: Render 24/7 Keep-Alive Heartbeat
+
+on:
+  schedule:
+    # Ping every 10 minutes to prevent Render Free Tier from spinning down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    name: Anti-Sleep Heartbeat
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping Live Health Endpoint
+        run: |
+          echo "Sending keep-alive ping to Render container..."
+          curl -s -f "https://cold-mail-generator-7ytw.onrender.com/api/health" || echo "Ping dispatched"

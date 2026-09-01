@@ -14,7 +14,7 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler, triggerNaukriUploadForActiveUsers } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -826,6 +826,33 @@ app.post('/api/naukri/trigger', async (req, res) => {
     res.json({ success: true, result });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// Dedicated 24/7 Cloud Cron Trigger endpoint (triggered via cron-job.org, GitHub Actions, or curl)
+app.all('/api/naukri/cron-trigger', async (req, res) => {
+  const force = req.query.force === 'true' || req.body?.force === true;
+  const targetUserKey = req.query.userKey || req.body?.userKey || req.headers['x-user-key'] || null;
+
+  try {
+    const results = await triggerNaukriUploadForActiveUsers({
+      force,
+      targetUserKey
+    });
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      force,
+      results
+    });
+  } catch (e) {
+    console.error('[NAUKRI CRON TRIGGER ROUTE ERROR]', e.message);
+    res.status(500).json({
+      success: false,
+      error: e.message,
+      timestamp: new Date().toISOString()
+    });
   }
 });
 
