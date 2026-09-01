@@ -7,13 +7,14 @@ try {
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
-const { getUserResume, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys } = require('./user.service');
+const { getUserResume, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys, hydrateUserSandboxFromDatabase } = require('./user.service');
 const {
   isSupabaseConfigured,
   supabaseSaveNaukriConfig,
   supabaseGetNaukriConfig,
   supabaseAppendNaukriHistory,
-  supabaseGetNaukriHistory
+  supabaseGetNaukriHistory,
+  supabaseGetAllUsers
 } = require('./supabase.service');
 
 const USERS_DIR = path.join(__dirname, '../../users');
@@ -1442,21 +1443,44 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
   let targetUsers = [];
   if (targetUserKey) {
     targetUsers = [targetUserKey];
-  } else if (fs.existsSync(USERS_DIR)) {
-    targetUsers = fs.readdirSync(USERS_DIR).filter(u => {
+  } else {
+    // 1. Discover all local user sandboxes
+    if (fs.existsSync(USERS_DIR)) {
+      targetUsers = fs.readdirSync(USERS_DIR).filter(u => {
+        try {
+          return fs.statSync(path.join(USERS_DIR, u)).isDirectory();
+        } catch (e) {
+          return false;
+        }
+      });
+    }
+
+    // 2. Discover all cloud users registered in Supabase
+    if (isSupabaseConfigured()) {
       try {
-        return fs.statSync(path.join(USERS_DIR, u)).isDirectory();
-      } catch (e) {
-        return false;
-      }
-    });
+        const cloudUsers = await supabaseGetAllUsers();
+        if (Array.isArray(cloudUsers)) {
+          for (const u of cloudUsers) {
+            if (u.userKey && !targetUsers.includes(u.userKey)) {
+              targetUsers.push(u.userKey);
+            }
+          }
+        }
+      } catch (e) {}
+    }
   }
+
   if (targetUsers.length === 0) {
     targetUsers = ['tksanthosh494_gmail_com'];
   }
 
   for (const userKey of targetUsers) {
     try {
+      // Ensure user sandbox is hydrated from database if available
+      if (isSupabaseConfigured()) {
+        try { await hydrateUserSandboxFromDatabase(userKey); } catch (e) {}
+      }
+
       const config = getNaukriConfig(userKey);
       if (!config.enabled && !force) {
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
