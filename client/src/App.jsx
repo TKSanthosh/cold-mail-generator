@@ -3992,6 +3992,56 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
+      {/* 50 Jobs / Day EOD Pipeline Tracker Banner */}
+      <div className="bg-gradient-to-r from-emerald-500/10 via-indigo-500/10 to-sky-500/10 dark:from-emerald-950/40 dark:via-indigo-950/40 dark:to-sky-950/40 p-4 sm:p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col gap-3">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>🎯 Daily Target: 50 Jobs Applied / EOD</span>
+                <span className="text-xs bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
+                  {appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length} / 50 Applied Today
+                </span>
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Automated 4 Quarter-Day Runs × 12 Jobs / Slot = <strong>48–50 Easy Apply Jobs completed daily</strong> with resume uploads and automated screening question answering.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400">
+            <span>Next Run: <strong>{config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</strong></span>
+          </div>
+        </div>
+
+        {/* EOD Progress Bar */}
+        <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
+          <div
+            className="bg-gradient-to-r from-emerald-500 to-indigo-600 h-2.5 transition-all duration-500 rounded-full"
+            style={{ width: `${Math.min(100, Math.round((appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length / 50) * 100))}%` }}
+          ></div>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1">
+          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-slate-500 font-semibold">🌅 Slot 1 (10 AM):</span>
+            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
+          </div>
+          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-slate-500 font-semibold">☀️ Slot 2 (4 PM):</span>
+            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
+          </div>
+          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-slate-500 font-semibold">🌙 Slot 3 (10 PM):</span>
+            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
+          </div>
+          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <span className="text-slate-500 font-semibold">🌌 Slot 4 (4 AM):</span>
+            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
+          </div>
+        </div>
+      </div>
+
       {/* 1. Control Center Card */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">

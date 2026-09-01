@@ -426,6 +426,7 @@ function getNaukriConfig(userKey = 'default_user') {
 
   if (fs.existsSync(paths.naukriConfigPath)) {
     try {
+      const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
       const envCookies = process.env.NAUKRI_COOKIES ? (() => { try { return JSON.parse(process.env.NAUKRI_COOKIES); } catch (e) { return null; } })() : null;
       const conf = {
         enabled: true,
@@ -439,6 +440,10 @@ function getNaukriConfig(userKey = 'default_user') {
         hasSession: hasActiveSession || Boolean(envCookies),
         sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
         headless: true,
+        autoApplyOnBoost: true,
+        maxJobsPerRun: 12,
+        searchKeywords: 'Full Stack Developer React Node.js Bangalore',
+        eodTarget: 50,
         lastUploadAt: null,
         nextUploadAt: null,
         lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
@@ -473,8 +478,10 @@ function getNaukriConfig(userKey = 'default_user') {
     hasSession: hasActiveSession || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD),
     sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
     headless: true,
-    lastUploadAt: null,
-    lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
+    autoApplyOnBoost: true,
+    maxJobsPerRun: 12,
+    searchKeywords: 'Full Stack Developer React Node.js Bangalore',
+    eodTarget: 50,
     lastError: null
   };
   defaultConf.nextUploadAt = calculateNextUploadTime(defaultConf).toISOString();
@@ -1185,6 +1192,20 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     // 6. Perform Resume Upload on Profile Page
     uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
+
+    // 7. In-Browser Easy Apply: Automatically search and apply to 12 jobs during this scheduled slot
+    if (uploadResult && uploadResult.status === 'success' && config.autoApplyOnBoost !== false) {
+      console.log(`[NAUKRI AUTO-APPLY] Profile boosted! Now applying to top ${config.maxJobsPerRun || 12} matching jobs on Naukri...`);
+      try {
+        const { applyToNaukriJobsWithPuppeteer } = require('./naukri_apply.service');
+        const applyReport = await applyToNaukriJobsWithPuppeteer(page, userKey, config);
+        uploadResult.appliedJobsCount = applyReport.appliedCount || 0;
+        uploadResult.appliedJobs = applyReport.appliedJobs || [];
+        uploadResult.message = `${uploadResult.message || 'Profile Refreshed'} & Applied to ${applyReport.appliedCount || 0} Jobs on Naukri`;
+      } catch (applyErr) {
+        console.warn(`[NAUKRI AUTO-APPLY WARNING for ${userKey}]`, applyErr.message);
+      }
+    }
 
   } catch (err) {
     console.error(`[NAUKRI UPLOADER ERROR for ${userKey}]`, err.message);

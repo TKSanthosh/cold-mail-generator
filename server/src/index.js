@@ -54,6 +54,7 @@ const {
   getPendingQuestions,
   resolvePendingQuestion,
   getNaukriAppliedJobs,
+  getTodayAppliedStats,
   runNaukriAutoApplyJob,
   getAutoApplyStatus
 } = require('./services/naukri_apply.service');
@@ -973,7 +974,10 @@ app.post('/api/naukri/apply/start', async (req, res) => {
 
 app.get('/api/naukri/apply/history', (req, res) => {
   const userKey = resolveUserKey(req, res);
-  res.json({ applications: getNaukriAppliedJobs(userKey) });
+  res.json({
+    applications: getNaukriAppliedJobs(userKey),
+    todayStats: getTodayAppliedStats(userKey)
+  });
 });
 
 app.get('/api/naukri/apply/status', (req, res) => {
