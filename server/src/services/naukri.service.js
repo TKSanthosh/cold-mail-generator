@@ -425,7 +425,7 @@ function getNaukriConfig(userKey = 'default_user') {
 
   if (fs.existsSync(paths.naukriConfigPath)) {
     try {
-      const saved = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
+      const envCookies = process.env.NAUKRI_COOKIES ? (() => { try { return JSON.parse(process.env.NAUKRI_COOKIES); } catch (e) { return null; } })() : null;
       const conf = {
         enabled: true,
         scheduleMode: 'quarter_day',
@@ -433,27 +433,33 @@ function getNaukriConfig(userKey = 'default_user') {
         customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
         intervalHours: 6,
         intervalMinutes: 360,
-        username: '',
-        password: '',
-        hasSession: hasActiveSession,
-        sessionCookies: activeCookies,
+        username: process.env.NAUKRI_USERNAME || '',
+        password: process.env.NAUKRI_PASSWORD || '',
+        hasSession: hasActiveSession || Boolean(envCookies),
+        sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
         headless: true,
         lastUploadAt: null,
         nextUploadAt: null,
         lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
         lastError: null,
         ...saved,
-        hasSession: hasActiveSession || (Array.isArray(saved.sessionCookies) && saved.sessionCookies.length > 0)
+        hasSession: hasActiveSession || (Array.isArray(saved.sessionCookies) && saved.sessionCookies.length > 0) || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD)
       };
       if (hasActiveSession) {
         conf.sessionCookies = activeCookies;
+      } else if ((!conf.sessionCookies || conf.sessionCookies.length === 0) && envCookies) {
+        conf.sessionCookies = envCookies;
       }
+      if (!conf.username && process.env.NAUKRI_USERNAME) conf.username = process.env.NAUKRI_USERNAME;
+      if (!conf.password && process.env.NAUKRI_PASSWORD) conf.password = process.env.NAUKRI_PASSWORD;
+
       if (!conf.nextUploadAt) {
         conf.nextUploadAt = calculateNextUploadTime(conf).toISOString();
       }
       return conf;
     } catch (e) {}
   }
+  const envCookies = process.env.NAUKRI_COOKIES ? (() => { try { return JSON.parse(process.env.NAUKRI_COOKIES); } catch (e) { return null; } })() : null;
   const defaultConf = {
     enabled: true,
     scheduleMode: 'quarter_day',
@@ -461,10 +467,10 @@ function getNaukriConfig(userKey = 'default_user') {
     customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
     intervalHours: 6,
     intervalMinutes: 360,
-    username: '',
-    password: '',
-    hasSession: hasActiveSession,
-    sessionCookies: activeCookies,
+    username: process.env.NAUKRI_USERNAME || '',
+    password: process.env.NAUKRI_PASSWORD || '',
+    hasSession: hasActiveSession || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD),
+    sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
     headless: true,
     lastUploadAt: null,
     lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
