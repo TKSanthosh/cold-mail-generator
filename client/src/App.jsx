@@ -3505,6 +3505,113 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [otpError, setOtpError] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
+  // Naukri Easy Apply & Smart Q&A Memory State
+  const [qaItems, setQaItems] = useState([]);
+  const [pendingQuestions, setPendingQuestions] = useState([]);
+  const [appliedJobs, setAppliedJobs] = useState([]);
+  const [applyKeywords, setApplyKeywords] = useState('Full Stack Developer MERN React Node.js');
+  const [applyTargetCount, setApplyTargetCount] = useState(10);
+  const [isAutoApplying, setIsAutoApplying] = useState(false);
+  const [applyProgress, setApplyProgress] = useState(null);
+  const [showNewQaModal, setShowNewQaModal] = useState(false);
+  const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
+  const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
+
+  const fetchQaAndAppliedJobs = async () => {
+    if (!currentUser) return;
+    try {
+      const [qaRes, pendRes, appRes] = await Promise.all([
+        apiFetch('/api/naukri/qa'),
+        apiFetch('/api/naukri/qa/pending'),
+        apiFetch('/api/naukri/apply/history')
+      ]);
+      const qaData = await qaRes.json();
+      const pendData = await pendRes.json();
+      const appData = await appRes.json();
+
+      if (Array.isArray(qaData.qaItems)) setQaItems(qaData.qaItems);
+      if (Array.isArray(pendData.pending)) setPendingQuestions(pendData.pending);
+      if (Array.isArray(appData.applications)) setAppliedJobs(appData.applications);
+    } catch (e) {}
+  };
+
+  const handleSaveNewQa = async (e) => {
+    e?.preventDefault();
+    if (!newQaForm.question.trim() || !newQaForm.answer.trim()) {
+      return showToast('Please enter both question and answer', 'error');
+    }
+    try {
+      const res = await apiFetch('/api/naukri/qa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newQaForm)
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setQaItems(data.qaItems || []);
+      setShowNewQaModal(false);
+      setNewQaForm({ question: '', answer: '', category: 'Skills' });
+      showToast('Saved Q&A answer into memory DB!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to save Q&A', 'error');
+    }
+  };
+
+  const handleDeleteQa = async (id) => {
+    try {
+      const res = await apiFetch(`/api/naukri/qa/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      setQaItems(data.qaItems || []);
+      showToast('Deleted Q&A memory record', 'info');
+    } catch (err) {
+      showToast('Failed to delete Q&A', 'error');
+    }
+  };
+
+  const handleResolvePendingQuestion = async (pendingId) => {
+    const answer = (pendingAnswerInputs[pendingId] || '').trim();
+    if (!answer) return showToast('Please type your answer first.', 'error');
+
+    try {
+      const res = await apiFetch('/api/naukri/qa/answer-pending', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pendingId, answer })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setPendingQuestions(data.pending || []);
+      setQaItems(data.qaItems || []);
+      showToast('Saved answer into database and resumed application!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to submit answer', 'error');
+    }
+  };
+
+  const handleStartAutoApply = async () => {
+    setIsAutoApplying(true);
+    setApplyProgress({ current: 1, total: applyTargetCount, status: 'Scanning matching Easy Apply jobs on Naukri...' });
+    showToast(`🚀 Starting Naukri Easy Apply Bot for: ${applyKeywords}...`, 'info');
+
+    try {
+      const res = await apiFetch('/api/naukri/apply/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ keywords: applyKeywords, targetCount: applyTargetCount })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      showToast(`🎉 Applied to ${data.appliedCount || 0} jobs on Naukri with 100% automated screening!`, 'success');
+      fetchQaAndAppliedJobs();
+    } catch (err) {
+      showToast(err.message || 'Failed to run Naukri auto-apply', 'error');
+    } finally {
+      setIsAutoApplying(false);
+      setApplyProgress(null);
+    }
+  };
+
   const fetchConfigAndHistory = async () => {
     if (!currentUser) {
       setConfig({
@@ -3546,6 +3653,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (Array.isArray(histData.history)) {
         setHistory(histData.history);
       }
+      fetchQaAndAppliedJobs();
     } catch (e) {
       console.error('Failed fetching Naukri data', e);
     }
@@ -3554,6 +3662,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   useEffect(() => {
     if (isActive) {
       fetchConfigAndHistory();
+      fetchQaAndAppliedJobs();
     }
   }, [isActive, currentUser]);
 
@@ -4312,6 +4421,351 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+
+      {/* 3. Interactive Pending Screening Questions Alert Banner */}
+      {pendingQuestions.length > 0 && (
+        <div className="bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 p-4 sm:p-5 shadow-sm flex flex-col gap-3 animate-pulse">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-amber-200 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg">
+              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-amber-950 dark:text-amber-200 flex items-center gap-2">
+                <span>Naukri Recruiter Screening Questions ({pendingQuestions.length} Pending)</span>
+                <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold px-2 py-0.5 rounded-full">
+                  Action Required
+                </span>
+              </h3>
+              <p className="text-xs text-amber-800 dark:text-amber-300">
+                Answer once below — Cold Reach AI will permanently store your answer in the DB and use it for all future job applications automatically!
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 mt-1">
+            {pendingQuestions.map((q) => (
+              <div key={q.id} className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
+                    <span>{q.company}</span>
+                    <span>•</span>
+                    <span>{q.jobTitle}</span>
+                  </div>
+                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block mt-0.5">
+                    ❓ {q.question}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 w-full sm:w-auto">
+                  <input
+                    type="text"
+                    value={pendingAnswerInputs[q.id] || ''}
+                    onChange={(e) => setPendingAnswerInputs({ ...pendingAnswerInputs, [q.id]: e.target.value })}
+                    placeholder="Type your answer here..."
+                    className="flex-1 sm:w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                  />
+                  <button
+                    onClick={() => handleResolvePendingQuestion(q.id)}
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all shadow-xs shrink-0 cursor-pointer"
+                  >
+                    Save & Auto-Apply
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 4. Naukri 1-Click Easy Apply & Auto-Screening Bot Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                Naukri 1-Click Easy Apply & Auto-Screening Bot
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Automatically discovers Easy Apply jobs on Naukri matching your skills, fills recruiter screening questions from your Q&A memory DB, and submits applications with 0 human effort.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={applyTargetCount}
+              onChange={(e) => setApplyTargetCount(parseInt(e.target.value, 10) || 10)}
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
+            >
+              <option value="5">Apply 5 Jobs</option>
+              <option value="10">Apply 10 Jobs</option>
+              <option value="15">Apply 15 Jobs</option>
+              <option value="25">Apply 25 Jobs</option>
+            </select>
+
+            <button
+              onClick={handleStartAutoApply}
+              disabled={isAutoApplying || (!config.hasSession && !formData.username)}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              title="Search and apply to matching Naukri Easy Apply jobs automatically"
+            >
+              {isAutoApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              <span>{isAutoApplying ? 'Applying Jobs...' : '🚀 Start Naukri Easy Apply'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Search Keyword Bar & Presets */}
+        <div className="flex flex-col gap-2">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={applyKeywords}
+              onChange={(e) => setApplyKeywords(e.target.value)}
+              placeholder="e.g. Full Stack Developer, MERN Stack, React.js, Node.js, Bangalore"
+              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 py-2 text-xs font-semibold focus:outline-none focus:border-indigo-500"
+            />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="text-[10px] text-slate-400 uppercase font-bold">Role Presets:</span>
+            {[
+              'Full Stack Developer (React & Node.js)',
+              'MERN Stack Engineer (3+ YOE)',
+              'Backend Developer (Node.js/Express)',
+              'Frontend Developer (React.js/Next.js)',
+              'SDE-2 Full Stack (Bangalore / Remote)'
+            ].map((kw, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setApplyKeywords(kw)}
+                className="text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
+              >
+                + {kw}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Live Auto-Apply Progress Banner */}
+        {isAutoApplying && applyProgress && (
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col gap-2 animate-pulse">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                <span>{applyProgress.status}</span>
+              </span>
+              <span className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
+                {applyProgress.current} / {applyProgress.total}
+              </span>
+            </div>
+            <div className="w-full bg-indigo-200 dark:bg-indigo-900 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-indigo-600 dark:bg-indigo-400 h-2 transition-all duration-500 rounded-full"
+                style={{ width: `${Math.round((applyProgress.current / (applyProgress.total || 1)) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 5. Smart Q&A Memory Database Manager Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                Smart Recruiter Q&A Memory Database ({qaItems.length})
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Naukri recruiter screening questions stored in DB. Answers are automatically retrieved to fill application dialogs without asking you again.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowNewQaModal(true)}
+            className="bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 dark:hover:bg-indigo-900/70 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Custom Answer</span>
+          </button>
+        </div>
+
+        {/* Q&A Items Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          {qaItems.map((qa) => (
+            <div
+              key={qa.id}
+              className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-2 text-xs"
+            >
+              <div>
+                <div className="flex justify-between items-start gap-2">
+                  <span className="font-bold text-slate-800 dark:text-slate-100">{qa.question}</span>
+                  <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded shrink-0">
+                    {qa.category || 'General'}
+                  </span>
+                </div>
+                <div className="mt-1.5 font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
+                  Answer: {qa.answer}
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-1">
+                <button
+                  type="button"
+                  onClick={() => handleDeleteQa(qa.id)}
+                  className="text-[11px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Remove this question memory"
+                >
+                  <Trash2 className="w-3 h-3" /> Remove
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* 6. Applied Jobs History Table */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex justify-between items-center">
+          <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-500" />
+            <span>Naukri Easy Apply Jobs Log ({appliedJobs.length})</span>
+          </h3>
+          <button
+            onClick={fetchQaAndAppliedJobs}
+            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
+          >
+            <RefreshCw className="w-3 h-3" /> Refresh
+          </button>
+        </div>
+
+        {appliedJobs.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
+            No jobs applied via Easy Apply yet. Click "Start Naukri Easy Apply" above to begin automated applications!
+          </div>
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                  <th className="p-3">Job Title & Company</th>
+                  <th className="p-3">Location & Exp</th>
+                  <th className="p-3">Applied Timestamp</th>
+                  <th className="p-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {appliedJobs.map((app) => (
+                  <tr key={app.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 block">{app.jobTitle}</span>
+                      <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">{app.company}</span>
+                    </td>
+                    <td className="p-3 text-slate-600 dark:text-slate-300">
+                      <div>{app.location}</div>
+                      <div className="text-[10px] text-slate-400">{app.experience}</div>
+                    </td>
+                    <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
+                      {new Date(app.appliedAt).toLocaleString()}
+                    </td>
+                    <td className="p-3">
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                        <CheckCircle className="w-2.5 h-2.5" /> Applied (Easy Apply)
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* Add Custom Q&A Dialog Modal */}
+      {showNewQaModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-md w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Add Recruiter Q&A Memory</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Remembered for all future Naukri applications</p>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveNewQa} className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Recruiter Question:
+                </label>
+                <input
+                  type="text"
+                  value={newQaForm.question}
+                  onChange={(e) => setNewQaForm({ ...newQaForm, question: e.target.value })}
+                  placeholder="e.g. What is your experience in Docker & Kubernetes?"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Your Answer:
+                </label>
+                <input
+                  type="text"
+                  value={newQaForm.answer}
+                  onChange={(e) => setNewQaForm({ ...newQaForm, answer: e.target.value })}
+                  placeholder="e.g. 2+ Years / Yes / 12 LPA"
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Category:
+                </label>
+                <select
+                  value={newQaForm.category}
+                  onChange={(e) => setNewQaForm({ ...newQaForm, category: e.target.value })}
+                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+                >
+                  <option value="Skills">Skills & Technologies</option>
+                  <option value="Experience">Experience & Background</option>
+                  <option value="Compensation">Compensation & CTC</option>
+                  <option value="Availability">Notice Period & Availability</option>
+                  <option value="Location">Location & Relocation</option>
+                  <option value="Education">Education & Degree</option>
+                  <option value="General">General</option>
+                </select>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowNewQaModal(false)}
+                  className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-2 rounded-xl text-xs font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-bold transition-all shadow-md flex items-center gap-2 cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Save to Memory DB</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* 2FA OTP Verification Dialog Modal */}
       {showOtpModal && (

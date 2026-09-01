@@ -47,6 +47,16 @@ const {
   supabaseGetScheduledJobs,
   supabaseGetLinkedInConfig
 } = require('./services/supabase.service');
+const {
+  getQaDatabase,
+  saveQaItem,
+  deleteQaItem,
+  getPendingQuestions,
+  resolvePendingQuestion,
+  getNaukriAppliedJobs,
+  runNaukriAutoApplyJob,
+  getAutoApplyStatus
+} = require('./services/naukri_apply.service');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -918,6 +928,56 @@ app.all('/api/naukri/cron-trigger', async (req, res) => {
       timestamp: new Date().toISOString()
     });
   }
+});
+
+// --- NAUKRI 1-CLICK EASY APPLY & SMART Q&A MEMORY ENDPOINTS ---
+app.get('/api/naukri/qa', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({ qaItems: getQaDatabase(userKey) });
+});
+
+app.post('/api/naukri/qa', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const item = saveQaItem(userKey, req.body || {});
+  res.json({ success: true, item, qaItems: getQaDatabase(userKey) });
+});
+
+app.delete('/api/naukri/qa/:id', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  deleteQaItem(userKey, req.params.id);
+  res.json({ success: true, qaItems: getQaDatabase(userKey) });
+});
+
+app.get('/api/naukri/qa/pending', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({ pending: getPendingQuestions(userKey) });
+});
+
+app.post('/api/naukri/qa/answer-pending', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { id, answer } = req.body;
+  const result = resolvePendingQuestion(userKey, id, answer);
+  res.json({ ...result, pending: getPendingQuestions(userKey), qaItems: getQaDatabase(userKey) });
+});
+
+app.post('/api/naukri/apply/start', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const options = req.body || {};
+  try {
+    const result = await runNaukriAutoApplyJob(userKey, options);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/naukri/apply/history', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({ applications: getNaukriAppliedJobs(userKey) });
+});
+
+app.get('/api/naukri/apply/status', (req, res) => {
+  res.json(getAutoApplyStatus());
 });
 
 app.post('/api/naukri/verify-otp', async (req, res) => {

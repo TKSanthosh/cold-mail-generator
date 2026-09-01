@@ -479,6 +479,88 @@ Santhosh T K
     assert(false, `Test 18 threw error: ${e.message}`);
   }
 
+  // TEST 19: Naukri Smart Q&A Memory Store & Fuzzy Question Matching
+  try {
+    const { getQaDatabase, saveQaItem, deleteQaItem, findBestAnswer, DEFAULT_QA_ITEMS } = require('./server/src/services/naukri_apply.service');
+    assert(typeof getQaDatabase === 'function', 'naukri_apply.service exports getQaDatabase');
+    assert(typeof saveQaItem === 'function', 'naukri_apply.service exports saveQaItem');
+    assert(typeof findBestAnswer === 'function', 'naukri_apply.service exports findBestAnswer');
+
+    const testUser = 'tksanthosh494_gmail_com';
+    const qaList = getQaDatabase(testUser);
+    assert(Array.isArray(qaList) && qaList.length >= 10, `Loaded ${qaList.length} Q&A items from memory DB`);
+
+    // Test exact question matching
+    const match1 = findBestAnswer(testUser, 'How many years of total experience do you have?');
+    assert(match1 && match1.answer === '3.5', 'Exact match for total experience returns 3.5');
+
+    // Test fuzzy question matching
+    const match2 = findBestAnswer(testUser, 'What is your current CTC compensation in lakhs?');
+    assert(match2 && match2.answer === '8', 'Fuzzy match for current CTC returns 8');
+
+    const match3 = findBestAnswer(testUser, 'Please state your official notice period in days');
+    assert(match3 && match3.answer === '15', 'Fuzzy match for notice period returns 15');
+
+    // Test saving custom Q&A item
+    const customItem = saveQaItem(testUser, {
+      question: 'Do you have production experience in Next.js and TypeScript?',
+      answer: 'Yes, 3+ Years in production',
+      category: 'Skills'
+    });
+    assert(customItem && customItem.id, 'Custom Q&A item saved successfully');
+
+    const matchCustom = findBestAnswer(testUser, 'Do you have production experience in Next.js and TypeScript?');
+    assert(matchCustom && matchCustom.answer.includes('3+ Years'), 'Custom Q&A answer retrieved accurately');
+  } catch (e) {
+    assert(false, `Test 19 threw error: ${e.message}`);
+  }
+
+  // TEST 20: Pending Questions Resolution & Applied Jobs Logger
+  try {
+    const { getPendingQuestions, addPendingQuestion, resolvePendingQuestion, getNaukriAppliedJobs, logNaukriAppliedJob } = require('./server/src/services/naukri_apply.service');
+    const testUser = 'tksanthosh494_gmail_com';
+
+    // Add pending question
+    const pendingQ = addPendingQuestion(testUser, {
+      jobTitle: 'MERN Lead',
+      company: 'Zepto',
+      question: 'Are you comfortable working from our HSR Layout Bangalore office 5 days a week?'
+    });
+    assert(pendingQ && pendingQ.id, 'Pending screening question queued');
+
+    // Resolve pending question
+    const resolved = resolvePendingQuestion(testUser, pendingQ.id, 'Yes, 100% comfortable working from Bangalore office');
+    assert(resolved.success === true, 'Pending question resolved and saved to permanent DB');
+
+    // Log applied job
+    const appLog = logNaukriAppliedJob(testUser, {
+      jobTitle: 'SDE-2 Full Stack',
+      company: 'Swiggy',
+      location: 'Bangalore',
+      jobUrl: 'https://www.naukri.com/job-123'
+    });
+    assert(appLog && appLog.company === 'Swiggy', 'Naukri applied job logged successfully');
+
+    const allApps = getNaukriAppliedJobs(testUser);
+    assert(allApps.some(a => a.company === 'Swiggy'), 'Applied job appears in history array');
+  } catch (e) {
+    assert(false, `Test 20 threw error: ${e.message}`);
+  }
+
+  // TEST 21: LinkedIn Infinite Fresh Lead Harvester Fallback
+  try {
+    const { harvestRecruiterPosts } = require('./server/src/services/linkedin.service');
+    const testUser = 'tksanthosh494_gmail_com';
+
+    // Harvest leads with simulated heavy previous outreach
+    const leads = await harvestRecruiterPosts('Full Stack Developer MERN', 10, testUser, '3d');
+    assert(Array.isArray(leads) && leads.length >= 5, `Infinite lead harvester returns fresh leads (Found: ${leads.length})`);
+    assert(leads.every(l => l.email && l.email.includes('@')), 'All returned leads have valid email format');
+    assert(leads.every(l => l.company && l.company.length > 0), 'All returned leads have non-empty company');
+  } catch (e) {
+    assert(false, `Test 21 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }
