@@ -13,7 +13,9 @@ const { generateResumePdf } = require('./services/pdf.service');
 const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
-const { harvestRecruiterPosts, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
+const { harvestRecruiterPosts, scrapeLinkedInJobPost, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
+const { verifyEmailDeliverability } = require('./services/email_verifier.service');
+const { scanGmailBounces, getBouncedEmails, clearBounces } = require('./services/bounce.service');
 const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler, triggerNaukriUploadForActiveUsers } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
@@ -600,11 +602,11 @@ app.post('/api/linkedin/run', async (req, res) => {
   }
 });
 
-app.post('/api/linkedin/parse-post', (req, res) => {
+app.post('/api/linkedin/parse-post', async (req, res) => {
   const { text } = req.body;
+  const userKey = resolveUserKey(req, res);
   try {
-    const lead = parsePastedLinkedInPost(text);
-    const userKey = resolveUserKey(req, res);
+    const lead = await parsePastedLinkedInPost(text, userKey);
     const pastLogs = getUserLogs(userKey);
     const contactedEmails = new Set(
       pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
@@ -613,6 +615,68 @@ app.post('/api/linkedin/parse-post', (req, res) => {
     res.json({ success: true, lead });
   } catch (e) {
     res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/linkedin/scrape-job', async (req, res) => {
+  const { url } = req.body;
+  const userKey = resolveUserKey(req, res);
+  try {
+    const lead = await scrapeLinkedInJobPost(url, userKey);
+    const pastLogs = getUserLogs(userKey);
+    const contactedEmails = new Set(
+      pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
+    );
+    lead.alreadyContacted = contactedEmails.has(lead.email.toLowerCase());
+    res.json({ success: true, lead });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// --- EMAIL DELIVERABILITY & BOUNCE DETECTOR ENDPOINTS ---
+app.post('/api/mail/bounces/scan', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  if (!isUserAuthorized(userKey)) {
+    return res.status(401).json({ error: 'Gmail account not connected. Please connect Gmail first.' });
+  }
+  try {
+    const result = await scanGmailBounces(userKey);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/mail/bounces', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const bounces = getBouncedEmails(userKey);
+    res.json({ success: true, bounces, totalCount: bounces.length });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.delete('/api/mail/bounces', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    clearBounces(userKey);
+    res.json({ success: true, message: 'Bounce blacklist cleared' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/mail/verify-email', async (req, res) => {
+  const { email } = req.body;
+  const userKey = resolveUserKey(req, res);
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+  try {
+    const result = await verifyEmailDeliverability(email, userKey);
+    res.json({ success: true, verification: result });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

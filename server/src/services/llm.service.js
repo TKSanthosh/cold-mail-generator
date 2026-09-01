@@ -31,14 +31,25 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
     max_tokens: maxTokens
   };
 
-  const response = await fetch(API_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${API_KEY}`
-    },
-    body: JSON.stringify(payload)
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 6000);
+
+  let response;
+  try {
+    response = await fetch(API_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${API_KEY}`
+      },
+      body: JSON.stringify(payload)
+    });
+  } catch (err) {
+    clearTimeout(timeoutId);
+    throw new Error(`LLM Fetch error: ${err.message}`);
+  }
+  clearTimeout(timeoutId);
 
   if (!response.ok) {
     // If fast model has rate limit, fallback to llama-3.2-11b-vision-instruct
