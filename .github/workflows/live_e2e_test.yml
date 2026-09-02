@@ -1,0 +1,54 @@
+name: Continuous E2E Website & API Test Automation
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+  schedule:
+    # Daily Health Check at 00:00 UTC (05:30 AM IST)
+    - cron: '0 0 * * *'
+
+jobs:
+  live-e2e-test:
+    name: Run Live E2E Automation Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'server/package.json'
+
+      - name: Install Dependencies
+        run: |
+          npm install --prefix server
+          npx puppeteer browsers install chrome
+
+      - name: Wait for Render Deployment Rollout (60s)
+        if: github.event_name == 'push'
+        run: |
+          echo "Waiting 60 seconds for Render deployment rollout to complete..."
+          sleep 60
+
+      - name: Run E2E Live Test Suite
+        env:
+          TARGET_URL: "https://cold-mail-generator-7ytw.onrender.com"
+          TEST_USER_KEY: "tksanthosh494_gmail_com"
+          NODE_PATH: "server/node_modules"
+        run: |
+          node test_e2e_live.js
+
+      - name: Upload E2E Verification Screenshot
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-e2e-screenshot
+          path: live_e2e_verification.png
+          if-no-files-found: ignore
