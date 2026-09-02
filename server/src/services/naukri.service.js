@@ -809,6 +809,9 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   if (!fileInput) {
     const currentFinalUrl = page.url();
     const pageTitle = await page.title().catch(() => 'Unknown');
+    if (pageTitle.toLowerCase().includes('access denied') || currentFinalUrl.includes('login') || currentFinalUrl.includes('nlogin')) {
+      throw new Error('Naukri session has expired (Access Denied). Please click "Paste Session Cookie" in the Naukri menu to refresh your cookie, or enter your Naukri password for automated login.');
+    }
     throw new Error(`Could not locate the resume upload element on Naukri (Page: "${pageTitle}" at ${currentFinalUrl}). Please verify your Naukri session or credentials in the settings tab.`);
   }
 
@@ -984,6 +987,19 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
     });
 
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+      'sec-fetch-dest': 'document',
+      'sec-fetch-mode': 'navigate',
+      'sec-fetch-site': 'same-origin',
+      'sec-fetch-user': '?1',
+      'upgrade-insecure-requests': '1'
+    });
+
     // 3. Load Saved User Session Cookies (Google SSO / Session)
     let cookies = [];
     if (fs.existsSync(userPaths.naukriSessionPath)) {
@@ -1029,23 +1045,31 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       console.log(`[NAUKRI UPLOADER] Injected ${cookies.length} session cookies for user ${userKey}.`);
     }
 
-    // 4. Navigate to Naukri Profile
+    // 4. Warm up root homepage first to establish security handshake
+    try {
+      console.log('[NAUKRI UPLOADER] Warming up connection on Naukri root homepage...');
+      await page.goto('https://www.naukri.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await delay(1500);
+    } catch (e) {}
+
+    // 5. Navigate to Naukri Profile
     console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
     await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
     await delay(3000);
 
-    // 5. Check if redirected to login page or unauthenticated state
+    // 6. Check if redirected to login page, unauthenticated, or Access Denied state
     let currentUrl = page.url();
-    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
+    let pageTitle = (await page.title().catch(() => '')) || '';
+    let pageBodyText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
+
+    let isAccessDenied = pageTitle.toLowerCase().includes('access denied') ||
+                         pageTitle.toLowerCase().includes('403') ||
+                         pageBodyText.toLowerCase().includes('access denied') ||
+                         pageBodyText.toLowerCase().includes("you don't have permission");
+
+    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth') || isAccessDenied;
     if (!isLoginPage && !currentUrl.includes('mnjuser/profile')) {
-      if (currentUrl.includes('naukri.com/homepage') || currentUrl.includes('mynaukri') || currentUrl.includes('naukri.com')) {
-        await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
-        await delay(2000);
-        currentUrl = page.url();
-        isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth');
-      } else {
-        isLoginPage = true;
-      }
+      isLoginPage = true;
     }
     if (!isLoginPage) {
       const loginField = await page.$('#usernameField, input[type="password"], .loginButton, a[href*="nlogin"]');
@@ -1053,14 +1077,14 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     }
 
     if (isLoginPage) {
-      console.log(`[NAUKRI UPLOADER] Session not active for user ${userKey}. Attempting credentials authentication...`);
+      console.log(`[NAUKRI UPLOADER] Session not active (Access Denied / Login detected) for user ${userKey}. Attempting credentials authentication...`);
       if (!username || !password) {
         const cfg = getNaukriConfig(userKey);
         cfg.hasSession = false;
-        cfg.lastStatus = 'Session Expired / Not Linked';
+        cfg.lastStatus = 'Session Expired / Please Re-link Cookie';
         saveNaukriConfig(userKey, cfg);
 
-        throw new Error('Naukri session is unauthenticated. Please enter your Naukri username & password in the authorization card, or click "Paste Session Cookie" to connect via your active browser session.');
+        throw new Error('Naukri session has expired or returned "Access Denied". Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.');
       }
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {

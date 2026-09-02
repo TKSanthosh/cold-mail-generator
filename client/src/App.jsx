@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3 } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3516,6 +3516,45 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [showNewQaModal, setShowNewQaModal] = useState(false);
   const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
   const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
+  const [editingQaId, setEditingQaId] = useState(null);
+  const [editingQaValues, setEditingQaValues] = useState({ question: '', answer: '', category: 'General' });
+
+  const handleStartEditQa = (qa) => {
+    setEditingQaId(qa.id);
+    setEditingQaValues({
+      question: qa.question,
+      answer: qa.answer,
+      category: qa.category || 'General'
+    });
+  };
+
+  const handleSaveInlineQa = async (id) => {
+    if (!editingQaValues.answer || editingQaValues.answer.trim().length === 0) {
+      return showToast('Answer cannot be empty', 'error');
+    }
+    try {
+      const res = await apiFetch('/api/naukri/qa', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          question: editingQaValues.question,
+          answer: editingQaValues.answer.trim(),
+          category: editingQaValues.category
+        })
+      });
+      const data = await res.json();
+      if (data.qaItems) setQaItems(data.qaItems);
+      setEditingQaId(null);
+      showToast('💾 Q&A Answer updated and saved to DB!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to update Q&A answer', 'error');
+    }
+  };
+
+  const handleCancelEditQa = () => {
+    setEditingQaId(null);
+  };
 
   const fetchQaAndAppliedJobs = async () => {
     if (!currentUser) return;
@@ -4647,35 +4686,118 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
         {/* Q&A Items Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          {qaItems.map((qa) => (
-            <div
-              key={qa.id}
-              className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-2 text-xs"
-            >
-              <div>
-                <div className="flex justify-between items-start gap-2">
-                  <span className="font-bold text-slate-800 dark:text-slate-100">{qa.question}</span>
-                  <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded shrink-0">
-                    {qa.category || 'General'}
-                  </span>
-                </div>
-                <div className="mt-1.5 font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800">
-                  Answer: {qa.answer}
-                </div>
-              </div>
+          {qaItems.map((qa) => {
+            const isEditing = editingQaId === qa.id;
+            return (
+              <div
+                key={qa.id}
+                className={`p-3.5 rounded-xl border transition-all text-xs flex flex-col justify-between gap-2.5 ${
+                  isEditing
+                    ? 'bg-indigo-50/70 dark:bg-indigo-950/40 border-indigo-400 dark:border-indigo-600 shadow-sm ring-1 ring-indigo-400/30'
+                    : 'bg-slate-50 dark:bg-slate-800/60 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600'
+                }`}
+              >
+                {isEditing ? (
+                  /* Editable Form Mode */
+                  <div className="flex flex-col gap-2">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Recruiter Question:</label>
+                        <select
+                          value={editingQaValues.category}
+                          onChange={(e) => setEditingQaValues({ ...editingQaValues, category: e.target.value })}
+                          className="bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-[10px] rounded px-1.5 py-0.5 font-bold focus:outline-none"
+                        >
+                          <option value="Skills">Skills</option>
+                          <option value="Experience">Experience</option>
+                          <option value="Compensation">Compensation</option>
+                          <option value="Availability">Availability</option>
+                          <option value="Location">Location</option>
+                          <option value="Education">Education</option>
+                          <option value="General">General</option>
+                        </select>
+                      </div>
+                      <input
+                        type="text"
+                        value={editingQaValues.question}
+                        onChange={(e) => setEditingQaValues({ ...editingQaValues, question: e.target.value })}
+                        className="w-full bg-white dark:bg-slate-900 border border-indigo-300 dark:border-indigo-700 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-800 dark:text-slate-100 focus:outline-none focus:border-indigo-500"
+                        placeholder="Question text..."
+                      />
+                    </div>
 
-              <div className="flex justify-end pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteQa(qa.id)}
-                  className="text-[11px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors cursor-pointer"
-                  title="Remove this question memory"
-                >
-                  <Trash2 className="w-3 h-3" /> Remove
-                </button>
+                    <div>
+                      <label className="text-[10px] uppercase font-bold text-indigo-700 dark:text-indigo-300 mb-1 block">Your Answer (Saved in DB):</label>
+                      <input
+                        type="text"
+                        value={editingQaValues.answer}
+                        onChange={(e) => setEditingQaValues({ ...editingQaValues, answer: e.target.value })}
+                        autoFocus
+                        onKeyDown={(e) => { if (e.key === 'Enter') handleSaveInlineQa(qa.id); if (e.key === 'Escape') handleCancelEditQa(); }}
+                        className="w-full bg-white dark:bg-slate-900 border-2 border-indigo-500 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold text-indigo-800 dark:text-indigo-200 focus:outline-none shadow-xs"
+                        placeholder="e.g. 10 LPA / 15 days / 3.5 years..."
+                      />
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={handleCancelEditQa}
+                        className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 px-2.5 py-1 rounded bg-slate-200 dark:bg-slate-800 transition-colors cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleSaveInlineQa(qa.id)}
+                        className="text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1 rounded shadow-xs flex items-center gap-1 transition-all cursor-pointer"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Save Answer</span>
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  /* Display Mode with Quick Edit */
+                  <div>
+                    <div className="flex justify-between items-start gap-2">
+                      <span className="font-bold text-slate-800 dark:text-slate-100 leading-snug">{qa.question}</span>
+                      <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold px-1.5 py-0.5 rounded shrink-0">
+                        {qa.category || 'General'}
+                      </span>
+                    </div>
+
+                    <div
+                      onClick={() => handleStartEditQa(qa)}
+                      className="mt-2 font-mono text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-white dark:bg-slate-900 p-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-indigo-400 dark:hover:border-indigo-600 cursor-pointer flex justify-between items-center group transition-colors"
+                      title="Click to edit this answer"
+                    >
+                      <span>Answer: <strong>{qa.answer}</strong></span>
+                      <Edit3 className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-600 transition-colors shrink-0" />
+                    </div>
+
+                    <div className="flex justify-between items-center pt-2 mt-1 border-t border-slate-100 dark:border-slate-800/80">
+                      <button
+                        type="button"
+                        onClick={() => handleStartEditQa(qa)}
+                        className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 flex items-center gap-1 transition-colors cursor-pointer"
+                      >
+                        <Edit3 className="w-3 h-3" /> Edit Answer
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteQa(qa.id)}
+                        className="text-[11px] text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Remove this question memory"
+                      >
+                        <Trash2 className="w-3 h-3" /> Remove
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
 
