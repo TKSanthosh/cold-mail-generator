@@ -3998,7 +3998,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
       setShowCookieModal(false);
       setCookieInput('');
-      showToast(data.message || '🎉 Naukri session linked successfully! Auto-boosts are now active.', 'success');
+      if (data.hasAuthToken === false) {
+        showToast('⚠️ Cookies saved, but "nauk_session" was not detected. If boosts fail, copy the "cookie:" request header from the Network tab.', 'warning');
+      } else {
+        showToast(data.message || '🎉 Naukri session linked successfully! Auto-boosts are now active in Cloud DB.', 'success');
+      }
       fetchConfigAndHistory();
     } catch (err) {
       showToast(err.message || 'Failed to import session cookies', 'error');
@@ -5439,26 +5443,29 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </div>
             </div>
 
-            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex flex-col gap-1.5">
-              <span className="font-bold text-slate-800 dark:text-slate-200">How to get your cookie in 5 seconds:</span>
+            <div className="bg-slate-50 dark:bg-slate-800/50 p-3.5 rounded-xl border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 leading-relaxed flex flex-col gap-2">
+              <span className="font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                <span>🔑 How to copy your active session cookie in 10 seconds:</span>
+              </span>
               <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-500 dark:text-slate-400">
-                <li>Open <a href="https://www.naukri.com" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">naukri.com</a> in your Chrome browser where you are logged in.</li>
-                <li>Press <kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600 font-mono text-[10px]">F12</kbd> (or Right Click → <strong>Inspect</strong>) and click the <strong>Console</strong> tab.</li>
-                <li>Type <code className="bg-slate-200 dark:bg-slate-700 px-1.5 py-0.5 rounded font-mono text-[11px] text-indigo-600 dark:text-indigo-300 font-bold">copy(document.cookie)</code> and hit <kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono text-[10px]">Enter</kbd>.</li>
-                <li>Paste the copied text below and click <strong>Save & Link Session</strong>.</li>
+                <li>Open <a href="https://www.naukri.com" target="_blank" rel="noreferrer" className="text-indigo-600 underline font-semibold">naukri.com</a> in your Chrome/Edge browser where you are logged in.</li>
+                <li>Press <kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border border-slate-300 dark:border-slate-600 font-mono text-[10px]">F12</kbd> (or Right Click → <strong>Inspect</strong>) and switch to the <strong>Network</strong> tab.</li>
+                <li>Refresh the page (<kbd className="bg-white dark:bg-slate-900 px-1 py-0.5 rounded border font-mono text-[10px]">F5</kbd>) and click the first request (e.g. <strong>naukri.com</strong>).</li>
+                <li>In the right panel under <strong>Headers</strong> → <strong>Request Headers</strong>, right-click on the <code className="text-emerald-600 dark:text-emerald-400 font-mono font-bold">cookie:</code> header and click <strong>Copy value</strong>.</li>
+                <li>Paste the copied text below and click <strong>Save & Link Session</strong>. (Or paste from <em>Application → Cookies → nauk_session</em>).</li>
               </ol>
             </div>
 
             <form onSubmit={handleImportCookies} className="flex flex-col gap-3">
               <div>
                 <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Paste Session Cookies / String:
+                  Paste Session Cookies / Request Header:
                 </label>
                 <textarea
                   rows={4}
                   value={cookieInput}
                   onChange={(e) => setCookieInput(e.target.value)}
-                  placeholder="e.g. nauk_session=...; ubt_user=... or JSON cookie array"
+                  placeholder="e.g. nauk_session=...; ubt_user=... (or JSON cookie array from Cookie-Editor)"
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-3 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500"
                   autoFocus
                 />

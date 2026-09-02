@@ -300,10 +300,19 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
       path: c.path || '/'
     })).filter(c => c.name && c.value);
   } else if (typeof cookieInput === 'string') {
-    const trimmed = cookieInput.trim();
-    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+    let cleanInput = cookieInput.trim();
+
+    // Remove headers like 'cookie: ' or 'Cookie: ' or curl prefixes
+    if (cleanInput.toLowerCase().startsWith('cookie:')) {
+      cleanInput = cleanInput.substring(7).trim();
+    }
+    if (cleanInput.toLowerCase().startsWith('-h "cookie:') || cleanInput.toLowerCase().startsWith("-h 'cookie:")) {
+      cleanInput = cleanInput.replace(/^-h\s+['"]cookie:\s*/i, '').replace(/['"]$/, '').trim();
+    }
+
+    if (cleanInput.startsWith('[') || cleanInput.startsWith('{')) {
       try {
-        const parsed = JSON.parse(trimmed);
+        const parsed = JSON.parse(cleanInput);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
         cookiesToSave = arr.map(c => ({
           name: c.name || c.key || '',
@@ -314,15 +323,15 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
       } catch (e) {}
     }
 
-    if (cookiesToSave.length === 0 && trimmed.includes('=')) {
-      // Parse document.cookie string (e.g. "nauk_session=abc; ubt_user=xyz; ...")
-      const pairs = trimmed.split(';');
+    if (cookiesToSave.length === 0 && cleanInput.includes('=')) {
+      // Parse cookie string (e.g. "nauk_session=abc; ubt_user=xyz; ...")
+      const pairs = cleanInput.split(';');
       for (const pair of pairs) {
         const idx = pair.indexOf('=');
         if (idx !== -1) {
           const k = pair.substring(0, idx).trim();
           const v = pair.substring(idx + 1).trim();
-          if (k) {
+          if (k && v) {
             cookiesToSave.push({
               name: k,
               value: v,
@@ -335,10 +344,10 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
     }
 
     // Fallback: single raw token
-    if (cookiesToSave.length === 0 && trimmed.length > 10 && !trimmed.includes(' ') && !trimmed.includes('\n')) {
+    if (cookiesToSave.length === 0 && cleanInput.length > 10 && !cleanInput.includes(' ') && !cleanInput.includes('\n')) {
       cookiesToSave.push({
         name: 'nauk_session',
-        value: trimmed,
+        value: cleanInput,
         domain: '.naukri.com',
         path: '/'
       });
@@ -358,9 +367,11 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
       supabaseSaveNaukriConfig(userKey, { ...config, sessionCookies: cookiesToSave, hasSession: true }).catch(() => {});
     }
 
+    const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
+
     appendNaukriHistory(userKey, {
       status: 'Session Linked',
-      detail: `Linked ${cookiesToSave.length} session cookies via Paste Session Cookie`,
+      detail: `Linked ${cookiesToSave.length} session cookies via Paste Session Cookie${hasNaukSession ? ' (includes nauk_session)' : ''}`,
       profileStatus: 'Session Active & Synced to Cloud DB'
     });
 
@@ -374,11 +385,12 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
     return {
       success: true,
       count: cookiesToSave.length,
+      hasAuthToken: hasNaukSession,
       message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Profile boosts will now run 100% automatically in the background even when your laptop is closed.`
     };
   }
 
-  throw new Error('Could not parse session cookies. Please paste your cookies as a document.cookie string (e.g. "nauk_session=...") or JSON array.');
+  throw new Error('Could not parse session cookies. Please copy the "cookie:" request header from Network tab or paste a JSON array / cookie string.');
 }
 
 function getNaukriSessionCookies(userKey = 'default_user') {
