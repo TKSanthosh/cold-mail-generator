@@ -1089,34 +1089,102 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
         await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
-        await delay(1500);
+        await delay(2000);
       }
 
-      await page.waitForSelector('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]', { timeout: 15000 });
-      const userEl = await page.$('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
+      // Check if we need to click the login trigger button (e.g. on homepage or navbar)
+      try {
+        const loginTrigger = await page.$('#login_Layer, a[title="Jobseeker Login"], a.nI-gNb-lg__btn, a[href*="nlogin"], button.loginButton');
+        if (loginTrigger) {
+          await loginTrigger.click();
+          await delay(1500);
+        }
+      } catch (e) {}
+
+      // Resilient multi-selector username locator
+      const usernameSelectors = [
+        '#usernameField',
+        '#login_email',
+        'input[placeholder*="Email" i]',
+        'input[placeholder*="Username" i]',
+        'input[type="email"]',
+        'input[name="email"]',
+        'input[name="username"]',
+        '.drawer-wrapper input[type="text"]',
+        'form input[type="text"]',
+        'input[type="text"]'
+      ];
+
+      let userEl = null;
+      for (const sel of usernameSelectors) {
+        userEl = await page.$(sel);
+        if (userEl) break;
+      }
+
+      if (!userEl) {
+        try {
+          await page.waitForSelector(usernameSelectors.join(', '), { timeout: 8000 });
+          for (const sel of usernameSelectors) {
+            userEl = await page.$(sel);
+            if (userEl) break;
+          }
+        } catch (e) {}
+      }
+
+      if (!userEl) {
+        const pageTitle = await page.title().catch(() => 'Unknown');
+        const pageUrl = page.url();
+        throw new Error(`Could not find login fields on Naukri (Page: "${pageTitle}" at ${pageUrl}). Please click "Paste Session Cookie" in the Naukri menu to link your active browser session.`);
+      }
+
       await userEl.click({ clickCount: 3 });
       await page.keyboard.press('Backspace');
       await userEl.type(username, { delay: 25 });
       await page.evaluate(() => {
-        const u = document.querySelector('#usernameField, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
+        const u = document.querySelector('#usernameField, #login_email, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
         if (u) {
           u.dispatchEvent(new Event('input', { bubbles: true }));
           u.dispatchEvent(new Event('change', { bubbles: true }));
         }
       }).catch(() => {});
 
-      await page.waitForSelector('#passwordField, input[type="password"], input[name="password"]', { timeout: 15000 });
-      const passEl = await page.$('#passwordField, input[type="password"], input[name="password"]');
-      await passEl.click({ clickCount: 3 });
-      await page.keyboard.press('Backspace');
-      await passEl.type(password, { delay: 25 });
-      await page.evaluate(() => {
-        const p = document.querySelector('#passwordField, input[type="password"], input[name="password"]');
-        if (p) {
-          p.dispatchEvent(new Event('input', { bubbles: true }));
-          p.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-      }).catch(() => {});
+      // Resilient multi-selector password locator
+      const passwordSelectors = [
+        '#passwordField',
+        'input[type="password"]',
+        'input[name="password"]',
+        'input[placeholder*="password" i]',
+        '#login_password'
+      ];
+
+      let passEl = null;
+      for (const sel of passwordSelectors) {
+        passEl = await page.$(sel);
+        if (passEl) break;
+      }
+
+      if (!passEl) {
+        try {
+          await page.waitForSelector(passwordSelectors.join(', '), { timeout: 8000 });
+          for (const sel of passwordSelectors) {
+            passEl = await page.$(sel);
+            if (passEl) break;
+          }
+        } catch (e) {}
+      }
+
+      if (passEl) {
+        await passEl.click({ clickCount: 3 });
+        await page.keyboard.press('Backspace');
+        await passEl.type(password, { delay: 25 });
+        await page.evaluate(() => {
+          const p = document.querySelector('#passwordField, input[type="password"], input[name="password"]');
+          if (p) {
+            p.dispatchEvent(new Event('input', { bubbles: true }));
+            p.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }).catch(() => {});
+      }
 
       await delay(500);
 
