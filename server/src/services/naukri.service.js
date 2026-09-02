@@ -1089,104 +1089,84 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
         await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
-        await delay(2000);
+        await delay(2500);
       }
 
-      // Check if we need to click the login trigger button (e.g. on homepage or navbar)
+      // Check if we are on homepage and need to click navbar login button
       try {
-        const loginTrigger = await page.$('#login_Layer, a[title="Jobseeker Login"], a.nI-gNb-lg__btn, a[href*="nlogin"], button.loginButton');
-        if (loginTrigger) {
-          await loginTrigger.click();
-          await delay(1500);
+        const pageUrl = page.url();
+        if (!pageUrl.includes('nlogin') && !pageUrl.includes('login')) {
+          const loginTrigger = await page.$('#login_Layer, a[title="Jobseeker Login"], a.nI-gNb-lg__btn, button.loginButton');
+          if (loginTrigger) {
+            await loginTrigger.click();
+            await delay(1500);
+          }
         }
       } catch (e) {}
 
-      // Resilient multi-selector username locator
-      const usernameSelectors = [
-        '#usernameField',
-        '#login_email',
-        'input[placeholder*="Email" i]',
-        'input[placeholder*="Username" i]',
-        'input[type="email"]',
-        'input[name="email"]',
-        'input[name="username"]',
-        '.drawer-wrapper input[type="text"]',
-        'form input[type="text"]',
-        'input[type="text"]'
-      ];
+      // Robust DOM-level fill and submission
+      const loginAttemptResult = await page.evaluate((u, p) => {
+        const allInputs = Array.from(document.querySelectorAll('input'));
 
-      let userEl = null;
-      for (const sel of usernameSelectors) {
-        userEl = await page.$(sel);
-        if (userEl) break;
-      }
+        let userInp = allInputs.find(i => {
+          const type = (i.type || '').toLowerCase();
+          const ph = (i.placeholder || '').toLowerCase();
+          const id = (i.id || '').toLowerCase();
+          const name = (i.name || '').toLowerCase();
+          if (type === 'hidden' || type === 'password' || type === 'submit' || type === 'button' || type === 'checkbox') return false;
+          if (ph.includes('search') || id.includes('search') || name.includes('search')) return false;
+          return id === 'usernamefield' || id === 'login_email' || ph.includes('email') || ph.includes('username') || name.includes('email') || name.includes('username') || type === 'email';
+        }) || allInputs.find(i => (i.type === 'text' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null);
 
-      if (!userEl) {
-        try {
-          await page.waitForSelector(usernameSelectors.join(', '), { timeout: 8000 });
-          for (const sel of usernameSelectors) {
-            userEl = await page.$(sel);
-            if (userEl) break;
-          }
-        } catch (e) {}
-      }
+        let passInp = allInputs.find(i => (i.type || '').toLowerCase() === 'password');
 
-      if (!userEl) {
-        const pageTitle = await page.title().catch(() => 'Unknown');
-        const pageUrl = page.url();
-        throw new Error(`Could not find login fields on Naukri (Page: "${pageTitle}" at ${pageUrl}). Please click "Paste Session Cookie" in the Naukri menu to link your active browser session.`);
-      }
-
-      await userEl.click({ clickCount: 3 });
-      await page.keyboard.press('Backspace');
-      await userEl.type(username, { delay: 25 });
-      await page.evaluate(() => {
-        const u = document.querySelector('#usernameField, #login_email, input[placeholder*="Email" i], input[type="email"], input[name="email"]');
-        if (u) {
-          u.dispatchEvent(new Event('input', { bubbles: true }));
-          u.dispatchEvent(new Event('change', { bubbles: true }));
+        if (userInp) {
+          userInp.focus();
+          userInp.value = u;
+          userInp.dispatchEvent(new Event('input', { bubbles: true }));
+          userInp.dispatchEvent(new Event('change', { bubbles: true }));
         }
-      }).catch(() => {});
 
-      // Resilient multi-selector password locator
-      const passwordSelectors = [
-        '#passwordField',
-        'input[type="password"]',
-        'input[name="password"]',
-        'input[placeholder*="password" i]',
-        '#login_password'
-      ];
+        if (passInp) {
+          passInp.focus();
+          passInp.value = p;
+          passInp.dispatchEvent(new Event('input', { bubbles: true }));
+          passInp.dispatchEvent(new Event('change', { bubbles: true }));
+        }
 
-      let passEl = null;
-      for (const sel of passwordSelectors) {
-        passEl = await page.$(sel);
-        if (passEl) break;
-      }
+        const submitBtn = document.querySelector('button[type="submit"], button.btn-primary, button.loginButton, button.blueBtn, button.login-btn, form button, .login-layer-wrapper button, .drawer-wrapper button[type="submit"]');
+        if (submitBtn && userInp && passInp) {
+          submitBtn.click();
+          return { filled: true, submitted: true };
+        }
 
-      if (!passEl) {
-        try {
-          await page.waitForSelector(passwordSelectors.join(', '), { timeout: 8000 });
-          for (const sel of passwordSelectors) {
-            passEl = await page.$(sel);
-            if (passEl) break;
-          }
-        } catch (e) {}
-      }
+        return { filled: !!userInp && !!passInp, submitted: false };
+      }, username, password);
 
-      if (passEl) {
-        await passEl.click({ clickCount: 3 });
-        await page.keyboard.press('Backspace');
-        await passEl.type(password, { delay: 25 });
-        await page.evaluate(() => {
-          const p = document.querySelector('#passwordField, input[type="password"], input[name="password"]');
-          if (p) {
-            p.dispatchEvent(new Event('input', { bubbles: true }));
-            p.dispatchEvent(new Event('change', { bubbles: true }));
-          }
-        }).catch(() => {});
+      if (!loginAttemptResult.filled) {
+        // Fallback: search via Puppeteer element handles
+        const userHandle = await page.evaluateHandle(() => {
+          const inputs = Array.from(document.querySelectorAll('input'));
+          return inputs.find(i => (i.type === 'text' || i.type === 'email' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null) || null;
+        });
+        const userEl = userHandle.asElement();
+        if (userEl) {
+          await userEl.click({ clickCount: 3 });
+          await userEl.type(username, { delay: 20 });
+        }
+        const passHandle = await page.evaluateHandle(() => {
+          const inputs = Array.from(document.querySelectorAll('input'));
+          return inputs.find(i => i.type === 'password' && i.offsetParent !== null) || null;
+        });
+        const passEl = passHandle.asElement();
+        if (passEl) {
+          await passEl.click({ clickCount: 3 });
+          await passEl.type(password, { delay: 20 });
+        }
       }
 
       await delay(500);
+      await page.keyboard.press('Enter');
 
       // Submit login form
       await page.evaluate(() => {
