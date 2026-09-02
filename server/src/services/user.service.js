@@ -130,10 +130,22 @@ function getUserResume(userKey) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   try {
-    return JSON.parse(fs.readFileSync(paths.resumePath, 'utf8'));
-  } catch (e) {
-    return null;
+    if (fs.existsSync(paths.resumePath)) {
+      const data = JSON.parse(fs.readFileSync(paths.resumePath, 'utf8'));
+      if (data && data.personalInfo && data.personalInfo.name) {
+        return data;
+      }
+    }
+  } catch (e) {}
+
+  if (fs.existsSync(MASTER_RESUME_PATH)) {
+    try {
+      const master = JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8'));
+      fs.writeFileSync(paths.resumePath, JSON.stringify(master, null, 2), 'utf8');
+      return master;
+    } catch (e) {}
   }
+  return null;
 }
 
 function saveUserResume(userKey, data) {
