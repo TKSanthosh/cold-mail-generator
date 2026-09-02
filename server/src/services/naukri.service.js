@@ -15,11 +15,112 @@ const {
   supabaseGetNaukriConfig,
   supabaseAppendNaukriHistory,
   supabaseGetNaukriHistory,
-  supabaseGetAllUsers
+  supabaseGetAllUsers,
+  supabaseAcquireLock,
+  supabaseReleaseLock,
+  supabaseIsLocked
 } = require('./supabase.service');
 
 const USERS_DIR = path.join(__dirname, '../../users');
 const activeOtpSessions = new Map();
+
+// --- DISTRIBUTED CONCURRENCY LOCK MANAGER (Supabase Lease + Local Fallback) ---
+const userLocks = new Map();
+const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes auto-release for crash recovery
+
+async function isUserLockedAsync(userKey = 'default_user') {
+  if (isSupabaseConfigured()) {
+    try {
+      const dbLocked = await supabaseIsLocked(userKey);
+      if (dbLocked) return true;
+    } catch (e) {}
+  }
+  if (userLocks.has(userKey)) {
+    const lock = userLocks.get(userKey);
+    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
+      return true;
+    }
+    userLocks.delete(userKey);
+  }
+  return false;
+}
+
+function isUserLocked(userKey = 'default_user') {
+  if (userLocks.has(userKey)) {
+    const lock = userLocks.get(userKey);
+    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
+      return true;
+    }
+    userLocks.delete(userKey);
+  }
+  return false;
+}
+
+async function acquireUserLockAsync(userKey = 'default_user', owner = `worker_${process.pid}_${Date.now()}`) {
+  if (isSupabaseConfigured()) {
+    try {
+      const acquired = await supabaseAcquireLock(userKey, owner, 300);
+      if (!acquired) return false;
+    } catch (e) {}
+  }
+  if (userLocks.has(userKey)) {
+    const lock = userLocks.get(userKey);
+    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
+      return false;
+    }
+  }
+  userLocks.set(userKey, {
+    lockedAt: Date.now(),
+    owner
+  });
+  logStructured('LOCK', `Acquired exclusive automation lease lock for user "${userKey}" (Owner: ${owner})`);
+  return true;
+}
+
+function acquireUserLock(userKey = 'default_user', owner = `worker_${process.pid}_${Date.now()}`) {
+  if (isUserLocked(userKey)) {
+    return false;
+  }
+  userLocks.set(userKey, {
+    lockedAt: Date.now(),
+    owner
+  });
+  logStructured('LOCK', `Acquired exclusive automation lock for user "${userKey}" (Owner: ${owner})`);
+  return true;
+}
+
+async function releaseUserLockAsync(userKey = 'default_user', owner = null) {
+  if (isSupabaseConfigured()) {
+    try {
+      await supabaseReleaseLock(userKey, owner);
+    } catch (e) {}
+  }
+  if (userLocks.has(userKey)) {
+    userLocks.delete(userKey);
+    logStructured('LOCK', `Released automation lock for user "${userKey}"`);
+  }
+  return true;
+}
+
+function releaseUserLock(userKey = 'default_user') {
+  if (userLocks.has(userKey)) {
+    userLocks.delete(userKey);
+    logStructured('LOCK', `Released automation lock for user "${userKey}"`);
+  }
+}
+
+// --- STRUCTURED NON-LEAKING OBSERVABILITY LOGGER ---
+function logStructured(tag, message, meta = null) {
+  let cleanMsg = message;
+  if (typeof cleanMsg === 'string') {
+    cleanMsg = cleanMsg
+      .replace(/password[:=]\s*["']?[^"'\s,]+["']?/gi, 'password=[REDACTED]')
+      .replace(/nauk_session=[^;\s,]+/gi, 'nauk_session=[REDACTED]')
+      .replace(/ubt_user=[^;\s,]+/gi, 'ubt_user=[REDACTED]')
+      .replace(/Bearer\s+[a-zA-Z0-9_\-\.]+/gi, 'Bearer [REDACTED]');
+  }
+  console.log(`[${tag.toUpperCase()}] ${cleanMsg}`);
+}
 
 const IST_OFFSET_MINUTES = 330; // Indian Standard Time (UTC+5:30)
 
@@ -292,17 +393,34 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
   const paths = getUserPaths(userKey);
   let cookiesToSave = [];
 
-  if (Array.isArray(cookieInput)) {
-    cookiesToSave = cookieInput.map(c => ({
-      name: c.name || c.key || '',
-      value: c.value || '',
+  const sanitizeCookieObj = (c) => {
+    if (!c || !c.name || !c.value) return null;
+    const cookie = {
+      name: String(c.name).trim(),
+      value: String(c.value).trim(),
       domain: c.domain || '.naukri.com',
       path: c.path || '/'
-    })).filter(c => c.name && c.value);
+    };
+    if (c.expires !== undefined && c.expires !== null && !isNaN(Number(c.expires))) {
+      cookie.expires = Number(c.expires);
+    }
+    if (typeof c.httpOnly === 'boolean') {
+      cookie.httpOnly = c.httpOnly;
+    }
+    if (typeof c.secure === 'boolean') {
+      cookie.secure = c.secure;
+    }
+    if (c.sameSite && ['Strict', 'Lax', 'None', 'strict', 'lax', 'none'].includes(c.sameSite)) {
+      cookie.sameSite = c.sameSite;
+    }
+    return cookie;
+  };
+
+  if (Array.isArray(cookieInput)) {
+    cookiesToSave = cookieInput.map(sanitizeCookieObj).filter(Boolean);
   } else if (typeof cookieInput === 'string') {
     let cleanInput = cookieInput.trim();
 
-    // Remove headers like 'cookie: ' or 'Cookie: ' or curl prefixes
     if (cleanInput.toLowerCase().startsWith('cookie:')) {
       cleanInput = cleanInput.substring(7).trim();
     }
@@ -314,36 +432,69 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
       try {
         const parsed = JSON.parse(cleanInput);
         const arr = Array.isArray(parsed) ? parsed : [parsed];
-        cookiesToSave = arr.map(c => ({
-          name: c.name || c.key || '',
-          value: c.value || '',
-          domain: c.domain || '.naukri.com',
-          path: c.path || '/'
-        })).filter(c => c.name && c.value);
+        cookiesToSave = arr.map(sanitizeCookieObj).filter(Boolean);
       } catch (e) {}
     }
 
     if (cookiesToSave.length === 0 && cleanInput.includes('=')) {
-      // Parse cookie string (e.g. "nauk_session=abc; ubt_user=xyz; ...")
-      const pairs = cleanInput.split(';');
-      for (const pair of pairs) {
-        const idx = pair.indexOf('=');
-        if (idx !== -1) {
-          const k = pair.substring(0, idx).trim();
-          const v = pair.substring(idx + 1).trim();
-          if (k && v) {
-            cookiesToSave.push({
-              name: k,
-              value: v,
-              domain: '.naukri.com',
-              path: '/'
-            });
+      const parts = cleanInput.split(';');
+      const firstPart = parts[0].trim();
+      const firstEq = firstPart.indexOf('=');
+
+      // Check if this is a single Set-Cookie string with directives (Path, Domain, Expires, Secure, HttpOnly, SameSite)
+      const hasDirective = parts.slice(1).some(p => {
+        const lower = p.trim().toLowerCase();
+        return lower.startsWith('domain=') || lower.startsWith('path=') || lower.startsWith('expires=') || lower === 'secure' || lower === 'httponly' || lower.startsWith('samesite=');
+      });
+
+      if (hasDirective && firstEq !== -1) {
+        const cookie = {
+          name: firstPart.substring(0, firstEq).trim(),
+          value: firstPart.substring(firstEq + 1).trim(),
+          domain: '.naukri.com',
+          path: '/'
+        };
+        for (let i = 1; i < parts.length; i++) {
+          const attr = parts[i].trim();
+          const attrLower = attr.toLowerCase();
+          if (attrLower.startsWith('domain=')) {
+            cookie.domain = attr.substring(7).trim();
+          } else if (attrLower.startsWith('path=')) {
+            cookie.path = attr.substring(5).trim();
+          } else if (attrLower.startsWith('expires=')) {
+            const expDate = new Date(attr.substring(8).trim());
+            if (!isNaN(expDate.getTime())) {
+              cookie.expires = Math.floor(expDate.getTime() / 1000);
+            }
+          } else if (attrLower === 'httponly') {
+            cookie.httpOnly = true;
+          } else if (attrLower === 'secure') {
+            cookie.secure = true;
+          } else if (attrLower.startsWith('samesite=')) {
+            cookie.sameSite = attr.substring(9).trim();
+          }
+        }
+        cookiesToSave.push(cookie);
+      } else {
+        // Standard multi-cookie header "name1=val1; name2=val2"
+        for (const pair of parts) {
+          const idx = pair.indexOf('=');
+          if (idx !== -1) {
+            const k = pair.substring(0, idx).trim();
+            const v = pair.substring(idx + 1).trim();
+            if (k && v) {
+              cookiesToSave.push({
+                name: k,
+                value: v,
+                domain: '.naukri.com',
+                path: '/'
+              });
+            }
           }
         }
       }
     }
 
-    // Fallback: single raw token
     if (cookiesToSave.length === 0 && cleanInput.length > 10 && !cleanInput.includes(' ') && !cleanInput.includes('\n')) {
       cookiesToSave.push({
         name: 'nauk_session',
@@ -358,35 +509,32 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
     fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookiesToSave, null, 2), 'utf8');
     const config = getNaukriConfig(userKey);
     config.hasSession = true;
-    config.lastStatus = 'Session Connected (Cookies)';
+    config.sessionStatus = 'CONFIGURED'; // Marked CONFIGURED until live validation confirms ACTIVE
+    config.lastStatus = 'Session Configured (Pending Live Verification)';
     config.lastError = null;
     config.sessionCookies = cookiesToSave;
     saveNaukriConfig(userKey, config);
 
     if (isSupabaseConfigured()) {
-      supabaseSaveNaukriConfig(userKey, { ...config, sessionCookies: cookiesToSave, hasSession: true }).catch(() => {});
+      supabaseSaveNaukriConfig(userKey, { ...config, sessionCookies: cookiesToSave, hasSession: true, sessionStatus: 'CONFIGURED' }).catch(() => {});
     }
 
     const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
 
     appendNaukriHistory(userKey, {
-      status: 'Session Linked',
-      detail: `Linked ${cookiesToSave.length} session cookies via Paste Session Cookie${hasNaukSession ? ' (includes nauk_session)' : ''}`,
-      profileStatus: 'Session Active & Synced to Cloud DB'
+      status: 'Session Configured',
+      detail: `Stored ${cookiesToSave.length} session cookies into Supabase database`,
+      profileStatus: 'Session Configured - Ready for Verification'
     });
 
-    addUserLog(userKey, {
-      type: 'naukri_session',
-      status: 'Session Linked',
-      company: 'Naukri.com',
-      detail: `Linked ${cookiesToSave.length} session cookies. 24/7 background auto-uploader active in Cloud DB.`
-    });
+    logStructured('AUTH', `Successfully saved and persisted ${cookiesToSave.length} complete session cookies to Supabase DB for user "${userKey}"`);
 
     return {
       success: true,
       count: cookiesToSave.length,
       hasAuthToken: hasNaukSession,
-      message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Profile boosts will now run 100% automatically in the background even when your laptop is closed.`
+      status: 'CONFIGURED',
+      message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Supabase database is now configured.`
     };
   }
 
@@ -423,49 +571,60 @@ function clearNaukriSession(userKey = 'default_user') {
   }
   const config = getNaukriConfig(userKey);
   config.hasSession = false;
+  config.sessionStatus = 'DISCONNECTED';
   config.lastStatus = 'Session Disconnected';
+  config.sessionCookies = [];
   saveNaukriConfig(userKey, config);
 
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, { sessionCookies: [], hasSession: false }).catch(() => {});
+    supabaseSaveNaukriConfig(userKey, { sessionCookies: [], hasSession: false, sessionStatus: 'DISCONNECTED' }).catch(() => {});
   }
+  logStructured('AUTH', `Naukri session disconnected for user "${userKey}"`);
   return { success: true, message: 'Naukri session disconnected.' };
 }
 
 /**
  * Restores and injects latest valid authentication state into Puppeteer page context.
- * Pulls from Supabase Cloud DB if local sandbox is missing or older (Render-ready).
+ * Supabase Cloud DB is the authoritative source of truth.
  */
 async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
   ensureUserSandbox(userKey);
   const paths = getUserPaths(userKey);
   let cookies = [];
+  let source = 'none';
 
-  // 1. Check local session file
-  if (fs.existsSync(paths.naukriSessionPath)) {
+  // 1. SUPABASE DATABASE IS AUTHORITATIVE SOURCE OF TRUTH (Crucial for Render container restarts)
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudConf = await supabaseGetNaukriConfig(userKey);
+      if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+        cookies = cloudConf.sessionCookies;
+        source = 'supabase_database';
+        // Cache to local sandbox for session operations
+        try { fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8'); } catch (e) {}
+        logStructured('AUTH', `Loaded ${cookies.length} persisted session cookies from Supabase DB for user "${userKey}"`);
+      }
+    } catch (e) {
+      console.warn('[AUTH WARNING] Supabase session retrieval notice:', e.message);
+    }
+  }
+
+  // 2. Ephemeral Local Cache Fallback (only if Supabase unavailable)
+  if ((!cookies || cookies.length === 0) && fs.existsSync(paths.naukriSessionPath)) {
     try {
       cookies = JSON.parse(fs.readFileSync(paths.naukriSessionPath, 'utf8'));
+      if (Array.isArray(cookies) && cookies.length > 0) {
+        source = 'local_sandbox_cache';
+      }
     } catch (e) {}
   }
 
-  // 2. Fallback to local config
   if ((!cookies || cookies.length === 0) && fs.existsSync(paths.naukriConfigPath)) {
     try {
       const cfg = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
       if (Array.isArray(cfg.sessionCookies) && cfg.sessionCookies.length > 0) {
         cookies = cfg.sessionCookies;
-      }
-    } catch (e) {}
-  }
-
-  // 3. Fallback to Supabase Database (crucial for Render container restarts and background cron)
-  if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
-    try {
-      const cloudConf = await supabaseGetNaukriConfig(userKey);
-      if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
-        cookies = cloudConf.sessionCookies;
-        fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
-        console.log(`[NAUKRI AUTH] 🔄 Restored ${cookies.length} session cookies from Supabase DB into sandbox.`);
+        source = 'local_config_cache';
       }
     } catch (e) {}
   }
@@ -474,39 +633,52 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
     for (const c of cookies) {
       if (!c.name || !c.value) continue;
       const dom = c.domain || '.naukri.com';
+      const cookieObj = {
+        name: c.name,
+        value: c.value,
+        domain: dom.startsWith('.') ? dom : `.${dom}`,
+        path: c.path || '/'
+      };
+      if (c.expires !== undefined && c.expires !== null && !isNaN(Number(c.expires))) {
+        cookieObj.expires = Number(c.expires);
+      }
+      if (typeof c.httpOnly === 'boolean') {
+        cookieObj.httpOnly = c.httpOnly;
+      }
+      if (typeof c.secure === 'boolean') {
+        cookieObj.secure = c.secure;
+      }
+      if (c.sameSite && ['Strict', 'Lax', 'None', 'strict', 'lax', 'none'].includes(c.sameSite)) {
+        cookieObj.sameSite = c.sameSite;
+      }
+
       try {
-        await page.setCookie({
-          name: c.name,
-          value: c.value,
-          domain: dom.startsWith('.') ? dom : `.${dom}`,
-          path: c.path || '/'
-        });
+        await page.setCookie(cookieObj);
       } catch (err) {
         try {
           await page.setCookie({
-            name: c.name,
-            value: c.value,
-            domain: 'www.naukri.com',
-            path: c.path || '/'
+            ...cookieObj,
+            domain: 'www.naukri.com'
           });
         } catch (e2) {}
       }
     }
-    console.log(`[NAUKRI AUTH] 🔑 Injected ${cookies.length} session cookies into browser context for user "${userKey}".`);
-    return { hasSession: true, count: cookies.length, cookies };
+    logStructured('AUTH', `Injected ${cookies.length} session cookies into browser context from ${source} for user "${userKey}"`);
+    return { hasSession: true, count: cookies.length, cookies, source };
   }
 
-  console.log(`[NAUKRI AUTH] ℹ️ No active session cookies available for user "${userKey}".`);
-  return { hasSession: false, count: 0, cookies: [] };
+  logStructured('AUTH', `No persisted session cookies found in Supabase DB or cache for user "${userKey}"`);
+  return { hasSession: false, count: 0, cookies: [], source: 'none' };
 }
 
 /**
  * Live Session Validation against Naukri servers
  * Navigates to Naukri and verifies if the session is actively authenticated without assuming cookie immortality.
- * If valid, refreshes and saves the latest session cookies in Supabase DB.
+ * If valid, refreshes and saves the latest session cookies in Supabase DB with status = "ACTIVE".
+ * If invalid, halts automation and marks session expired.
  */
 async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
-  console.log(`[NAUKRI AUTH] 🔍 Validating live session against Naukri servers for user "${userKey}"...`);
+  logStructured('AUTH', `Live verification started against Naukri servers for user "${userKey}"...`);
 
   try {
     // 1. Warm up connection on root domain
@@ -516,7 +688,7 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
     } catch (e) {}
 
     // 2. Navigate to candidate profile page
-    console.log('[NAUKRI AUTH] Navigating to https://www.naukri.com/mnjuser/profile to verify authentication...');
+    logStructured('AUTH', 'Navigating to https://www.naukri.com/mnjuser/profile to verify authentication...');
     await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
     await delay(3000);
 
@@ -537,10 +709,38 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
                             isAccessDenied;
 
     if (isLoginRedirect) {
-      console.warn(`[NAUKRI AUTH] ⚠️ Session invalidated by Naukri (URL: ${currentUrl}, Title: "${pageTitle}").`);
+      logStructured('AUTH', `Session invalidated by Naukri (URL: ${currentUrl}, Title: "${pageTitle}")`);
+      const reason = isAccessDenied ? 'Access Denied by Naukri' : 'Redirected to login page (Session expired on Naukri)';
+
+      const config = getNaukriConfig(userKey);
+      config.hasSession = false;
+      config.sessionStatus = 'EXPIRED';
+      config.lastStatus = 'SESSION EXPIRED (Authentication Required)';
+      config.lastError = `Naukri session expired: ${reason}`;
+      config.lastVerifiedAt = new Date().toISOString();
+      saveNaukriConfig(userKey, config);
+
+      if (isSupabaseConfigured()) {
+        supabaseSaveNaukriConfig(userKey, {
+          hasSession: false,
+          sessionStatus: 'EXPIRED',
+          lastStatus: config.lastStatus,
+          lastError: config.lastError,
+          lastVerifiedAt: config.lastVerifiedAt
+        }).catch(() => {});
+      }
+
+      appendNaukriHistory(userKey, {
+        status: 'SESSION_EXPIRED',
+        error: reason,
+        profileStatus: 'Session Expired - Re-authentication Required'
+      });
+
       return {
+        authenticated: false,
         isValid: false,
-        reason: isAccessDenied ? 'Access Denied by Naukri' : 'Redirected to login page (Session expired on Naukri)',
+        status: 'EXPIRED',
+        reason,
         currentUrl
       };
     }
@@ -554,31 +754,118 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
     });
 
     if (currentUrl.includes('mnjuser/profile') || profileInfo.hasProfileHeader || profileInfo.candidateName) {
-      console.log(`[NAUKRI AUTH] ✅ Session is 100% VALID & ACTIVE on Naukri! (Candidate: "${profileInfo.candidateName || userKey}")`);
+      logStructured('AUTH', `Session ACTIVE on Naukri! Candidate: "${profileInfo.candidateName || userKey}"`);
 
-      // 5. Capture rolling refreshed cookies from Naukri and persist to Supabase DB & sandbox
+      // 5. Capture complete rolling refreshed cookies from Naukri and persist to Supabase DB & sandbox
       const latestCookies = await page.cookies();
       if (Array.isArray(latestCookies) && latestCookies.length > 0) {
         saveNaukriSessionCookies(userKey, latestCookies);
       }
 
+      const config = getNaukriConfig(userKey);
+      config.hasSession = true;
+      config.sessionStatus = 'ACTIVE';
+      config.lastVerifiedAt = new Date().toISOString();
+      config.lastStatus = 'Active & Verified';
+      config.lastError = null;
+      saveNaukriConfig(userKey, config);
+
+      if (isSupabaseConfigured()) {
+        supabaseSaveNaukriConfig(userKey, {
+          hasSession: true,
+          sessionStatus: 'ACTIVE',
+          lastStatus: config.lastStatus,
+          lastVerifiedAt: config.lastVerifiedAt,
+          lastError: null
+        }).catch(() => {});
+      }
+
       return {
+        authenticated: true,
         isValid: true,
+        status: 'ACTIVE',
         candidateName: profileInfo.candidateName || userKey,
-        currentUrl
+        currentUrl,
+        lastVerifiedAt: config.lastVerifiedAt
       };
     }
 
-    // If login input fields exist, session is expired
+    // Check for login input fields on page
     const hasLoginInputs = await page.$('#usernameField, #login_email, input[placeholder*="Enter your active Email" i], input[type="password"]');
     if (hasLoginInputs) {
-      return { isValid: false, reason: 'Login form detected on page' };
+      logStructured('AUTH', 'Login form detected on page. Session is expired.');
+      const reason = 'Login form detected on page';
+
+      const config = getNaukriConfig(userKey);
+      config.hasSession = false;
+      config.sessionStatus = 'EXPIRED';
+      config.lastStatus = 'SESSION EXPIRED (Authentication Required)';
+      config.lastError = reason;
+      config.lastVerifiedAt = new Date().toISOString();
+      saveNaukriConfig(userKey, config);
+
+      if (isSupabaseConfigured()) {
+        supabaseSaveNaukriConfig(userKey, {
+          hasSession: false,
+          sessionStatus: 'EXPIRED',
+          lastStatus: config.lastStatus,
+          lastError: config.lastError,
+          lastVerifiedAt: config.lastVerifiedAt
+        }).catch(() => {});
+      }
+
+      return {
+        authenticated: false,
+        isValid: false,
+        status: 'EXPIRED',
+        reason
+      };
     }
 
-    return { isValid: true, candidateName: userKey, currentUrl };
+    return {
+      authenticated: true,
+      isValid: true,
+      status: 'ACTIVE',
+      candidateName: userKey,
+      currentUrl,
+      lastVerifiedAt: new Date().toISOString()
+    };
   } catch (err) {
-    console.error(`[NAUKRI AUTH ERROR] Session validation encountered error:`, err.message);
-    return { isValid: false, reason: err.message };
+    logStructured('AUTH', `Session validation error: ${err.message}`);
+    return {
+      authenticated: false,
+      isValid: false,
+      status: 'INVALID',
+      reason: err.message
+    };
+  }
+}
+
+/**
+ * Standalone live session validation helper (launches headless Chrome, checks, and returns result)
+ */
+async function validateNaukriSession(userKey = 'default_user') {
+  const browserPath = await ensureBrowserInstalled();
+  const launchOptions = {
+    headless: 'new',
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+  };
+  if (browserPath) launchOptions.executablePath = browserPath;
+
+  let browser = null;
+  try {
+    browser = await puppeteer.launch(launchOptions);
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    await restoreAndInjectNaukriSession(page, userKey);
+    const result = await validateNaukriSessionOnPage(page, userKey);
+    return result;
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch (e) {}
+    }
   }
 }
 
@@ -601,6 +888,7 @@ function getNaukriConfig(userKey = 'default_user') {
         username: process.env.NAUKRI_USERNAME || '',
         password: process.env.NAUKRI_PASSWORD || '',
         hasSession: hasActiveSession || Boolean(envCookies),
+        sessionStatus: hasActiveSession ? (saved.sessionStatus || 'ACTIVE') : 'DISCONNECTED',
         sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
         headless: true,
         autoApplyOnBoost: true,
@@ -609,10 +897,10 @@ function getNaukriConfig(userKey = 'default_user') {
         eodTarget: 50,
         lastUploadAt: null,
         nextUploadAt: null,
+        lastVerifiedAt: null,
         lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
         lastError: null,
-        ...saved,
-        hasSession: hasActiveSession || (Array.isArray(saved.sessionCookies) && saved.sessionCookies.length > 0) || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD)
+        ...saved
       };
       if (hasActiveSession) {
         conf.sessionCookies = activeCookies;
@@ -639,12 +927,14 @@ function getNaukriConfig(userKey = 'default_user') {
     username: process.env.NAUKRI_USERNAME || '',
     password: process.env.NAUKRI_PASSWORD || '',
     hasSession: hasActiveSession || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD),
+    sessionStatus: hasActiveSession ? 'ACTIVE' : 'DISCONNECTED',
     sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
     headless: true,
     autoApplyOnBoost: true,
     maxJobsPerRun: 12,
     searchKeywords: 'Full Stack Developer React Node.js Bangalore',
     eodTarget: 50,
+    lastVerifiedAt: null,
     lastError: null
   };
   defaultConf.nextUploadAt = calculateNextUploadTime(defaultConf).toISOString();
@@ -1218,380 +1508,325 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
  * Automates logging into Naukri & uploading fresh 1-page PDF resume for specific user
  */
 async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = {}) {
-  // Clear any existing orphaned OTP session before starting a fresh run
-  clearActiveOtpSession(userKey);
-
-  const userPaths = getUserPaths(userKey);
-  const config = getNaukriConfig(userKey);
-  let username = overrideOptions.username || config.username;
-  let password = overrideOptions.password || config.password;
-  const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
-
-  if (isSupabaseConfigured()) {
-    try {
-      const cloudConf = await supabaseGetNaukriConfig(userKey);
-      if (cloudConf) {
-        if (!username && cloudConf.username) username = cloudConf.username;
-        if (!password && cloudConf.password) password = cloudConf.password;
-        if (Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
-          config.sessionCookies = cloudConf.sessionCookies;
-          config.hasSession = true;
-        }
-      }
-    } catch (e) {}
+  // 0. Acquire Distributed Concurrency Lock
+  if (!acquireUserLock(userKey, 'resume_uploader')) {
+    throw new Error(`Account "${userKey}" is already executing an active Naukri automation task. Concurrent run prevented.`);
   }
-
-  if (overrideOptions.username || overrideOptions.password) {
-    saveNaukriConfig(userKey, {
-      username: username || config.username,
-      password: password || config.password
-    });
-  }
-
-  const startTime = Date.now();
-  console.log(`[NAUKRI UPLOADER] Starting resume upload workflow for user ${userKey}...`);
-
-  // 1. Dynamically Retrieve and Resolve Resume from Database (Zero hardcoded names or paths)
-  console.log(`[RESUME] Fetching resume from DB for user "${userKey}"...`);
-  const resolvedResume = await resolveUserResumeFile(userKey);
-  console.log(`[RESUME] Resume record found for user "${userKey}".`);
-  console.log(`[RESUME] Resolving storage reference & file formatting...`);
-  const uploadPdfPath = resolvedResume.filePath;
-  const resumeFileName = resolvedResume.fileName;
-  const candidateName = resolvedResume.candidateName;
-
-  console.log(`[RESUME] File resolved: ${resumeFileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
-
-  // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
-  let browserPath = await ensureBrowserInstalled();
-  console.log(`[NAUKRI UPLOADER] Launching browser engine (${browserPath || 'Puppeteer default'})...`);
-
-  let browser = null;
-  let uploadResult = null;
-  let isOtpWaiting = false;
 
   try {
-    const launchOptions = {
-      headless: headless ? 'new' : false,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-        '--window-size=1366,768'
-      ],
-      defaultViewport: { width: 1366, height: 768 }
-    };
+    clearActiveOtpSession(userKey);
 
-    if (browserPath) {
-      launchOptions.executablePath = browserPath;
-    }
+    const userPaths = getUserPaths(userKey);
+    const config = getNaukriConfig(userKey);
+    let username = overrideOptions.username || config.username;
+    let password = overrideOptions.password || config.password;
+    const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
 
-    try {
-      browser = await puppeteer.launch(launchOptions);
-    } catch (launchErr) {
-      if (launchErr.message.includes('Could not find Chrome') || launchErr.message.includes('executablePath')) {
-        console.warn('[NAUKRI UPLOADER] Initial launch failed. Running on-demand browser install and retrying...', launchErr.message);
-        browserPath = await ensureBrowserInstalled();
-        if (browserPath) {
-          launchOptions.executablePath = browserPath;
-        }
-        browser = await puppeteer.launch(launchOptions);
-      } else {
-        throw launchErr;
-      }
-    }
-
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-
-    // Anti-bot detection stealth scripts
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      window.chrome = { runtime: {} };
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-    });
-
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-      'sec-ch-ua': '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-      'sec-fetch-dest': 'document',
-      'sec-fetch-mode': 'navigate',
-      'sec-fetch-site': 'same-origin',
-      'sec-fetch-user': '?1',
-      'upgrade-insecure-requests': '1'
-    });
-
-    // 3. Restore and Inject Saved Session State (Hydrated from Supabase DB or sandbox)
-    await restoreAndInjectNaukriSession(page, userKey);
-
-    // 4. Validate Live Session on Naukri BEFORE Doing Anything
-    let validation = await validateNaukriSessionOnPage(page, userKey);
-
-    if (!validation.isValid) {
-      console.log(`[NAUKRI UPLOADER] Session validation failed (${validation.reason}) for user "${userKey}".`);
-      if (!username || !password) {
-        const cfg = getNaukriConfig(userKey);
-        cfg.hasSession = false;
-        cfg.lastStatus = 'Session Expired / Please Re-link Cookie';
-        cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
-        saveNaukriConfig(userKey, cfg);
-
-        throw new Error(`Naukri session has expired on the server (${validation.reason}). Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.`);
-      }
-
-      console.log(`[NAUKRI UPLOADER] Attempting automated credentials authentication for user "${userKey}"...`);
-      let currentUrl = page.url();
-      if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
-        await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
-        await delay(2500);
-      }
-
-      // Check if we are on homepage and need to click navbar login button
+    if (isSupabaseConfigured()) {
       try {
-        const pageUrl = page.url();
-        if (!pageUrl.includes('nlogin') && !pageUrl.includes('login')) {
-          const loginTrigger = await page.$('#login_Layer, a[title="Jobseeker Login"], a.nI-gNb-lg__btn, button.loginButton');
-          if (loginTrigger) {
-            await loginTrigger.click();
-            await delay(1500);
+        const cloudConf = await supabaseGetNaukriConfig(userKey);
+        if (cloudConf) {
+          if (!username && cloudConf.username) username = cloudConf.username;
+          if (!password && cloudConf.password) password = cloudConf.password;
+          if (Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+            config.sessionCookies = cloudConf.sessionCookies;
+            config.hasSession = true;
           }
         }
       } catch (e) {}
-
-      // Robust DOM-level fill and submission
-      const loginAttemptResult = await page.evaluate((u, p) => {
-        const allInputs = Array.from(document.querySelectorAll('input'));
-
-        let userInp = allInputs.find(i => {
-          const type = (i.type || '').toLowerCase();
-          const ph = (i.placeholder || '').toLowerCase();
-          const id = (i.id || '').toLowerCase();
-          const name = (i.name || '').toLowerCase();
-          if (type === 'hidden' || type === 'password' || type === 'submit' || type === 'button' || type === 'checkbox') return false;
-          if (ph.includes('search') || id.includes('search') || name.includes('search')) return false;
-          return id === 'usernamefield' || id === 'login_email' || ph.includes('email') || ph.includes('username') || name.includes('email') || name.includes('username') || type === 'email';
-        }) || allInputs.find(i => (i.type === 'text' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null);
-
-        let passInp = allInputs.find(i => (i.type || '').toLowerCase() === 'password');
-
-        if (userInp) {
-          userInp.focus();
-          userInp.value = u;
-          userInp.dispatchEvent(new Event('input', { bubbles: true }));
-          userInp.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        if (passInp) {
-          passInp.focus();
-          passInp.value = p;
-          passInp.dispatchEvent(new Event('input', { bubbles: true }));
-          passInp.dispatchEvent(new Event('change', { bubbles: true }));
-        }
-
-        const submitBtn = document.querySelector('button[type="submit"], button.btn-primary, button.loginButton, button.blueBtn, button.login-btn, form button, .login-layer-wrapper button, .drawer-wrapper button[type="submit"]');
-        if (submitBtn && userInp && passInp) {
-          submitBtn.click();
-          return { filled: true, submitted: true };
-        }
-
-        return { filled: !!userInp && !!passInp, submitted: false };
-      }, username, password);
-
-      if (!loginAttemptResult.filled) {
-        // Fallback: search via Puppeteer element handles
-        const userHandle = await page.evaluateHandle(() => {
-          const inputs = Array.from(document.querySelectorAll('input'));
-          return inputs.find(i => (i.type === 'text' || i.type === 'email' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null) || null;
-        });
-        const userEl = userHandle.asElement();
-        if (userEl) {
-          await userEl.click({ clickCount: 3 });
-          await userEl.type(username, { delay: 20 });
-        }
-        const passHandle = await page.evaluateHandle(() => {
-          const inputs = Array.from(document.querySelectorAll('input'));
-          return inputs.find(i => i.type === 'password' && i.offsetParent !== null) || null;
-        });
-        const passEl = passHandle.asElement();
-        if (passEl) {
-          await passEl.click({ clickCount: 3 });
-          await passEl.type(password, { delay: 20 });
-        }
-      }
-
-      await delay(500);
-      await page.keyboard.press('Enter');
-
-      // Submit login form
-      await page.evaluate(() => {
-        const btn = document.querySelector('button[type="submit"], .btn-primary, .loginButton, button.blueBtn');
-        if (btn) btn.click();
-      }).catch(() => {});
-      await page.keyboard.press('Enter');
-
-      // Poll for up to 20 seconds for session authentication, OTP challenge, or login error
-      console.log(`[NAUKRI UPLOADER] Login submitted. Polling for session authentication or OTP challenge...`);
-      let loginSuccess = false;
-      let detectedOtp = false;
-
-      for (let attempt = 0; attempt < 25; attempt++) {
-        await delay(800);
-
-        // 1. Check for on-screen error messages
-        const loginErrorText = await page.evaluate(() => {
-          const el = document.querySelector('.server-err, .err, .error, .login-error, .errMsg, .error-message, .err-msg, [role="alert"]');
-          return el ? el.innerText.trim() : null;
-        }).catch(() => null);
-
-        if (loginErrorText && loginErrorText.length > 0 && !loginErrorText.toLowerCase().includes('otp')) {
-          throw new Error(`Naukri Login Failed: ${loginErrorText}`);
-        }
-
-        // 2. Check for OTP / 2FA challenge screen
-        let curUrl = '';
-        try { curUrl = page.url(); } catch (e) {}
-
-        const hasOtpInput = await page.evaluate(() => {
-          const el = document.querySelector('input[placeholder*="OTP" i], input[placeholder*="verification" i], input[placeholder*="code" i], input[type="tel"]:not(#usernameField), input.otp-input, input[name*="otp" i], input[id*="otp" i], .otpBox, .otp-digit');
-          return !!el;
-        }).catch(() => false);
-
-        if (curUrl.includes('otp') || curUrl.includes('verification') || hasOtpInput) {
-          detectedOtp = true;
-          break;
-        }
-
-        // 3. Check for authenticated session cookies or navigation
-        let cookies = [];
-        try { cookies = await page.cookies(); } catch (e) {}
-        const hasSessionCookie = cookies.some(c =>
-          c.name.includes('nauk_session') ||
-          c.name.includes('ubt_user') ||
-          c.name.includes('isLoggedIn')
-        );
-
-        if (hasSessionCookie || curUrl.includes('mnjuser/profile') || curUrl.includes('mnjuser/homepage') || curUrl.includes('mynaukri') || (!curUrl.includes('nlogin') && !curUrl.includes('login'))) {
-          loginSuccess = true;
-          break;
-        }
-      }
-
-      if (detectedOtp) {
-        console.log(`[NAUKRI UPLOADER] 2FA OTP verification required for user ${userKey}. Keeping browser open for user submission...`);
-        isOtpWaiting = true;
-
-        // Auto-cleanup timer after 5 minutes if OTP is never submitted
-        const timeoutTimer = setTimeout(() => {
-          console.log(`[NAUKRI UPLOADER] OTP session timed out after 5 minutes for user ${userKey}. Closing browser...`);
-          clearActiveOtpSession(userKey);
-        }, 300000);
-
-        activeOtpSessions.set(userKey, {
-          browser,
-          page,
-          userPaths,
-          resumeFileName,
-          uploadPdfPath,
-          startTime,
-          createdAt: Date.now(),
-          timeoutTimer
-        });
-
-        return {
-          status: 'otp_required',
-          requiresOtp: true,
-          message: 'Naukri sent a 6-digit OTP to your registered email/phone. Please enter it below to authorize your session.'
-        };
-      }
-
-      if (!loginSuccess) {
-        let finalUrl = '';
-        try { finalUrl = page.url(); } catch (e) {}
-        if (finalUrl.includes('login') || finalUrl.includes('nlogin')) {
-          throw new Error('Naukri login did not complete (session unauthenticated). If your account uses Google SSO or 2FA, please click the "Paste Session Cookie" button to link your session in 5 seconds without a password.');
-        }
-      }
-
-      const sessionCookies = await page.cookies();
-      fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
-      if (isSupabaseConfigured()) {
-        supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true }).catch(() => {});
-      }
-      console.log(`[NAUKRI UPLOADER] Authentication successful. Session cookies saved for user ${userKey}.`);
     }
 
-    // 6. Perform Resume Upload on Profile Page
-    uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
+    if (overrideOptions.username || overrideOptions.password) {
+      saveNaukriConfig(userKey, {
+        username: username || config.username,
+        password: password || config.password
+      });
+    }
 
-    // 7. In-Browser Easy Apply: Automatically search and apply to 12 jobs during this scheduled slot
-    if (uploadResult && uploadResult.status === 'success' && config.autoApplyOnBoost !== false) {
-      console.log(`[NAUKRI AUTO-APPLY] Profile boosted! Now applying to top ${config.maxJobsPerRun || 12} matching jobs on Naukri...`);
+    const startTime = Date.now();
+    logStructured('ACCOUNT', `Starting resume upload workflow for user "${userKey}"...`);
+
+    // 1. Dynamically Retrieve and Resolve Resume from Database (Zero hardcoding)
+    logStructured('RESUME', `Fetching resume from DB for user "${userKey}"...`);
+    const resolvedResume = await resolveUserResumeFile(userKey);
+    const uploadPdfPath = resolvedResume.filePath;
+    const resumeFileName = resolvedResume.fileName;
+    const candidateName = resolvedResume.candidateName;
+
+    logStructured('RESUME', `File resolved: ${resumeFileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
+
+    // 2. Discover Browser Executable
+    let browserPath = await ensureBrowserInstalled();
+    logStructured('BROWSER', `Launching browser engine (${browserPath || 'Puppeteer default'})...`);
+
+    let browser = null;
+    let uploadResult = null;
+    let isOtpWaiting = false;
+
+    try {
+      const launchOptions = {
+        headless: headless ? 'new' : false,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--disable-gpu',
+          '--disable-blink-features=AutomationControlled',
+          '--window-size=1366,768'
+        ],
+        defaultViewport: { width: 1366, height: 768 }
+      };
+
+      if (browserPath) {
+        launchOptions.executablePath = browserPath;
+      }
+
       try {
-        const { applyToNaukriJobsWithPuppeteer } = require('./naukri_apply.service');
-        const applyReport = await applyToNaukriJobsWithPuppeteer(page, userKey, config);
-        uploadResult.appliedJobsCount = applyReport.appliedCount || 0;
-        uploadResult.appliedJobs = applyReport.appliedJobs || [];
-        uploadResult.message = `${uploadResult.message || 'Profile Refreshed'} & Applied to ${applyReport.appliedCount || 0} Jobs on Naukri`;
-      } catch (applyErr) {
-        console.warn(`[NAUKRI AUTO-APPLY WARNING for ${userKey}]`, applyErr.message);
+        browser = await puppeteer.launch(launchOptions);
+      } catch (launchErr) {
+        if (launchErr.message.includes('Could not find Chrome') || launchErr.message.includes('executablePath')) {
+          console.warn('[NAUKRI UPLOADER] Initial launch failed. Retrying on-demand install...', launchErr.message);
+          browserPath = await ensureBrowserInstalled();
+          if (browserPath) launchOptions.executablePath = browserPath;
+          browser = await puppeteer.launch(launchOptions);
+        } else {
+          throw launchErr;
+        }
+      }
+
+      const pages = await browser.pages();
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+      // Anti-bot stealth
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+      });
+
+      // 3. Restore and Inject Saved Session State
+      await restoreAndInjectNaukriSession(page, userKey);
+
+      // 4. Validate Live Session on Naukri BEFORE Doing Anything
+      let validation = await validateNaukriSessionOnPage(page, userKey);
+
+      if (!validation.isValid) {
+        logStructured('AUTH', `Session validation failed (${validation.reason}) for user "${userKey}"`);
+        if (!username || !password) {
+          const cfg = getNaukriConfig(userKey);
+          cfg.hasSession = false;
+          cfg.sessionStatus = 'EXPIRED';
+          cfg.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
+          cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
+          saveNaukriConfig(userKey, cfg);
+
+          throw new Error(`Naukri session has expired on the server (${validation.reason}). Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.`);
+        }
+
+        logStructured('AUTH', `Attempting automated credentials authentication for user "${userKey}"...`);
+        let currentUrl = page.url();
+        if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
+          await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
+          await delay(2500);
+        }
+
+        // Fill and submit login form
+        const loginAttemptResult = await page.evaluate((u, p) => {
+          const allInputs = Array.from(document.querySelectorAll('input'));
+
+          let userInp = allInputs.find(i => {
+            const type = (i.type || '').toLowerCase();
+            const ph = (i.placeholder || '').toLowerCase();
+            const id = (i.id || '').toLowerCase();
+            const name = (i.name || '').toLowerCase();
+            if (type === 'hidden' || type === 'password' || type === 'submit' || type === 'button' || type === 'checkbox') return false;
+            if (ph.includes('search') || id.includes('search') || name.includes('search')) return false;
+            return id === 'usernamefield' || id === 'login_email' || ph.includes('email') || ph.includes('username') || name.includes('email') || name.includes('username') || type === 'email';
+          }) || allInputs.find(i => (i.type === 'text' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null);
+
+          let passInp = allInputs.find(i => (i.type || '').toLowerCase() === 'password');
+
+          if (userInp) {
+            userInp.focus();
+            userInp.value = u;
+            userInp.dispatchEvent(new Event('input', { bubbles: true }));
+            userInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          if (passInp) {
+            passInp.focus();
+            passInp.value = p;
+            passInp.dispatchEvent(new Event('input', { bubbles: true }));
+            passInp.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+
+          const submitBtn = document.querySelector('button[type="submit"], button.btn-primary, button.loginButton, button.blueBtn, button.login-btn, form button, .login-layer-wrapper button, .drawer-wrapper button[type="submit"]');
+          if (submitBtn && userInp && passInp) {
+            submitBtn.click();
+            return { filled: true, submitted: true };
+          }
+
+          return { filled: !!userInp && !!passInp, submitted: false };
+        }, username, password);
+
+        await delay(500);
+        await page.keyboard.press('Enter');
+
+        // Poll for session authentication or OTP
+        let loginSuccess = false;
+        let detectedOtp = false;
+
+        for (let attempt = 0; attempt < 25; attempt++) {
+          await delay(800);
+
+          const loginErrorText = await page.evaluate(() => {
+            const el = document.querySelector('.server-err, .err, .error, .login-error, .errMsg, .error-message, .err-msg, [role="alert"]');
+            return el ? el.innerText.trim() : null;
+          }).catch(() => null);
+
+          if (loginErrorText && loginErrorText.length > 0 && !loginErrorText.toLowerCase().includes('otp')) {
+            throw new Error(`Naukri Login Failed: ${loginErrorText}`);
+          }
+
+          let curUrl = '';
+          try { curUrl = page.url(); } catch (e) {}
+
+          const hasOtpInput = await page.evaluate(() => {
+            const el = document.querySelector('input[placeholder*="OTP" i], input[placeholder*="verification" i], input[placeholder*="code" i], input[type="tel"]:not(#usernameField), input.otp-input, input[name*="otp" i], input[id*="otp" i], .otpBox, .otp-digit');
+            return !!el;
+          }).catch(() => false);
+
+          if (curUrl.includes('otp') || curUrl.includes('verification') || hasOtpInput) {
+            detectedOtp = true;
+            break;
+          }
+
+          let cookies = [];
+          try { cookies = await page.cookies(); } catch (e) {}
+          const hasSessionCookie = cookies.some(c =>
+            c.name.includes('nauk_session') ||
+            c.name.includes('ubt_user') ||
+            c.name.includes('isLoggedIn')
+          );
+
+          if (hasSessionCookie || curUrl.includes('mnjuser/profile') || curUrl.includes('mnjuser/homepage') || curUrl.includes('mynaukri') || (!curUrl.includes('nlogin') && !curUrl.includes('login'))) {
+            loginSuccess = true;
+            break;
+          }
+        }
+
+        if (detectedOtp) {
+          logStructured('AUTH', `2FA OTP verification required for user ${userKey}. Keeping browser open for user submission...`);
+          isOtpWaiting = true;
+
+          const timeoutTimer = setTimeout(() => {
+            logStructured('AUTH', `OTP session timed out after 5 minutes for user ${userKey}. Closing browser...`);
+            clearActiveOtpSession(userKey);
+          }, 300000);
+
+          activeOtpSessions.set(userKey, {
+            browser,
+            page,
+            userPaths,
+            resumeFileName,
+            uploadPdfPath,
+            startTime,
+            createdAt: Date.now(),
+            timeoutTimer
+          });
+
+          return {
+            status: 'otp_required',
+            requiresOtp: true,
+            message: 'Naukri sent a 6-digit OTP to your registered email/phone. Please enter it below to authorize your session.'
+          };
+        }
+
+        if (!loginSuccess) {
+          let finalUrl = '';
+          try { finalUrl = page.url(); } catch (e) {}
+          if (finalUrl.includes('login') || finalUrl.includes('nlogin')) {
+            throw new Error('Naukri login did not complete (session unauthenticated). If your account uses Google SSO or 2FA, please click the "Paste Session Cookie" button to link your session in 5 seconds without a password.');
+          }
+        }
+
+        const sessionCookies = await page.cookies();
+        fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
+        if (isSupabaseConfigured()) {
+          supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true, sessionStatus: 'ACTIVE', lastVerifiedAt: new Date().toISOString() }).catch(() => {});
+        }
+        logStructured('AUTH', `Authentication successful. Session cookies saved for user ${userKey}.`);
+      }
+
+      // 6. Perform Resume Upload on Profile Page
+      uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
+
+      // 7. In-Browser Easy Apply: Automatically search and apply to 12 jobs during this scheduled slot
+      if (uploadResult && uploadResult.status === 'success' && config.autoApplyOnBoost !== false) {
+        logStructured('APPLY', `Profile boosted! Now discovering and applying to top ${config.maxJobsPerRun || 12} diverse Easy Apply jobs on Naukri...`);
+        try {
+          const { applyToNaukriJobsWithPuppeteer } = require('./naukri_apply.service');
+          const applyReport = await applyToNaukriJobsWithPuppeteer(page, userKey, config);
+          uploadResult.appliedJobsCount = applyReport.appliedCount || 0;
+          uploadResult.appliedJobs = applyReport.appliedJobs || [];
+          uploadResult.message = `${uploadResult.message || 'Profile Refreshed'} & Applied to ${applyReport.appliedCount || 0} Jobs on Naukri`;
+        } catch (applyErr) {
+          console.warn(`[NAUKRI AUTO-APPLY WARNING for ${userKey}]`, applyErr.message);
+        }
+      }
+
+    } catch (err) {
+      logStructured('ERROR', `Automation workflow error for user "${userKey}": ${err.message}`);
+      const durationSec = Math.round((Date.now() - startTime) / 1000);
+      const isAuthError = err.message.toLowerCase().includes('unauthenticated') ||
+                          err.message.toLowerCase().includes('session has expired') ||
+                          err.message.toLowerCase().includes('access denied') ||
+                          err.message.toLowerCase().includes('login');
+
+      uploadResult = {
+        status: 'error',
+        error: err.message,
+        failureStage: isAuthError ? 'Authentication Required' : 'Execution Error',
+        duration: `${durationSec}s`,
+        timestamp: new Date().toISOString()
+      };
+
+      if (isAuthError) {
+        config.hasSession = false;
+        config.sessionStatus = 'EXPIRED';
+        config.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
+        config.lastError = err.message;
+        config.nextUploadAt = calculateNextUploadTime(config).toISOString();
+      } else {
+        config.lastStatus = 'Failed';
+        config.lastError = err.message;
+        config.nextUploadAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      }
+      saveNaukriConfig(userKey, config);
+
+      appendNaukriHistory(userKey, {
+        status: isAuthError ? 'SESSION_EXPIRED' : 'failed',
+        error: err.message,
+        profileStatus: isAuthError ? 'Session Expired - Re-authentication Required' : 'Upload Failed',
+        duration: `${durationSec}s`
+      });
+
+      throw err;
+    } finally {
+      if (browser && !isOtpWaiting) {
+        try { await browser.close(); } catch (e) {}
       }
     }
 
-  } catch (err) {
-    console.error(`[NAUKRI UPLOADER ERROR for ${userKey}]`, err.message);
-    const durationSec = Math.round((Date.now() - startTime) / 1000);
-    const isAuthError = err.message.toLowerCase().includes('unauthenticated') ||
-                        err.message.toLowerCase().includes('session has expired') ||
-                        err.message.toLowerCase().includes('access denied') ||
-                        err.message.toLowerCase().includes('login');
-
-    uploadResult = {
-      status: 'error',
-      error: err.message,
-      failureStage: isAuthError ? 'Authentication Required' : 'Execution Error',
-      duration: `${durationSec}s`,
-      timestamp: new Date().toISOString()
-    };
-
-    if (isAuthError) {
-      config.hasSession = false;
-      config.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
-      config.lastError = err.message;
-      // Normal schedule rather than 15-min spam loop
-      config.nextUploadAt = calculateNextUploadTime(config).toISOString();
-    } else {
-      config.lastStatus = 'Failed';
-      config.lastError = err.message;
-      config.nextUploadAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Retry in 30m for transient network errors
-    }
-    saveNaukriConfig(userKey, config);
-
-    appendNaukriHistory(userKey, {
-      status: 'failed',
-      error: err.message,
-      profileStatus: isAuthError ? 'Session Expired - Re-authentication Required' : 'Upload Failed',
-      duration: `${durationSec}s`
-    });
-
-    throw err;
+    return uploadResult;
   } finally {
-    // Only close browser if NOT currently waiting for user 2FA OTP submission
-    if (browser && !isOtpWaiting) {
-      try { await browser.close(); } catch (e) {}
-    }
+    releaseUserLock(userKey);
   }
-
-  return uploadResult;
 }
 
 /**
@@ -1602,7 +1837,7 @@ let naukriSchedulerTimer = null;
 function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
 
-  console.log('[NAUKRI SCHEDULER] ⏰ Initialized 24/7 automated uploader ticker across all active user accounts in database.');
+  logStructured('SCHEDULER', 'Initialized 24/7 automated uploader ticker across all active user accounts in database.');
 
   naukriSchedulerTimer = setInterval(async () => {
     try {
@@ -1626,16 +1861,13 @@ async function verifyNaukriOtp(userKey, otpCode) {
   const { browser, page, uploadPdfPath, resumeFileName, startTime } = session;
 
   try {
-    console.log(`[NAUKRI UPLOADER] Submitting 2FA OTP (${otpCode}) for user ${userKey}...`);
+    logStructured('AUTH', `Submitting 2FA OTP for user ${userKey}...`);
 
-    // 1. Wait for any OTP input elements to appear on screen
     try {
       await page.waitForSelector('input[maxlength="1"], input.otpBox, input.otp-digit, input[placeholder*="OTP" i], input[placeholder*="verification" i], input[name*="otp" i], input[id*="otp" i], input[type="tel"]:not(#usernameField)', { timeout: 15000 });
     } catch (e) {}
 
-    // 2. Locate and fill OTP input safely inside the browser context
     const fillResult = await page.evaluate((code) => {
-      // Strategy A: 6 individual digit boxes
       const digitBoxes = Array.from(document.querySelectorAll('input[maxlength="1"], .otp-digit, input.otpBox, input.digit-input, input[id*="otp" i][maxlength="1"], .otp-input input'));
       if (digitBoxes.length >= 6) {
         const chars = code.split('');
@@ -1650,7 +1882,6 @@ async function verifyNaukriOtp(userKey, otpCode) {
         return 'boxes';
       }
 
-      // Strategy B: Dedicated single OTP text/tel field
       const otpInput = document.querySelector('input[placeholder*="OTP" i], input[placeholder*="verification" i], input[placeholder*="code" i], input[name*="otp" i], input[id*="otp" i], input.otp-input, input[type="tel"]:not(#usernameField), input.otpField, input[data-test*="otp" i]');
       if (otpInput) {
         otpInput.focus();
@@ -1660,27 +1891,9 @@ async function verifyNaukriOtp(userKey, otpCode) {
         return 'single';
       }
 
-      // Strategy C: query any visible text input not username or password
-      const anyInput = Array.from(document.querySelectorAll('input')).find(i => {
-        const id = (i.id || '').toLowerCase();
-        const name = (i.name || '').toLowerCase();
-        const type = (i.type || '').toLowerCase();
-        return !id.includes('username') && !id.includes('password') && !name.includes('username') && !name.includes('password') && (type === 'text' || type === 'tel' || type === 'number');
-      });
-      if (anyInput) {
-        anyInput.focus();
-        anyInput.value = code;
-        anyInput.dispatchEvent(new Event('input', { bubbles: true }));
-        anyInput.dispatchEvent(new Event('change', { bubbles: true }));
-        return 'any';
-      }
-
       return null;
     }, otpCode).catch(() => null);
 
-    console.log(`[NAUKRI UPLOADER] OTP form filled via strategy: ${fillResult || 'fallback'}`);
-
-    // If evaluate didn't find elements, try typing via Puppeteer keyboard
     if (!fillResult) {
       try {
         const input = await page.$('input[placeholder*="OTP" i], input[type="tel"], input.otp-input, input[name="otp"], input[id*="otp" i]');
@@ -1691,7 +1904,6 @@ async function verifyNaukriOtp(userKey, otpCode) {
       } catch (e) {}
     }
 
-    // 3. Submit OTP (Press Enter and Click Verify Button inside evaluate)
     await page.keyboard.press('Enter');
     await delay(600);
 
@@ -1708,15 +1920,12 @@ async function verifyNaukriOtp(userKey, otpCode) {
       if (submitBtn) submitBtn.click();
     }).catch(() => {});
 
-    // 4. Dynamically poll for authentication success or error message
-    console.log('[NAUKRI UPLOADER] Verifying OTP response and waiting for authentication...');
     let isAuthenticated = false;
     let failureReason = null;
 
     for (let attempt = 0; attempt < 24; attempt++) {
       await delay(600);
 
-      // Check for on-screen OTP error elements safely inside page context
       const errText = await page.evaluate(() => {
         const el = document.querySelector('.server-err, .err, .error, .login-error, .errMsg, .error-msg, .otp-error, [role="alert"], .err-msg, .error-message');
         return el ? el.innerText.trim() : null;
@@ -1751,22 +1960,16 @@ async function verifyNaukriOtp(userKey, otpCode) {
     }
 
     if (!isAuthenticated) {
-      // Check if still stuck on login or OTP page
       const currentUrl = page.url();
       if (currentUrl.includes('login') || currentUrl.includes('otp')) {
         throw new Error('Naukri did not accept the OTP. Please verify the 6-digit code and try again.');
       }
     }
 
-    console.log(`[NAUKRI UPLOADER] OTP verified successfully for user ${userKey}!`);
+    logStructured('AUTH', `OTP verified successfully for user ${userKey}!`);
 
-    // 5. Auto-dismiss interstitial modals (e.g. "Verify Mobile", "Skip", etc.)
     await dismissNaukriPopups(page);
-
-    // 6. Perform the resume upload
     const uploadResult = await performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, userKey, startTime);
-
-    // 7. Clean up OTP session and close browser
     clearActiveOtpSession(userKey);
 
     return {
@@ -1791,7 +1994,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
   const results = [];
   const cronStartTime = Date.now();
 
-  console.log(`[NAUKRI CRON TRIGGER] 🚀 Starting 24/7 Naukri Cron Execution (force: ${force}, targetUserKey: ${targetUserKey || 'ALL'})...`);
+  logStructured('CRON', `Starting 24/7 Naukri Cron Execution (force: ${force}, targetUserKey: ${targetUserKey || 'ALL'})...`);
 
   // 1. Discover all candidate users dynamically from Supabase database and local sandboxes
   let targetUsers = [];
@@ -1825,23 +2028,26 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
     targetUsers = Array.from(userKeySet);
   }
 
-  console.log(`[NAUKRI CRON TRIGGER] 📋 Identified ${targetUsers.length} user account(s) to evaluate: [${targetUsers.join(', ')}]`);
+  logStructured('CRON', `Identified ${targetUsers.length} user account(s) to evaluate: [${targetUsers.join(', ')}]`);
 
   for (const userKey of targetUsers) {
-    console.log(`[NAUKRI CRON TRIGGER] ⚙️ Evaluating user account: "${userKey}"...`);
+    logStructured('ACCOUNT', `Evaluating user account: "${userKey}"...`);
     try {
-      // Ensure user sandbox is hydrated from database if available
+      if (isUserLocked(userKey)) {
+        logStructured('LOCK', `Skipped "${userKey}": Account is locked by an ongoing automation process.`);
+        results.push({ userKey, skipped: true, reason: 'Account locked by ongoing process' });
+        continue;
+      }
+
       if (isSupabaseConfigured()) {
         try {
           await hydrateUserSandboxFromDatabase(userKey);
-        } catch (e) {
-          console.warn(`[NAUKRI CRON TRIGGER] Hydration notice for ${userKey}:`, e.message);
-        }
+        } catch (e) {}
       }
 
       const config = getNaukriConfig(userKey);
       if (!config.enabled && !force) {
-        console.log(`[NAUKRI CRON TRIGGER] ⏭️ Skipped "${userKey}": Scheduler disabled in config.`);
+        logStructured('CRON', `Skipped "${userKey}": Scheduler disabled in config.`);
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
         continue;
       }
@@ -1849,7 +2055,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       const paths = getUserPaths(userKey);
       const hasSession = fs.existsSync(paths.naukriSessionPath) || Boolean(config.username) || Boolean(config.hasSession);
       if (!hasSession && !force) {
-        console.log(`[NAUKRI CRON TRIGGER] ⏭️ Skipped "${userKey}": No active session or credentials found.`);
+        logStructured('CRON', `Skipped "${userKey}": No active session or credentials found.`);
         results.push({ userKey, skipped: true, reason: 'No active session or credentials found' });
         continue;
       }
@@ -1857,16 +2063,15 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       const now = new Date();
       const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
 
-      // Execute if forced, if time passed, or within 15 mins window of the slot
       const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 15 * 60 * 1000);
 
       if (force || isDue) {
-        console.log(`[NAUKRI CRON TRIGGER] ▶️ Executing auto-upload workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
+        logStructured('CRON', `Executing slot workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
         const uploadResult = await uploadResumeToNaukri(userKey);
         const updatedConfig = getNaukriConfig(userKey);
         const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
 
-        console.log(`[NAUKRI CRON TRIGGER] ✅ Auto-upload completed successfully for user "${userKey}" (File: ${uploadedFileName})!`);
+        logStructured('CRON', `Auto-upload and Easy Apply completed successfully for user "${userKey}" (File: ${uploadedFileName})`);
         results.push({
           userKey,
           status: 'success',
@@ -1875,7 +2080,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
           nextUploadAt: updatedConfig.nextUploadAt
         });
       } else {
-        console.log(`[NAUKRI CRON TRIGGER] ⏳ Skipped "${userKey}": Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`);
+        logStructured('CRON', `Skipped "${userKey}": Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`);
         results.push({
           userKey,
           skipped: true,
@@ -1884,7 +2089,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
         });
       }
     } catch (err) {
-      console.error(`[NAUKRI CRON TRIGGER ERROR for user "${userKey}"]`, err.message);
+      logStructured('ERROR', `Cron error for user "${userKey}": ${err.message}`);
       results.push({
         userKey,
         status: 'error',
@@ -1893,8 +2098,9 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
     }
   }
 
-  console.log(
-    `[NAUKRI CRON TRIGGER] 🏁 Cron run finished in ${Date.now() - cronStartTime}ms. ` +
+  logStructured(
+    'CRON',
+    `Cron run finished in ${Date.now() - cronStartTime}ms. ` +
     `Summary: ${results.filter(r => r.status === 'success').length} succeeded, ` +
     `${results.filter(r => r.skipped).length} skipped, ` +
     `${results.filter(r => r.status === 'error').length} failed.`
@@ -1907,12 +2113,14 @@ module.exports = {
   getNextQuarterDayTime,
   calculateNextUploadTime,
   findBrowserExecutable,
+  ensureBrowserInstalled,
   hasValidNaukriSession,
   getNaukriSessionCookies,
   saveNaukriSessionCookies,
   clearNaukriSession,
   restoreAndInjectNaukriSession,
   validateNaukriSessionOnPage,
+  validateNaukriSession,
   getNaukriConfig,
   saveNaukriConfig,
   getNaukriHistory,
@@ -1922,5 +2130,12 @@ module.exports = {
   uploadResumeToNaukri,
   verifyNaukriOtp,
   initNaukriScheduler,
-  triggerNaukriUploadForActiveUsers
+  triggerNaukriUploadForActiveUsers,
+  acquireUserLock,
+  acquireUserLockAsync,
+  releaseUserLock,
+  releaseUserLockAsync,
+  isUserLocked,
+  isUserLockedAsync,
+  logStructured
 };

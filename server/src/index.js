@@ -16,7 +16,7 @@ const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } =
 const { harvestRecruiterPosts, scrapeLinkedInJobPost, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
 const { verifyEmailDeliverability } = require('./services/email_verifier.service');
 const { scanGmailBounces, getBouncedEmails, clearBounces } = require('./services/bounce.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler, triggerNaukriUploadForActiveUsers } = require('./services/naukri.service');
+const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler, triggerNaukriUploadForActiveUsers, validateNaukriSession } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -886,13 +886,13 @@ app.get('/api/naukri/config', async (req, res) => {
       await hydrateUserSandboxFromDatabase(userKey);
     }
   }
-  res.json({ config: getNaukriConfig(userKey) });
+  res.json({ config: maskSensitiveConfig(getNaukriConfig(userKey)) });
 });
 
 app.post('/api/naukri/config', (req, res) => {
   const userKey = resolveUserKey(req, res);
   const updated = saveNaukriConfig(userKey, req.body || {});
-  res.json({ success: true, config: updated });
+  res.json({ success: true, config: maskSensitiveConfig(updated) });
 });
 
 app.get('/api/naukri/history', (req, res) => {
@@ -1111,6 +1111,49 @@ app.get('/api/naukri/session/cookies', async (req, res) => {
   });
 });
 
+// Mask sensitive config before sending to frontend
+function maskSensitiveConfig(conf) {
+  if (!conf) return {};
+  const masked = { ...conf };
+  if (masked.password) masked.password = '••••••••';
+  if (Array.isArray(masked.sessionCookies)) {
+    masked.sessionCookies = masked.sessionCookies.map(c => ({
+      name: c.name,
+      domain: c.domain,
+      path: c.path,
+      expires: c.expires,
+      httpOnly: c.httpOnly,
+      secure: c.secure,
+      sameSite: c.sameSite,
+      hasValue: Boolean(c.value)
+    }));
+  }
+  return masked;
+}
+
+app.get('/api/naukri/session', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const cookies = getNaukriSessionCookies(userKey);
+  const sanitizedCookies = (cookies || []).map(c => ({
+    name: c.name,
+    domain: c.domain,
+    path: c.path,
+    expires: c.expires,
+    httpOnly: c.httpOnly,
+    secure: c.secure,
+    sameSite: c.sameSite,
+    hasValue: Boolean(c.value)
+  }));
+
+  res.json({
+    success: true,
+    hasSession: Array.isArray(cookies) && cookies.length > 0,
+    cookieCount: Array.isArray(cookies) ? cookies.length : 0,
+    cookies: sanitizedCookies,
+    storedInDb: isSupabaseConfigured()
+  });
+});
+
 app.post('/api/naukri/import-session', (req, res) => {
   const userKey = resolveUserKey(req, res);
   const { cookies } = req.body;
@@ -1132,6 +1175,39 @@ app.post('/api/naukri/clear-session', (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+app.all('/api/naukri/session/validate', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const result = await validateNaukriSession(userKey);
+    res.json({ success: true, ...result, config: maskSensitiveConfig(getNaukriConfig(userKey)) });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message, config: maskSensitiveConfig(getNaukriConfig(userKey)) });
+  }
+});
+
+app.post('/api/naukri/apply/resume-job', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { jobId, answer, pendingId } = req.body;
+  try {
+    if (pendingId && answer) {
+      await resolvePendingQuestionAsync(userKey, pendingId, answer);
+    }
+    if (jobId) {
+      updateQueueItemState(userKey, jobId, {
+        state: 'READY_TO_RESUME',
+        stage: 'Ready to Resume Execution'
+      });
+    }
+    res.json({
+      success: true,
+      message: `Application for ${jobId || 'job'} is now marked READY_TO_RESUME.`,
+      queue: getNaukriQueue(userKey)
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

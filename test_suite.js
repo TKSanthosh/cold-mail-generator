@@ -561,6 +561,101 @@ Santhosh T K
     assert(false, `Test 21 threw error: ${e.message}`);
   }
 
+  // TEST 22: Naukri Distributed Concurrency Lock Manager
+  try {
+    const { acquireUserLock, releaseUserLock, isUserLocked } = require('./server/src/services/naukri.service');
+    assert(typeof acquireUserLock === 'function', 'naukri.service exports acquireUserLock');
+    assert(typeof releaseUserLock === 'function', 'naukri.service exports releaseUserLock');
+    assert(typeof isUserLocked === 'function', 'naukri.service exports isUserLocked');
+
+    const testLockUser = 'test_lock_user_123';
+    releaseUserLock(testLockUser);
+    assert(isUserLocked(testLockUser) === false, 'Fresh user is initially unlocked');
+
+    const acquired1 = acquireUserLock(testLockUser, 'worker_1');
+    assert(acquired1 === true, 'First worker successfully acquired lock');
+    assert(isUserLocked(testLockUser) === true, 'User is now locked');
+
+    const acquired2 = acquireUserLock(testLockUser, 'worker_2');
+    assert(acquired2 === false, 'Concurrent worker was blocked from acquiring lock');
+
+    releaseUserLock(testLockUser);
+    assert(isUserLocked(testLockUser) === false, 'Lock was released cleanly');
+  } catch (e) {
+    assert(false, `Test 22 threw error: ${e.message}`);
+  }
+
+  // TEST 23: Company Diversity Interleaving & Anti-Monopolization
+  try {
+    const { buildDiverseApplicationQueue, ApplicationState } = require('./server/src/services/naukri_apply.service');
+    assert(typeof buildDiverseApplicationQueue === 'function', 'naukri_apply.service exports buildDiverseApplicationQueue');
+
+    const sampleDiscovered = [
+      { title: 'Full Stack Developer', company: 'Company A', url: 'https://naukri.com/job-a1', jobId: 'job_a1', location: 'Bangalore', exp: '3-5 Yrs' },
+      { title: 'Backend Developer', company: 'Company A', url: 'https://naukri.com/job-a2', jobId: 'job_a2', location: 'Bangalore', exp: '3-5 Yrs' },
+      { title: 'Frontend Developer', company: 'Company A', url: 'https://naukri.com/job-a3', jobId: 'job_a3', location: 'Bangalore', exp: '3-5 Yrs' },
+      { title: 'Full Stack Developer', company: 'Company B', url: 'https://naukri.com/job-b1', jobId: 'job_b1', location: 'Bangalore', exp: '3-5 Yrs' },
+      { title: 'Full Stack Developer', company: 'Company C', url: 'https://naukri.com/job-c1', jobId: 'job_c1', location: 'Bangalore', exp: '3-5 Yrs' },
+      { title: 'Software Engineer', company: 'Company D', url: 'https://naukri.com/job-d1', jobId: 'job_d1', location: 'Bangalore', exp: '3-5 Yrs' }
+    ];
+
+    const filterConfig = {
+      maxJobsPerCompanyPerRun: 2,
+      minRelevanceScore: 30,
+      jobTitles: ['Full Stack Developer', 'Backend Developer', 'Frontend Developer', 'Software Engineer']
+    };
+
+    const queue = buildDiverseApplicationQueue(sampleDiscovered, filterConfig, new Set());
+    assert(Array.isArray(queue) && queue.length > 0, 'Built application queue');
+
+    // Count per company
+    const counts = {};
+    queue.forEach(q => {
+      counts[q.company] = (counts[q.company] || 0) + 1;
+    });
+
+    assert((counts['Company A'] || 0) <= 2, `Company A capped at maxJobsPerCompanyPerRun=2 (Actual: ${counts['Company A']})`);
+    assert(queue[0].company !== queue[1].company, 'Consecutive jobs are round-robin interleaved across diverse companies');
+    assert(queue.every(q => q.state === ApplicationState.QUEUED), 'All newly queued jobs are in QUEUED state');
+  } catch (e) {
+    assert(false, `Test 23 threw error: ${e.message}`);
+  }
+
+  // TEST 24: Zero-Hallucination Guard & Mandatory Question Pausing
+  try {
+    const { findBestAnswer, resolveAnswerWithOptionMapping } = require('./server/src/services/naukri_apply.service');
+
+    // Known question -> high confidence
+    const knownMatch = findBestAnswer('tksanthosh494_gmail_com', 'What is your total years of work experience?');
+    assert(knownMatch && knownMatch.confidence >= 80, 'Known experience question matched with confidence >= 80%');
+
+    // Completely unknown question -> returns null (strict zero hallucination)
+    const unknownMatch = findBestAnswer('tksanthosh494_gmail_com', 'What is your security clearance level for government aerospace projects in Germany?');
+    assert(unknownMatch === null, 'Unknown screening question returns null without fabricating answers');
+
+    // Option mapping test
+    const mapped = resolveAnswerWithOptionMapping('15', { answer: '15' }, 90, ['Immediate / Less than 15 days', '15 to 30 days', 'More than 30 days']);
+    assert(mapped && mapped.answer.includes('15'), 'Mapped numeric answer to closest dropdown option');
+  } catch (e) {
+    assert(false, `Test 24 threw error: ${e.message}`);
+  }
+
+  // TEST 25: Application State Machine & Daily Target Stats (Only Verified SUBMITTED Count)
+  try {
+    const { getTodayAppliedStats, ApplicationState } = require('./server/src/services/naukri_apply.service');
+    assert(ApplicationState.QUEUED === 'QUEUED', 'ApplicationState contains QUEUED');
+    assert(ApplicationState.WAITING_FOR_USER === 'WAITING_FOR_USER', 'ApplicationState contains WAITING_FOR_USER');
+    assert(ApplicationState.READY_TO_SUBMIT === 'READY_TO_SUBMIT', 'ApplicationState contains READY_TO_SUBMIT');
+    assert(ApplicationState.SUBMITTED === 'SUBMITTED', 'ApplicationState contains SUBMITTED');
+
+    const stats = getTodayAppliedStats('tksanthosh494_gmail_com');
+    assert(typeof stats.todayCount === 'number', 'todayStats returns numeric todayCount');
+    assert(typeof stats.remainingTarget === 'number', 'todayStats calculates remaining target');
+    assert(typeof stats.percentComplete === 'number', 'todayStats calculates percentComplete');
+  } catch (e) {
+    assert(false, `Test 25 threw error: ${e.message}`);
+  }
+
   console.log(`\n--- TEST SUITE SUMMARY: ${failedTests === 0 ? 'ALL TESTS PASSED ✅' : `${failedTests} FAILURES ❌`} ---`);
   if (failedTests > 0) process.exit(1);
 }

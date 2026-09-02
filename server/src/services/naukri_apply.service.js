@@ -8,7 +8,17 @@ try {
 }
 const { getUserPaths, ensureUserSandbox, addUserLog } = require('./user.service');
 const { resolveUserResumeFile } = require('./resume.service');
-const { isSupabaseConfigured, supabaseSaveNaukriConfig, supabaseGetQaDatabase, supabaseSaveQaDatabase } = require('./supabase.service');
+const {
+  isSupabaseConfigured,
+  supabaseSaveNaukriConfig,
+  supabaseGetNaukriConfig,
+  supabaseGetQaDatabase,
+  supabaseSaveQaDatabase,
+  supabaseGetNaukriQueue,
+  supabaseSaveNaukriQueue,
+  supabaseGetNaukriAppliedJobs,
+  supabaseSaveNaukriAppliedJobs
+} = require('./supabase.service');
 
 // Default initial Q&A knowledge base
 const DEFAULT_QA_ITEMS = [
@@ -61,14 +71,22 @@ const DEFAULT_FILTER_CONFIG = {
 const ApplicationState = {
   DISCOVERED: 'DISCOVERED',
   ELIGIBLE: 'ELIGIBLE',
+  QUEUED: 'QUEUED',
   STARTED: 'STARTED',
-  FORM_DETECTED: 'FORM_DETECTED',
-  AUTO_FILLED: 'AUTO_FILLED',
-  WAITING_FOR_USER_ANSWER: 'WAITING_FOR_USER_ANSWER',
+  FORM_OPENED: 'FORM_OPENED',
+  FILLING: 'FILLING',
+  WAITING_FOR_USER: 'WAITING_FOR_USER',
+  READY_TO_RESUME: 'READY_TO_RESUME',
   READY_TO_SUBMIT: 'READY_TO_SUBMIT',
+  SUBMITTING: 'SUBMITTING',
   SUBMITTED: 'SUBMITTED',
   FAILED: 'FAILED',
-  SKIPPED: 'SKIPPED'
+  SKIPPED: 'SKIPPED',
+  EXPIRED: 'EXPIRED',
+  // Backward compatibility aliases
+  FORM_DETECTED: 'FORM_OPENED',
+  AUTO_FILLED: 'FILLING',
+  WAITING_FOR_USER_ANSWER: 'WAITING_FOR_USER'
 };
 
 function getQaFilePath(userKey) {
@@ -566,8 +584,23 @@ function resolvePendingQuestion(userKey, pendingId, answer) {
 }
 
 /**
- * Application Queue (State Machine & Crash Recovery)
+ * Application Queue (Database-First State Machine & Crash Recovery)
  */
+async function getNaukriQueueAsync(userKey) {
+  if (isSupabaseConfigured() && userKey) {
+    try {
+      const dbQueue = await supabaseGetNaukriQueue(userKey);
+      if (Array.isArray(dbQueue)) {
+        ensureUserSandbox(userKey);
+        const filePath = getQueueFilePath(userKey);
+        try { fs.writeFileSync(filePath, JSON.stringify(dbQueue, null, 2), 'utf8'); } catch (e) {}
+        return dbQueue;
+      }
+    } catch (e) {}
+  }
+  return getNaukriQueue(userKey);
+}
+
 function getNaukriQueue(userKey) {
   const filePath = getQueueFilePath(userKey);
   if (fs.existsSync(filePath)) {
@@ -578,6 +611,18 @@ function getNaukriQueue(userKey) {
   return [];
 }
 
+async function saveNaukriQueueAsync(userKey, queue) {
+  ensureUserSandbox(userKey);
+  const filePath = getQueueFilePath(userKey);
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(queue.slice(0, 500), null, 2), 'utf8');
+  } catch (e) {}
+  if (isSupabaseConfigured()) {
+    await supabaseSaveNaukriQueue(userKey, queue.slice(0, 500));
+  }
+  return queue;
+}
+
 function saveNaukriQueue(userKey, queue) {
   ensureUserSandbox(userKey);
   const filePath = getQueueFilePath(userKey);
@@ -585,7 +630,7 @@ function saveNaukriQueue(userKey, queue) {
     fs.writeFileSync(filePath, JSON.stringify(queue.slice(0, 500), null, 2), 'utf8');
   } catch (e) {}
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, { applicationQueue: queue.slice(0, 500) }).catch(() => {});
+    supabaseSaveNaukriQueue(userKey, queue.slice(0, 500)).catch(() => {});
   }
 }
 
@@ -610,8 +655,23 @@ function clearNaukriQueue(userKey) {
 }
 
 /**
- * Applied Jobs History Logger
+ * Applied Jobs History Logger (Database-First)
  */
+async function getNaukriAppliedJobsAsync(userKey) {
+  if (isSupabaseConfigured() && userKey) {
+    try {
+      const dbApps = await supabaseGetNaukriAppliedJobs(userKey);
+      if (Array.isArray(dbApps)) {
+        ensureUserSandbox(userKey);
+        const filePath = getNaukriAppsFilePath(userKey);
+        try { fs.writeFileSync(filePath, JSON.stringify(dbApps, null, 2), 'utf8'); } catch (e) {}
+        return dbApps;
+      }
+    } catch (e) {}
+  }
+  return getNaukriAppliedJobs(userKey);
+}
+
 function getNaukriAppliedJobs(userKey) {
   const filePath = getNaukriAppsFilePath(userKey);
   if (fs.existsSync(filePath)) {
@@ -635,7 +695,7 @@ function logNaukriAppliedJob(userKey, jobData) {
     location: jobData.location || 'Bangalore / Remote',
     experience: jobData.experience || '3-6 Yrs',
     appliedAt: jobData.appliedAt || new Date().toISOString(),
-    status: jobData.status || 'Applied (Naukri Easy Apply)',
+    status: jobData.status || 'Applied (Naukri Easy Apply - Confirmed)',
     failureStage: jobData.failureStage || null,
     resumeUsed: jobData.resumeUsed || 'candidate_resume.pdf',
     questionsAnsweredCount: jobData.questionsAnsweredCount || 0,
@@ -649,12 +709,17 @@ function logNaukriAppliedJob(userKey, jobData) {
     fs.writeFileSync(filePath, JSON.stringify(current.slice(0, 300), null, 2), 'utf8');
   } catch (e) {}
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, { appliedJobs: current.slice(0, 300) }).catch(() => {});
+    supabaseSaveNaukriAppliedJobs(userKey, current.slice(0, 300)).catch(() => {});
   }
 
   return record;
 }
 
+/**
+ * Strict Daily Target & Applications Metric Calculator
+ * Counts ONLY confirmed SUBMITTED applications today.
+ * Does not count WAITING, FAILED, SKIPPED, or UNCONFIRMED submissions.
+ */
 function getTodayAppliedStats(userKey) {
   const allApps = getNaukriAppliedJobs(userKey);
   const queue = getNaukriQueue(userKey);
@@ -663,21 +728,32 @@ function getTodayAppliedStats(userKey) {
 
   const todayStr = new Date().toISOString().split('T')[0];
   const todayApps = allApps.filter(a => (a.appliedAt || '').startsWith(todayStr));
-  const successfulToday = todayApps.filter(a => !a.status.toLowerCase().includes('failed') && !a.status.toLowerCase().includes('skipped'));
-  const failedToday = todayApps.filter(a => a.status.toLowerCase().includes('failed'));
-  const skippedToday = todayApps.filter(a => a.status.toLowerCase().includes('skipped'));
+
+  // Strict Definition: Count ONLY confirmed SUBMITTED applications today
+  const submittedToday = todayApps.filter(a =>
+    a.status === 'Applied (Naukri Easy Apply - Confirmed)' ||
+    a.status === 'SUBMITTED' ||
+    a.status === 'Applied (Naukri Easy Apply)'
+  );
+  const failedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('failed'));
+  const skippedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('skipped'));
+  const unconfirmedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('unconfirmed'));
+  const waitingForUserQueue = queue.filter(q => q.state === ApplicationState.WAITING_FOR_USER);
 
   const dailyTarget = config.dailyTarget || 50;
+  const submittedCount = submittedToday.length;
 
   return {
-    todayCount: successfulToday.length,
+    todayCount: submittedCount,
+    submittedCount,
     dailyTarget,
-    remainingTarget: Math.max(0, dailyTarget - successfulToday.length),
-    percentComplete: Math.min(100, Math.round((successfulToday.length / dailyTarget) * 100)),
+    remainingTarget: Math.max(0, dailyTarget - submittedCount),
+    percentComplete: Math.min(100, Math.round((submittedCount / dailyTarget) * 100)),
     discoveredCount: queue.length,
-    waitingForInputCount: pending.length,
+    waitingForInputCount: pending.length > 0 ? pending.length : waitingForUserQueue.length,
     failedCount: failedToday.length,
     skippedCount: skippedToday.length,
+    unconfirmedCount: unconfirmedToday.length,
     todayApps
   };
 }
@@ -755,10 +831,17 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
 
   // Filter out already applied jobs and low relevance score
   for (const job of discoveredJobs) {
+    const canonicalId = job.jobId || '';
+    const cleanUrl = (job.url || '').split('?')[0].toLowerCase().trim();
     const dedupKey = `${job.company.toLowerCase().trim()}___${job.title.toLowerCase().trim()}`;
-    if (pastAppliedSet && pastAppliedSet.has(dedupKey)) continue;
 
-    const score = calculateJobRelevanceScore(job, filterConfig);
+    if (pastAppliedSet) {
+      if (canonicalId && pastAppliedSet.has(canonicalId)) continue;
+      if (cleanUrl && pastAppliedSet.has(cleanUrl)) continue;
+      if (pastAppliedSet.has(dedupKey)) continue;
+    }
+
+    const score = (typeof job.score === 'number') ? job.score : calculateJobRelevanceScore(job, filterConfig);
     if (score < (filterConfig.minRelevanceScore || 35)) continue;
 
     filteredJobs.push({ ...job, score });
@@ -777,9 +860,20 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
     }
   }
 
+  // Sort each bucket by score descending
+  for (const bucket of companyBuckets.values()) {
+    bucket.sort((a, b) => (b.score || 0) - (a.score || 0));
+  }
+
+  // Sort companies by the highest scoring first job descending
+  const companies = Array.from(companyBuckets.keys()).sort((a, b) => {
+    const topA = companyBuckets.get(a)[0]?.score || 0;
+    const topB = companyBuckets.get(b)[0]?.score || 0;
+    return topB - topA;
+  });
+
   // Round-robin interleaving
   const finalQueue = [];
-  const companies = Array.from(companyBuckets.keys());
   let hasMore = true;
   let round = 0;
 
@@ -797,7 +891,7 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
           experience: bucket[round].exp,
           jobUrl: bucket[round].url,
           score: bucket[round].score,
-          state: ApplicationState.ELIGIBLE,
+          state: ApplicationState.QUEUED,
           createdAt: new Date().toISOString()
         });
         hasMore = true;
@@ -810,8 +904,8 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
 }
 
 /**
- * Multi-Query Job Discovery Engine via Puppeteer
- * Searches multiple query combinations to discover a wide variety of companies.
+ * Multi-Query Job Discovery Engine via Puppeteer (100% Configuration-Driven)
+ * Searches multiple query combinations to discover a wide variety of companies without hardcoded fallbacks.
  */
 async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = null) {
   const config = filterConfig || getFilterConfig(userKey);
@@ -819,46 +913,44 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
   // Dynamically build search queries from user DB configuration
   const titles = (Array.isArray(config.jobTitles) && config.jobTitles.length > 0)
     ? config.jobTitles
-    : [
-        'Full Stack Developer',
-        'Backend Developer',
-        'Frontend Developer',
-        'Node.js Developer',
-        'React Developer',
-        'Software Development Engineer',
-        'MERN Stack Engineer'
-      ];
+    : ['Software Engineer', 'Full Stack Developer', 'Backend Developer'];
 
-  const primaryLoc = (Array.isArray(config.locations) && config.locations[0]) ? config.locations[0] : 'Bangalore';
+  const locations = (Array.isArray(config.locations) && config.locations.length > 0)
+    ? config.locations
+    : ['Remote'];
+
   const searchQueries = [];
 
-  // 1. Title + Location queries for every configured role
+  // 1. Build Title + Location queries from user config
   for (const title of titles) {
-    searchQueries.push(`${title} ${primaryLoc}`);
+    for (const loc of locations.slice(0, 2)) {
+      searchQueries.push({ query: `${title} ${loc}`, locParam: loc });
+    }
   }
 
   // 2. Skill + Location queries
   if (Array.isArray(config.skills) && config.skills.length > 0) {
     const topSkills = config.skills.slice(0, 3).join(' ');
-    searchQueries.push(`${topSkills} Developer ${primaryLoc}`);
+    searchQueries.push({ query: `${topSkills} Developer ${locations[0] || ''}`.trim(), locParam: locations[0] || '' });
   }
 
   // 3. Remote role query if remote preference is enabled
-  if (config.remotePreference === 'remote' || (Array.isArray(config.locations) && config.locations.some(l => l.toLowerCase().includes('remote')))) {
-    searchQueries.push(`${titles[0] || 'Software Engineer'} Remote`);
+  if (config.remotePreference === 'remote' || locations.some(l => l.toLowerCase().includes('remote'))) {
+    searchQueries.push({ query: `${titles[0] || 'Software Engineer'} Remote`, locParam: 'remote' });
   }
 
-  console.log(`[NAUKRI DISCOVERY] Starting dynamic multi-query discovery across ${searchQueries.length} search variations derived from DB config: [${searchQueries.join(', ')}]...`);
+  console.log(`[SEARCH] Starting dynamic multi-query discovery across ${searchQueries.length} search variations: [${searchQueries.map(s => s.query).join(', ')}]...`);
   const allDiscovered = [];
   const seenUrls = new Set();
+  const seenJobIds = new Set();
 
-  for (const query of searchQueries) {
-    if (allDiscovered.length >= 40) break; // Sufficient pool for diversity ranking
+  for (const { query, locParam } of searchQueries) {
+    if (allDiscovered.length >= (config.maxJobsPerRun ? config.maxJobsPerRun * 4 : 50)) break;
     const cleanSlug = query.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
-    const searchUrl = `https://www.naukri.com/${cleanSlug}-jobs?k=${encodeURIComponent(query)}&l=bengaluru%2C%20bangalore%2C%20remote`;
+    const searchUrl = `https://www.naukri.com/${cleanSlug}-jobs?k=${encodeURIComponent(query)}${locParam ? `&l=${encodeURIComponent(locParam)}` : ''}`;
 
     try {
-      console.log(`[NAUKRI DISCOVERY] Querying: "${query}" -> ${searchUrl}...`);
+      console.log(`[SEARCH] Querying: "${query}" -> ${searchUrl}...`);
       await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
       await new Promise(r => setTimeout(r, 2000));
 
@@ -870,18 +962,18 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
           const titleEl = tuple.querySelector('a.title, .title a, a[href*="job-listings"]');
           if (!titleEl) return;
 
-          const href = titleEl.href || '';
-          if (!href.includes('job-listings')) return;
+          const rawHref = titleEl.href || '';
+          if (!rawHref.includes('job-listings')) return;
 
           const title = titleEl.textContent?.trim() || '';
           const compEl = tuple.querySelector('.comp-name, .companyName, .subTitle, a.company');
           const company = compEl?.textContent?.trim() || '';
 
           const locEl = tuple.querySelector('.loc-wrap, .location, .loc, span[class*="loc"]');
-          const location = locEl?.textContent?.trim() || 'Bangalore / Remote';
+          const location = locEl?.textContent?.trim() || 'Remote';
 
           const expEl = tuple.querySelector('.exp-wrap, .experience, .exp, span[class*="exp"]');
-          const exp = expEl?.textContent?.trim() || '3-6 Yrs';
+          const exp = expEl?.textContent?.trim() || '0-5 Yrs';
 
           const tagEls = tuple.querySelectorAll('.tags-gt, .tag-li, .tags span, .dot-gt');
           const tags = Array.from(tagEls).map(t => t.textContent?.trim()).filter(Boolean);
@@ -889,10 +981,18 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
           const tupleText = (tuple.textContent || '').toLowerCase();
           const isCompanySite = tupleText.includes('apply on company site') || tupleText.includes('company site');
 
+          // Extract canonical job ID
+          let jobId = tuple.getAttribute('data-job-id') || '';
+          if (!jobId) {
+            const match = rawHref.match(/-([0-9]{8,15})(?:\?|$)/);
+            if (match) jobId = match[1];
+          }
+
           results.push({
+            jobId: jobId || `job_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
             title,
-            company: company || 'Tech Company',
-            url: href,
+            company: company || 'Employer',
+            url: rawHref,
             location,
             exp,
             tags,
@@ -903,22 +1003,24 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
         return results;
       });
 
-      console.log(`[NAUKRI DISCOVERY] Found ${queryJobs.length} listings for query "${query}".`);
+      console.log(`[SEARCH] Found ${queryJobs.length} listings for query "${query}".`);
 
       for (const job of queryJobs) {
-        if (!seenUrls.has(job.url)) {
-          seenUrls.add(job.url);
+        const cleanUrl = job.url.split('?')[0];
+        if (!seenUrls.has(cleanUrl) && !seenJobIds.has(job.jobId)) {
+          seenUrls.add(cleanUrl);
+          if (job.jobId) seenJobIds.add(job.jobId);
           allDiscovered.push(job);
         }
       }
 
       await new Promise(r => setTimeout(r, 1200));
     } catch (err) {
-      console.warn(`[NAUKRI DISCOVERY WARN] Search failed for query "${query}":`, err.message);
+      console.warn(`[SEARCH WARN] Search failed for query "${query}":`, err.message);
     }
   }
 
-  console.log(`[NAUKRI DISCOVERY] Total unique raw jobs discovered across queries: ${allDiscovered.length}.`);
+  console.log(`[SEARCH] Total unique raw jobs discovered across queries: ${allDiscovered.length}.`);
   return allDiscovered;
 }
 
@@ -934,7 +1036,7 @@ function getAutoApplyStatus() {
 /**
  * End-to-End Naukri Easy Apply Process
  * Integrates dynamic DB resume, multi-factor ranking, company diversity, strict Easy Apply verification,
- * and zero-hallucination Q&A memory.
+ * container-scoped question filling, and zero-hallucination Q&A memory.
  */
 async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {}) {
   const filterConfig = { ...getFilterConfig(userKey), ...customOptions };
@@ -942,43 +1044,46 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
   console.log(`[NAUKRI EASY APPLY] Initiating automation for user "${userKey}" (Target: ${targetCount} jobs)...`);
 
-  // 1. Resolve Latest Candidate Resume from Database with explicit logs
-  console.log(`[RESUME] Fetching resume from DB for user "${userKey}"...`);
+  // 1. Resolve Latest Candidate Resume from Database
+  console.log(`[RESUME] Loading from DB for user "${userKey}"...`);
   let resolvedResume = null;
   try {
     resolvedResume = await resolveUserResumeFile(userKey);
-    console.log(`[RESUME] Resume record found for user "${userKey}".`);
+    console.log(`[RESUME] Resume found for user "${userKey}".`);
     console.log(`[RESUME] Resolving storage reference & file formatting...`);
-    console.log(`[RESUME] File resolved: ${resolvedResume.fileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
+    console.log(`[RESUME] File ready: ${resolvedResume.fileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
   } catch (resumeErr) {
-    console.error(`[NAUKRI EASY APPLY ERROR] Failed resolving resume from DB:`, resumeErr.message);
+    console.error(`[RESUME ERROR] Failed resolving resume from DB:`, resumeErr.message);
     throw new Error(`Resume resolution failed from DB: ${resumeErr.message}`);
   }
 
-  // 2. Check for Paused Applications Ready to Resume (State = READY_TO_SUBMIT)
-  const existingQueue = getNaukriQueue(userKey);
-  const readyToResumeJobs = existingQueue.filter(q => q.state === ApplicationState.READY_TO_SUBMIT);
+  // 2. Check for Paused Applications Ready to Resume (State = READY_TO_RESUME or READY_TO_SUBMIT)
+  const existingQueue = await getNaukriQueueAsync(userKey);
+  const readyToResumeJobs = existingQueue.filter(q => q.state === ApplicationState.READY_TO_RESUME || q.state === ApplicationState.READY_TO_SUBMIT);
   if (readyToResumeJobs.length > 0) {
-    console.log(`[NAUKRI EASY APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused application(s) with user-provided answers! Prioritizing resumption...`);
+    console.log(`[APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused application(s) with user-provided answers! Prioritizing resumption...`);
   }
 
   // 3. Load Q&A Knowledge Database directly from Supabase DB
-  console.log(`[NAUKRI EASY APPLY] [Q&A DB] Loading recruiter Q&A knowledge base from database for user "${userKey}"...`);
+  console.log(`[Q&A] Loading recruiter Q&A knowledge base from database for user "${userKey}"...`);
   const qaDb = await getQaDatabaseAsync(userKey);
-  console.log(`[NAUKRI EASY APPLY] [Q&A DB] ✅ Loaded ${qaDb.length} verified recruiter Q&A records directly from database.`);
+  console.log(`[Q&A] Loaded ${qaDb.length} verified recruiter Q&A records directly from database.`);
 
   // 4. Load Past Applied Records for Deduplication
-  const pastAppliedList = getNaukriAppliedJobs(userKey);
-  const pastAppliedSet = new Set(
-    pastAppliedList.map(j => `${(j.company || '').toLowerCase().trim()}___${(j.jobTitle || '').toLowerCase().trim()}`)
-  );
+  const pastAppliedList = await getNaukriAppliedJobsAsync(userKey);
+  const pastAppliedSet = new Set();
+  for (const j of pastAppliedList) {
+    if (j.jobId) pastAppliedSet.add(j.jobId);
+    if (j.jobUrl) pastAppliedSet.add(j.jobUrl.split('?')[0].toLowerCase().trim());
+    if (j.company && j.jobTitle) pastAppliedSet.add(`${j.company.toLowerCase().trim()}___${j.jobTitle.toLowerCase().trim()}`);
+  }
 
   // 5. Discover Real Jobs across Multiple Queries
-  console.log(`[NAUKRI EASY APPLY] [SEARCH] Discovering jobs on Naukri...`);
+  console.log(`[SEARCH] Discovering jobs on Naukri...`);
   const rawDiscovered = await discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig);
 
-  // 5. Build Diverse Ranked Queue
-  console.log(`[NAUKRI EASY APPLY] [DIVERSITY] Applying company diversity rules (Max ${filterConfig.maxJobsPerCompanyPerRun || 2} per company)...`);
+  // 6. Build Diverse Ranked Queue
+  console.log(`[DIVERSITY] Applying company diversity rules (Max ${filterConfig.maxJobsPerCompanyPerRun || 2} per company)...`);
   const freshDiverseQueue = buildDiverseApplicationQueue(rawDiscovered, filterConfig, pastAppliedSet);
 
   // Merge: Prioritize ready-to-resume jobs at the front, then new diverse jobs
@@ -987,8 +1092,8 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     ...freshDiverseQueue.filter(f => !readyToResumeJobs.some(r => r.jobId === f.jobId || r.jobUrl === f.jobUrl))
   ];
 
-  console.log(`[NAUKRI EASY APPLY] Total active queue size: ${combinedQueue.length} jobs (${readyToResumeJobs.length} resuming, ${freshDiverseQueue.length} newly discovered).`);
-  saveNaukriQueue(userKey, combinedQueue);
+  console.log(`[QUEUE] Total active queue size: ${combinedQueue.length} jobs (${readyToResumeJobs.length} resuming, ${freshDiverseQueue.length} newly discovered).`);
+  await saveNaukriQueueAsync(userKey, combinedQueue);
 
   const appliedResults = [];
   const jobsToProcess = combinedQueue.slice(0, targetCount);
@@ -1009,7 +1114,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     activeApplyJobState.progress.status = `Applying to ${jobItem.company}...`;
 
     console.log(`\n--------------------------------------------------`);
-    console.log(`[NAUKRI APPLY] [${i + 1}/${jobsToProcess.length}] Starting Easy Apply for "${jobItem.jobTitle}" at "${jobItem.company}"...`);
+    console.log(`[APPLY] [${i + 1}/${jobsToProcess.length}] Starting Easy Apply for "${jobItem.jobTitle}" at "${jobItem.company}"...`);
     console.log(`  • URL: ${jobItem.jobUrl}`);
     console.log(`  • Location: ${jobItem.location} | Exp: ${jobItem.experience}`);
 
@@ -1022,21 +1127,21 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       // Check if job expired or closed
       const isJobExpired = await page.evaluate(() => {
         const text = document.body?.innerText?.toLowerCase() || '';
-        return text.includes('this job is no longer available') || text.includes('job expired') || text.includes('no longer active');
+        return text.includes('this job is no longer available') || text.includes('job expired') || text.includes('no longer active') || text.includes('job is closed');
       });
 
       if (isJobExpired) {
-        console.log(`[NAUKRI APPLY] [SKIP] Job expired/closed on Naukri for ${jobItem.company}.`);
-        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'Job Expired' });
+        console.log(`[APPLY] [EXPIRED] Job expired/closed on Naukri for ${jobItem.company}.`);
+        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.EXPIRED, stage: 'Job Expired' });
         continue;
       }
 
-      // Locate Apply Button & Verify Easy Apply vs External Site
+      // Locate Apply Button & Positively Verify Easy Apply vs External ATS Site
       const applyBtnData = await page.evaluate(() => {
         const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
         if (!btn) return { exists: false };
         const text = (btn.textContent || '').trim().toLowerCase();
-        const isExternal = text.includes('company site') || text.includes('already') || text.includes('external');
+        const isExternal = text.includes('company site') || text.includes('already') || text.includes('external') || text.includes('visit employer');
         return {
           exists: true,
           text: btn.textContent?.trim(),
@@ -1045,114 +1150,181 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       });
 
       if (!applyBtnData.exists) {
-        console.log(`[NAUKRI APPLY] [SKIP] No apply button detected on page for ${jobItem.company}.`);
+        console.log(`[APPLY] [SKIP] No apply button detected on page for ${jobItem.company}.`);
         updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'No Apply Button Found' });
         continue;
       }
 
       if (applyBtnData.isExternal) {
-        console.log(`[NAUKRI APPLY] [SKIP] External ATS redirect detected ("${applyBtnData.text}"). Skipping external application.`);
+        console.log(`[EASY_APPLY] [SKIP] External ATS redirect detected ("${applyBtnData.text}"). Skipping external application.`);
         updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'External Career Site Redirect' });
         continue;
       }
 
       // Click the Easy Apply button
-      console.log(`[NAUKRI APPLY] [FORM] Clicking Easy Apply button ("${applyBtnData.text}")...`);
+      console.log(`[EASY_APPLY] [FORM] Opening Easy Apply modal ("${applyBtnData.text}")...`);
       await page.evaluate(() => {
         const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
         if (btn) btn.click();
       });
       await new Promise(r => setTimeout(r, 2500));
 
-      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FORM_DETECTED, stage: 'Form/Modal Opened' });
+      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FORM_OPENED, stage: 'Form/Modal Opened' });
+      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FILLING, stage: 'Filling Form Fields' });
 
-      // Handle Screening Questions Form / Chatbot
       let questionsAnsweredCount = 0;
       let hasUnansweredMandatory = false;
 
-      const formDetection = await page.evaluate(() => {
-        const modal = document.querySelector('.chatbot-container, .apply-dialog, .drawer-wrapper, div[class*="question"], div[class*="bot"], .modal-content');
-        if (!modal) return { hasForm: false };
+      // Container-Scoped Form Element Detection
+      const formFields = await page.evaluate(() => {
+        const fields = [];
+        const questionContainers = Array.from(document.querySelectorAll(
+          '.chatbot-container .bot-msg, .chatbot-container .chat-bubble, .apply-dialog .form-group, .custom-question, .question-wrapper, .chatbot-wrapper div[class*="msg"], div[class*="question"]'
+        ));
 
-        const questionBlocks = Array.from(document.querySelectorAll('.question-title, label, .bot-msg, .chat-bubble, div[class*="question-text"], .form-group, .custom-question'));
-        const questions = questionBlocks
-          .map(el => el.textContent?.trim())
-          .filter(t => t && t.length > 5 && (t.includes('?') || t.includes('experience') || t.includes('CTC') || t.includes('notice') || t.includes('location') || t.includes('salary') || t.includes('qualification')));
+        questionContainers.forEach((container, idx) => {
+          const qText = (container.innerText || container.textContent || '').trim();
+          if (!qText || qText.length < 4) return;
 
-        return { hasForm: true, questions };
+          const parent = container.closest('.form-group, .question-wrapper, .bot-msg, .chat-bubble') || container.parentElement;
+          const textInput = container.querySelector('input[type="text"], input[type="number"], input[type="tel"], textarea') ||
+                            (parent ? parent.querySelector('input[type="text"], input[type="number"], input[type="tel"], textarea') : null);
+
+          const selectEl = container.querySelector('select') || (parent ? parent.querySelector('select') : null);
+          const radioInputs = Array.from(container.querySelectorAll('input[type="radio"], label.radio, .radio-btn, .custom-radio') || []);
+          const checkboxInputs = Array.from(container.querySelectorAll('input[type="checkbox"], label.checkbox') || []);
+
+          let fieldType = 'text';
+          let options = [];
+
+          if (selectEl) {
+            fieldType = 'select';
+            options = Array.from(selectEl.options).map(o => (o.text || o.value || '').trim()).filter(Boolean);
+          } else if (radioInputs.length > 0) {
+            fieldType = 'radio';
+            options = radioInputs.map(r => (r.innerText || r.textContent || r.value || '').trim()).filter(Boolean);
+          } else if (checkboxInputs.length > 0) {
+            fieldType = 'checkbox';
+            options = checkboxInputs.map(c => (c.innerText || c.textContent || c.value || '').trim()).filter(Boolean);
+          } else if (!textInput) {
+            return;
+          }
+
+          fields.push({
+            containerIndex: idx,
+            questionText: qText.replace(/\n+/g, ' ').replace(/\*+/g, '').trim(),
+            rawText: qText,
+            fieldType,
+            options,
+            isMandatory: qText.includes('*') || (parent ? Boolean(parent.querySelector('.mandatory, .required, [required]')) : false)
+          });
+        });
+
+        return fields;
       });
 
-      if (formDetection.hasForm && formDetection.questions.length > 0) {
-        console.log(`[NAUKRI APPLY] [Q&A] Detected ${formDetection.questions.length} screening questions.`);
+      if (formFields.length > 0) {
+        console.log(`[FORM] Detected ${formFields.length} interactive screening field(s).`);
 
-        for (const qText of formDetection.questions) {
-          const match = findBestAnswer(qaDb, qText);
+        for (const field of formFields) {
+          const match = findBestAnswer(qaDb, field.questionText, field.options);
 
           if (match && match.confidence >= 80) {
-            console.log(`[NAUKRI APPLY] [Q&A] Matched saved answer: "${qText}" -> "${match.answer}" (${match.confidence}% confidence)`);
+            console.log(`[Q&A] Matched saved answer: "${field.questionText.slice(0, 40)}..." -> "${match.answer}" (${match.confidence}% confidence)`);
             questionsAnsweredCount++;
 
-            // Attempt DOM fill
-            await page.evaluate((ans) => {
-              const inputs = Array.from(document.querySelectorAll('input[type="text"], input[type="number"], textarea'));
-              for (const inp of inputs) {
-                if (!inp.value) {
+            // Fill ONLY the specific input inside this question container
+            await page.evaluate((cIdx, fType, ans) => {
+              const containers = Array.from(document.querySelectorAll(
+                '.chatbot-container .bot-msg, .chatbot-container .chat-bubble, .apply-dialog .form-group, .custom-question, .question-wrapper, .chatbot-wrapper div[class*="msg"], div[class*="question"]'
+              ));
+              const container = containers[cIdx];
+              if (!container) return false;
+
+              const parent = container.closest('.form-group, .question-wrapper, .bot-msg, .chat-bubble') || container.parentElement;
+
+              if (fType === 'select') {
+                const sel = container.querySelector('select') || (parent ? parent.querySelector('select') : null);
+                if (sel) {
+                  const opt = Array.from(sel.options).find(o => (o.text || '').toLowerCase().includes(ans.toLowerCase()) || (o.value || '').toLowerCase().includes(ans.toLowerCase()));
+                  if (opt) {
+                    sel.value = opt.value;
+                    sel.dispatchEvent(new Event('change', { bubbles: true }));
+                  }
+                }
+              } else if (fType === 'radio') {
+                const radios = Array.from(container.querySelectorAll('input[type="radio"], label.radio, .radio-btn, .custom-radio') || (parent ? parent.querySelectorAll('input[type="radio"], label.radio, .radio-btn, .custom-radio') : []));
+                const matchRadio = radios.find(r => (r.innerText || r.textContent || r.value || '').toLowerCase().includes(ans.toLowerCase()));
+                if (matchRadio) matchRadio.click();
+              } else if (fType === 'checkbox') {
+                const cbs = Array.from(container.querySelectorAll('input[type="checkbox"], label.checkbox') || (parent ? parent.querySelectorAll('input[type="checkbox"], label.checkbox') : []));
+                const matchCb = cbs.find(c => (c.innerText || c.textContent || c.value || '').toLowerCase().includes(ans.toLowerCase()));
+                if (matchCb) matchCb.click();
+              } else {
+                const inp = container.querySelector('input[type="text"], input[type="number"], input[type="tel"], textarea') ||
+                            (parent ? parent.querySelector('input[type="text"], input[type="number"], input[type="tel"], textarea') : null);
+                if (inp) {
+                  inp.focus();
                   inp.value = ans;
                   inp.dispatchEvent(new Event('input', { bubbles: true }));
                   inp.dispatchEvent(new Event('change', { bubbles: true }));
-                  break;
                 }
               }
-            }, match.answer);
+              return true;
+            }, field.containerIndex, field.fieldType, match.answer);
           } else {
-            // Unseen / low confidence question -> STRICT ZERO HALLUCINATION POLICY
-            console.warn(`[NAUKRI APPLY] [WAITING] Unanswered mandatory question detected: "${qText}". Pausing application for user input.`);
+            // STRICT ZERO-GUESS POLICY: DO NOT GUESS
+            console.warn(`[Q&A] Unknown question: "${field.questionText}". Pausing application.`);
             hasUnansweredMandatory = true;
 
-            const pendingRecord = addPendingQuestion(userKey, {
+            addPendingQuestion(userKey, {
               jobId: jobItem.jobId,
               jobTitle: jobItem.jobTitle,
               company: jobItem.company,
               jobUrl: jobItem.jobUrl,
-              question: qText,
-              inputType: 'text',
+              question: field.questionText,
+              inputType: field.fieldType,
+              options: field.options,
               isMandatory: true
             });
 
             updateQueueItemState(userKey, jobItem.jobId, {
-              state: ApplicationState.WAITING_FOR_USER_ANSWER,
+              state: ApplicationState.WAITING_FOR_USER,
               stage: 'Waiting for User Input on Screening Question',
-              pendingQuestion: qText
+              pendingQuestion: field.questionText
             });
 
-            break; // Pause this application and move to next job
+            console.log(`[WAITING] Application paused for ${jobItem.company}`);
+            break;
           }
         }
       }
 
       if (hasUnansweredMandatory) {
-        console.log(`[NAUKRI APPLY] [WAITING] Application for ${jobItem.company} paused cleanly without submitting.`);
+        console.log(`[WAITING] Application for ${jobItem.company} paused cleanly without submitting.`);
         continue;
       }
 
       // Check if resume upload is requested inside the Easy Apply modal
       const hasModalResumeInput = await page.$('.apply-dialog input[type="file"], .chatbot-container input[type="file"], input#attachCV');
       if (hasModalResumeInput && resolvedResume?.filePath) {
-        console.log(`[NAUKRI APPLY] Attaching dynamic database resume: ${resolvedResume.fileName}...`);
+        console.log(`[RESUME] Uploading verified resume: ${resolvedResume.fileName}...`);
         try {
           await hasModalResumeInput.uploadFile(resolvedResume.filePath);
         } catch (e) {}
       }
 
       // Final Submit Button Click
-      console.log(`[NAUKRI APPLY] All fields verified complete. Submitting Easy Apply to ${jobItem.company}...`);
+      console.log(`[APPLY] All fields verified complete. Submitting Easy Apply to ${jobItem.company}...`);
+      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SUBMITTING, stage: 'Submitting Application' });
+
       await page.evaluate(() => {
         const submitBtn = document.querySelector('.apply-dialog button[type="submit"], button.submit, button.apply-btn, .chatbot-container button, button.blue-btn, button.btn-primary');
         if (submitBtn) submitBtn.click();
       });
       await new Promise(r => setTimeout(r, 2500));
 
-      // Verify Successful Submission
+      // Post-Submission Verification
       const submissionConfirmation = await page.evaluate(() => {
         const text = document.body?.innerText?.toLowerCase() || '';
         return text.includes('application sent') || text.includes('successfully applied') || text.includes('applied on') || text.includes('already applied');
@@ -1160,28 +1332,50 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
       const durationSec = `${Math.round((Date.now() - jobStartTime) / 1000)}s`;
 
-      // Log successful application
-      const record = logNaukriAppliedJob(userKey, {
-        jobId: jobItem.jobId,
-        jobTitle: jobItem.jobTitle,
-        company: jobItem.company,
-        location: jobItem.location,
-        experience: jobItem.experience,
-        jobUrl: jobItem.jobUrl,
-        status: submissionConfirmation ? 'Applied (Naukri Easy Apply - Confirmed)' : 'Applied (Naukri Easy Apply)',
-        resumeUsed: resolvedResume.fileName,
-        questionsAnsweredCount,
-        duration: durationSec
-      });
+      if (submissionConfirmation) {
+        const record = logNaukriAppliedJob(userKey, {
+          jobId: jobItem.jobId,
+          jobTitle: jobItem.jobTitle,
+          company: jobItem.company,
+          location: jobItem.location,
+          experience: jobItem.experience,
+          jobUrl: jobItem.jobUrl,
+          status: 'Applied (Naukri Easy Apply - Confirmed)',
+          resumeUsed: resolvedResume.fileName,
+          questionsAnsweredCount,
+          duration: durationSec
+        });
 
-      updateQueueItemState(userKey, jobItem.jobId, {
-        state: ApplicationState.SUBMITTED,
-        stage: 'Application Confirmed on Naukri',
-        appliedAt: new Date().toISOString()
-      });
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.SUBMITTED,
+          stage: 'Application Confirmed on Naukri',
+          appliedAt: new Date().toISOString()
+        });
 
-      appliedResults.push(record);
-      console.log(`[NAUKRI APPLY] ✅ SUCCESS! Application completed for ${jobItem.jobTitle} at ${jobItem.company} in ${durationSec}.`);
+        appliedResults.push(record);
+        console.log(`[APPLY] Submission confirmed for "${jobItem.jobTitle}" at "${jobItem.company}" in ${durationSec}!`);
+      } else {
+        logNaukriAppliedJob(userKey, {
+          jobId: jobItem.jobId,
+          jobTitle: jobItem.jobTitle,
+          company: jobItem.company,
+          location: jobItem.location,
+          experience: jobItem.experience,
+          jobUrl: jobItem.jobUrl,
+          status: 'Submission Unconfirmed',
+          resumeUsed: resolvedResume.fileName,
+          questionsAnsweredCount,
+          duration: durationSec
+        });
+
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: 'SUBMISSION_UNCONFIRMED',
+          stage: 'Submission Unconfirmed on Naukri',
+          appliedAt: new Date().toISOString()
+        });
+
+        console.log(`[APPLY] Warning: Submission unconfirmed for "${jobItem.jobTitle}" at "${jobItem.company}".`);
+      }
 
       // Polite pacing delay between jobs
       await new Promise(r => setTimeout(r, 2000));
@@ -1301,15 +1495,19 @@ module.exports = {
   deleteQaItem,
   deleteQaItemAsync,
   findBestAnswer,
+  resolveAnswerWithOptionMapping,
   getPendingQuestions,
   addPendingQuestion,
   resolvePendingQuestion,
   resolvePendingQuestionAsync,
   getNaukriQueue,
+  getNaukriQueueAsync,
   saveNaukriQueue,
+  saveNaukriQueueAsync,
   updateQueueItemState,
   clearNaukriQueue,
   getNaukriAppliedJobs,
+  getNaukriAppliedJobsAsync,
   logNaukriAppliedJob,
   getTodayAppliedStats,
   calculateJobRelevanceScore,

@@ -114,17 +114,17 @@ async function resolveUserResumeFile(userKey = 'default_user', options = {}) {
   // 1. Database Query: Attempt to fetch from Supabase Cloud Database first
   if (isSupabaseConfigured()) {
     try {
-      console.log(`[RESUME RESOLVER] Querying Supabase 'resumes' table for user_key="${userKey}"...`);
+      console.log(`[RESUME] Loading from DB for user "${userKey}"...`);
       const dbResult = await supabaseGetResume(userKey);
       if (dbResult) {
         rawResumeData = dbResult;
         source = 'supabase_database';
-        console.log(`[RESUME RESOLVER] ✅ Successfully retrieved resume record from Supabase for user "${userKey}".`);
+        console.log(`[RESUME] Resume found in DB for user "${userKey}".`);
       } else {
-        console.log(`[RESUME RESOLVER] No record found in Supabase 'resumes' table for user "${userKey}".`);
+        console.log(`[RESUME] No record found in DB for user "${userKey}".`);
       }
     } catch (dbErr) {
-      console.warn(`[RESUME RESOLVER WARNING] Failed to query Supabase for resume: ${dbErr.message}`);
+      console.warn(`[RESUME WARNING] Failed to query DB for resume: ${dbErr.message}`);
     }
   }
 
@@ -260,8 +260,9 @@ async function resolveUserResumeFile(userKey = 'default_user', options = {}) {
   const fileSize = validatePdfFile(outputPdfPath);
   const elapsedMs = Date.now() - startTime;
 
+  console.log(`[RESUME] File ready: ${finalFileName} (${(fileSize / 1024).toFixed(1)} KB, source: ${source}:${resolutionFormat})`);
   console.log(
-    `[RESUME RESOLVER] ✅ Successfully resolved and verified resume file:\n` +
+    `[RESUME] ✅ Successfully resolved and verified resume file:\n` +
     `  • User: ${userKey}\n` +
     `  • Candidate: ${candidateName}\n` +
     `  • Path: ${outputPdfPath}\n` +

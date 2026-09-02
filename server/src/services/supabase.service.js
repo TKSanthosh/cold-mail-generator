@@ -606,6 +606,114 @@ async function supabaseGetQaDatabase(userKey) {
   }
 }
 
+/**
+ * DISTRIBUTED LEASE LOCK (Supabase Backed)
+ */
+async function supabaseAcquireLock(userKey, owner = `worker_${process.pid}_${Date.now()}`, ttlSeconds = 300) {
+  if (!isSupabaseConfigured() || !userKey) return true; // Local single-instance fallback
+  try {
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttlSeconds * 1000).toISOString();
+
+    const conf = await supabaseGetNaukriConfig(userKey);
+    const existingLock = conf?.lock;
+
+    if (existingLock && existingLock.expiresAt && new Date(existingLock.expiresAt) > now && existingLock.owner !== owner) {
+      console.log(`[DISTRIBUTED LOCK] User "${userKey}" is currently locked by owner "${existingLock.owner}" until ${existingLock.expiresAt}. Skipping duplicate run.`);
+      return false;
+    }
+
+    const newLock = {
+      owner,
+      acquiredAt: now.toISOString(),
+      expiresAt
+    };
+
+    await supabaseSaveNaukriConfig(userKey, { lock: newLock });
+    console.log(`[DISTRIBUTED LOCK] Acquired lock for user "${userKey}" (Owner: "${owner}", TTL: ${ttlSeconds}s, Expires: ${expiresAt}).`);
+    return true;
+  } catch (err) {
+    console.warn(`[DISTRIBUTED LOCK WARNING] Error acquiring lock for ${userKey}: ${err.message}`);
+    return true;
+  }
+}
+
+async function supabaseReleaseLock(userKey, owner = null) {
+  if (!isSupabaseConfigured() || !userKey) return true;
+  try {
+    const conf = await supabaseGetNaukriConfig(userKey);
+    if (!conf || !conf.lock) return true;
+
+    if (owner && conf.lock.owner && conf.lock.owner !== owner && new Date(conf.lock.expiresAt) > new Date()) {
+      return false;
+    }
+
+    await supabaseSaveNaukriConfig(userKey, { lock: null });
+    console.log(`[DISTRIBUTED LOCK] Released lock for user "${userKey}".`);
+    return true;
+  } catch (err) {
+    console.warn(`[DISTRIBUTED LOCK WARNING] Error releasing lock for ${userKey}: ${err.message}`);
+    return false;
+  }
+}
+
+async function supabaseIsLocked(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    const conf = await supabaseGetNaukriConfig(userKey);
+    if (conf && conf.lock && conf.lock.expiresAt) {
+      return new Date(conf.lock.expiresAt) > new Date();
+    }
+    return false;
+  } catch (e) {
+    return false;
+  }
+}
+
+async function supabaseGetNaukriQueue(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return null;
+  try {
+    const config = await supabaseGetNaukriConfig(userKey);
+    if (config && Array.isArray(config.applicationQueue)) {
+      return config.applicationQueue;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function supabaseSaveNaukriQueue(userKey, queue) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    return await supabaseSaveNaukriConfig(userKey, { applicationQueue: Array.isArray(queue) ? queue.slice(0, 500) : [] });
+  } catch (e) {
+    return false;
+  }
+}
+
+async function supabaseGetNaukriAppliedJobs(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return null;
+  try {
+    const config = await supabaseGetNaukriConfig(userKey);
+    if (config && Array.isArray(config.appliedJobs)) {
+      return config.appliedJobs;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function supabaseSaveNaukriAppliedJobs(userKey, appliedJobs) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    return await supabaseSaveNaukriConfig(userKey, { appliedJobs: Array.isArray(appliedJobs) ? appliedJobs.slice(0, 500) : [] });
+  } catch (e) {
+    return false;
+  }
+}
+
 module.exports = {
   isSupabaseConfigured,
   supabaseUpsertUser,
@@ -627,5 +735,12 @@ module.exports = {
   supabaseGetNaukriHistory,
   supabaseSaveScheduledJob,
   supabaseGetScheduledJobs,
-  supabaseDeleteScheduledJob
+  supabaseDeleteScheduledJob,
+  supabaseAcquireLock,
+  supabaseReleaseLock,
+  supabaseIsLocked,
+  supabaseGetNaukriQueue,
+  supabaseSaveNaukriQueue,
+  supabaseGetNaukriAppliedJobs,
+  supabaseSaveNaukriAppliedJobs
 };

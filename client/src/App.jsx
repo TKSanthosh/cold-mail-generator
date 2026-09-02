@@ -3941,12 +3941,33 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   };
 
   const [connectingSso, setConnectingSso] = useState(false);
+  const [validatingSession, setValidatingSession] = useState(false);
   const [showCookieModal, setShowCookieModal] = useState(false);
   const [showViewCookiesModal, setShowViewCookiesModal] = useState(false);
   const [activeSessionCookiesData, setActiveSessionCookiesData] = useState(null);
   const [loadingViewCookies, setLoadingViewCookies] = useState(false);
   const [cookieInput, setCookieInput] = useState('');
   const [savingCookie, setSavingCookie] = useState(false);
+
+  const handleValidateSession = async () => {
+    setValidatingSession(true);
+    showToast('🔍 Validating live session against Naukri servers...', 'info');
+    try {
+      const res = await apiFetch('/api/naukri/session/validate', { method: 'POST' });
+      const data = await res.json();
+      if (data.isValid) {
+        showToast(`✅ Naukri Session is ACTIVE for ${data.candidateName || 'User'}! (Verified)`, 'success');
+      } else {
+        showToast(`⚠️ Naukri Session is EXPIRED (${data.reason || 'Login Required'}). Please link your cookie.`, 'warning');
+      }
+      if (data.config) setConfig(data.config);
+      fetchConfigAndHistory();
+    } catch (err) {
+      showToast(err.message || 'Session validation failed', 'error');
+    } finally {
+      setValidatingSession(false);
+    }
+  };
 
   const handleOpenViewCookiesModal = async () => {
     setShowViewCookiesModal(true);
@@ -4309,19 +4330,51 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
             {/* Quick Connection Options (Google SSO & Session Cookie) */}
             <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex flex-col gap-2 shadow-xs">
-              <div className="flex justify-between items-center">
+              <div className="flex justify-between items-center flex-wrap gap-1">
                 <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
                   <Globe className="w-3.5 h-3.5 text-indigo-500" />
                   <span>Session Status:</span>
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5 flex-wrap">
                   <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    config.hasSession
+                    config.sessionStatus === 'ACTIVE'
                       ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                      : 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                      : config.sessionStatus === 'VERIFYING'
+                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
+                      : config.sessionStatus === 'CONFIGURED'
+                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                      : config.sessionStatus === 'EXPIRED' || config.sessionStatus === 'INVALID'
+                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : config.hasSession
+                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
                   }`}>
-                    {config.hasSession ? '🟢 Active (Auto-Boost Ready)' : '⚪ Not Linked'}
+                    {config.sessionStatus === 'ACTIVE'
+                      ? `🟢 Active ${config.lastVerifiedAt ? `(Verified ${new Date(config.lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}`
+                      : config.sessionStatus === 'VERIFYING'
+                      ? '🔵 Verifying...'
+                      : config.sessionStatus === 'CONFIGURED'
+                      ? '🌐 Configured (Stored in DB)'
+                      : config.sessionStatus === 'EXPIRED'
+                      ? '🔴 Expired (Re-link Required)'
+                      : config.sessionStatus === 'INVALID'
+                      ? '❌ Invalid Cookie'
+                      : config.hasSession
+                      ? '🌐 Configured in DB'
+                      : '⚪ Not Linked'}
                   </span>
+                  {config.hasSession && (
+                    <button
+                      type="button"
+                      onClick={handleValidateSession}
+                      disabled={validatingSession}
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
+                      title="Validate session against live Naukri profile servers"
+                    >
+                      {validatingSession ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
+                      <span>Validate</span>
+                    </button>
+                  )}
                   {config.hasSession && (
                     <button
                       type="button"
