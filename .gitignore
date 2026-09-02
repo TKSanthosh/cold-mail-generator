@@ -27,10 +27,11 @@ Thumbs.db
 .idea/
 
 # User sandboxes & temporary files
-server/users/*/token.json
-server/users/*/uploads/
+server/users/
 server/data/
 *.pdf
+*.png
 test_*.js
 !test_e2e_live.js
 !test_suite.js
+
