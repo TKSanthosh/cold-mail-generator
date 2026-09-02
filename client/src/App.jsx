@@ -4501,13 +4501,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       {new Date(item.timestamp).toLocaleString()}
                     </td>
                     <td className="p-3">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                        item.status === 'success'
-                          ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                          : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                      }`}>
-                        {item.status === 'success' ? '🟢 Active Just Now' : '🔴 Failed'}
-                      </span>
+                      {(() => {
+                        const s = (item.status || '').toLowerCase();
+                        const isSuccess = s === 'success' || s.includes('active') || s.includes('link') || s.includes('connect') || s.includes('updated') || s.includes('refreshed');
+                        return (
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
+                            isSuccess
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
+                              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
+                          }`}>
+                            {isSuccess ? '🟢 Active Just Now' : '🔴 Failed'}
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td className="p-3 text-slate-800 dark:text-slate-200">
                       {item.profileStatus || item.message || item.error || 'Resume Refreshed'}

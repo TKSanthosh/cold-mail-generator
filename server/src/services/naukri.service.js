@@ -899,9 +899,23 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   clearActiveOtpSession(userKey);
 
   const config = getNaukriConfig(userKey);
-  const username = overrideOptions.username || config.username;
-  const password = overrideOptions.password || config.password;
+  let username = overrideOptions.username || config.username;
+  let password = overrideOptions.password || config.password;
   const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
+
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudConf = await supabaseGetNaukriConfig(userKey);
+      if (cloudConf) {
+        if (!username && cloudConf.username) username = cloudConf.username;
+        if (!password && cloudConf.password) password = cloudConf.password;
+        if (Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+          config.sessionCookies = cloudConf.sessionCookies;
+          config.hasSession = true;
+        }
+      }
+    } catch (e) {}
+  }
 
   if (overrideOptions.username || overrideOptions.password) {
     saveNaukriConfig(userKey, {
@@ -1067,12 +1081,12 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
                          pageBodyText.toLowerCase().includes('access denied') ||
                          pageBodyText.toLowerCase().includes("you don't have permission");
 
-    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || currentUrl.includes('auth') || isAccessDenied;
+    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || isAccessDenied;
     if (!isLoginPage && !currentUrl.includes('mnjuser/profile')) {
       isLoginPage = true;
     }
     if (!isLoginPage) {
-      const loginField = await page.$('#usernameField, input[type="password"], .loginButton, a[href*="nlogin"]');
+      const loginField = await page.$('#usernameField, #login_email, input[placeholder*="Enter your active Email" i]');
       if (loginField) isLoginPage = true;
     }
 

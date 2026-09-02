@@ -32,7 +32,7 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
   };
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 6000);
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
 
   let response;
   try {
@@ -47,6 +47,24 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
     });
   } catch (err) {
     clearTimeout(timeoutId);
+    // If fast model had network abort, try one fallback with longer timeout
+    try {
+      payload.model = 'meta/llama-3.2-11b-vision-instruct';
+      const retryRes = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${API_KEY}`
+        },
+        body: JSON.stringify(payload)
+      });
+      if (retryRes.ok) {
+        const retryData = await retryRes.json();
+        const content = retryData.choices[0].message.content.trim();
+        llmResponseCache.set(cacheKey, content);
+        return content;
+      }
+    } catch (e2) {}
     throw new Error(`LLM Fetch error: ${err.message}`);
   }
   clearTimeout(timeoutId);
@@ -95,6 +113,42 @@ function sanitizeHrName(rawName) {
   return clean;
 }
 
+function generateDeterministicFallbackEmail(cleanHrName, company, jd, candidateInfo) {
+  const name = candidateInfo?.name || 'Santhosh T K';
+  const phone = candidateInfo?.phone || '+91 8825802707';
+  const email = candidateInfo?.email || 'tksanthosh494@gmail.com';
+  const linkedin = candidateInfo?.linkedin || 'https://linkedin.com/in/santhosh-tk';
+  const github = candidateInfo?.github || 'https://github.com/TKSanthosh';
+
+  const subject = `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
+  
+  const body = `Hi ${cleanHrName},
+
+I’m ${name}, a Software Developer with 3.5 years of experience in Full Stack engineering (React.js, Node.js, Express, MySQL, MongoDB, AWS), currently building high-throughput web applications and microservices.
+
+I’m reaching out regarding Software Developer opportunities at ${company}. Your team's engineering work caught my attention, and I believe my background could be a strong fit for your team.
+
+**What I bring:**
+• 3.5 years of hands-on experience building high-performance Node.js, Express & React applications
+• Proven track record reducing API response latency by ~20% and cutting production issues by ~30%
+• Strong expertise in relational & NoSQL databases (MySQL, MongoDB) and REST API system design
+• Production deployment and infrastructure experience with AWS, Docker, and CI/CD pipelines
+
+I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
+
+**Resume:** Attached (1-Page ATS PDF)
+**LinkedIn:** ${linkedin}
+**GitHub:** ${github}
+
+If there’s a suitable opening, I’d be happy to discuss how I could contribute to ${company}.
+
+Best regards,
+${name}
+${phone ? `${phone} | ` : ''}${email}`;
+
+  return { subject, body };
+}
+
 /**
  * Generates a tailored, plain-text cold email strictly adhering to the user's fixed template format.
  */
@@ -107,6 +161,14 @@ async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) 
   const candidateGithub = resumeData?.personalInfo?.github || 'https://github.com/TKSanthosh';
 
   const cleanHrName = sanitizeHrName(hrName);
+  const candidateInfo = {
+    name: candidateName,
+    title: candidateTitle,
+    email: candidateEmail,
+    phone: candidatePhone,
+    linkedin: candidateLinkedin,
+    github: candidateGithub
+  };
 
   const systemPrompt = `You are an elite tech recruiter and cold email specialist. Output PLAIN TEXT ONLY.
 
@@ -162,15 +224,13 @@ Notable Achievements: Reduced API response times by ~20% and cut production issu
     userPrompt += `\nTask: Draft a high-impact cold email for ${company} following the template.`;
   }
 
-  const responseText = await callLlm(systemPrompt, userPrompt);
-  return sanitizeAndExtractEmail(responseText, cleanHrName, company, {
-    name: candidateName,
-    title: candidateTitle,
-    email: candidateEmail,
-    phone: candidatePhone,
-    linkedin: candidateLinkedin,
-    github: candidateGithub
-  });
+  try {
+    const responseText = await callLlm(systemPrompt, userPrompt);
+    return sanitizeAndExtractEmail(responseText, cleanHrName, company, candidateInfo);
+  } catch (err) {
+    console.warn(`[LLM EMAIL WARN] LLM call failed (${err.message}). Using deterministic fallback email.`);
+    return generateDeterministicFallbackEmail(cleanHrName, company, jd, candidateInfo);
+  }
 }
 
 /**
