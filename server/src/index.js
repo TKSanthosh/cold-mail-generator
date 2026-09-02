@@ -360,6 +360,11 @@ app.post('/api/send', async (req, res) => {
     return res.status(401).json({ error: 'Your Gmail account is not connected. Please connect Gmail first.' });
   }
 
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (cleanEmail === 'tksanthosh494@gmail.com' || (userKey && cleanEmail === userKey.replace(/_/g, '@'))) {
+    return res.status(400).json({ error: `Self-Email Blocked: You cannot send cold outreach emails to your own email address (${email}). Please specify a recruiter's email.` });
+  }
+
   try {
     let cleanBody = body;
     if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
@@ -424,6 +429,11 @@ app.post('/api/draft', async (req, res) => {
     return res.status(401).json({ error: 'Your Gmail account is not connected.' });
   }
 
+  const cleanEmail = (email || '').trim().toLowerCase();
+  if (cleanEmail === 'tksanthosh494@gmail.com' || (userKey && cleanEmail === userKey.replace(/_/g, '@'))) {
+    return res.status(400).json({ error: `Self-Email Blocked: You cannot create drafts addressed to your own email (${email}).` });
+  }
+
   try {
     let cleanBody = body;
     if (typeof cleanBody === 'string' && (cleanBody.trim().startsWith('{') || cleanBody.includes('"body":'))) {
@@ -475,6 +485,11 @@ app.post('/api/schedule', (req, res) => {
 
   if (!isUserAuthorized(userKey)) {
     return res.status(401).json({ error: 'Gmail account is not connected.' });
+  }
+
+  const cleanSchedEmail = (email || '').trim().toLowerCase();
+  if (cleanSchedEmail === 'tksanthosh494@gmail.com' || (userKey && cleanSchedEmail === userKey.replace(/_/g, '@'))) {
+    return res.status(400).json({ error: `Self-Email Blocked: You cannot schedule cold emails to your own email (${email}).` });
   }
 
   let cleanBody = body;

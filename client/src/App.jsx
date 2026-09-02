@@ -481,6 +481,12 @@ function SingleSender({ isAuthorized, showToast }) {
       return showToast('Please generate the tailored templates first.', 'error');
     }
 
+    const cleanRecipient = (hrEmail || '').trim().toLowerCase();
+    const candidateEmail = (currentUser?.email || '').trim().toLowerCase();
+    if (cleanRecipient === candidateEmail || cleanRecipient === 'tksanthosh494@gmail.com') {
+      return showToast('Self-Email Blocked: You cannot send cold outreach emails to your own email address.', 'error');
+    }
+
     setSending(true);
     try {
       const res = await apiFetch(`/api/send`, {
@@ -512,6 +518,12 @@ function SingleSender({ isAuthorized, showToast }) {
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
     if (!emailSubject || !emailBody || !tailoredResume) {
       return showToast('Please generate the tailored templates first.', 'error');
+    }
+
+    const cleanRecipient = (hrEmail || '').trim().toLowerCase();
+    const candidateEmail = (currentUser?.email || '').trim().toLowerCase();
+    if (cleanRecipient === candidateEmail || cleanRecipient === 'tksanthosh494@gmail.com') {
+      return showToast('Self-Email Blocked: You cannot create drafts addressed to your own email.', 'error');
     }
 
     setSending(true);

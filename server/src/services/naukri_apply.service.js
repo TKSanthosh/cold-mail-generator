@@ -250,21 +250,6 @@ function logNaukriAppliedJob(userKey, jobData) {
     fs.writeFileSync(filePath, JSON.stringify(current.slice(0, 300), null, 2), 'utf8');
   } catch (e) {}
 
-  // Also add to unified outreach logs
-  addUserLog(userKey, {
-    type: 'Naukri Easy Apply',
-    company: record.company,
-    role: record.jobTitle,
-    email: 'naukri_easy_apply@naukri.com',
-    hrEmail: 'naukri_easy_apply@naukri.com',
-    hrName: `${record.company} Hiring Team`,
-    subject: `Naukri Easy Apply - ${record.jobTitle}`,
-    body: `Successfully applied to ${record.jobTitle} at ${record.company} via Naukri 1-Click Easy Apply.`,
-    status: 'Applied (Naukri Easy Apply)',
-    sourceUrl: record.jobUrl,
-    resumeType: 'Standard Naukri Profile ATS PDF'
-  });
-
   return record;
 }
 

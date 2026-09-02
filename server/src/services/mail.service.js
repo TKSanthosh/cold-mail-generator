@@ -114,6 +114,27 @@ function buildMimeMessage(to, subject, rawOrHtmlBody, attachmentPath, attachment
  * Sends a single email with PDF attachment using the authorized Gmail client.
  */
 async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, attachmentName = 'santhosh_t_k.pdf') {
+  const cleanTo = (to || '').trim().toLowerCase();
+  if (!cleanTo || !cleanTo.includes('@')) {
+    throw new Error('Invalid recipient email address format.');
+  }
+
+  // 1. Guard against sending cold outreach to candidate's own email address
+  if (cleanTo === 'tksanthosh494@gmail.com' || (userKey && cleanTo === userKey.replace(/_/g, '@'))) {
+    throw new Error(`Self-Email Blocked: Cold outreach cannot be sent to your own email address (${cleanTo}). Please provide a recruiter's work email.`);
+  }
+
+  // 2. Deliverability & Anti-Bounce verification
+  try {
+    const { verifyEmailDeliverability } = require('./email_verifier.service');
+    const deliverability = await verifyEmailDeliverability(cleanTo, userKey);
+    if (!deliverability.isValid) {
+      throw new Error(`Undeliverable Email Blocked: ${deliverability.reason} (${cleanTo}). Email was not sent to protect your Gmail reputation.`);
+    }
+  } catch (err) {
+    if (err.message.includes('Undeliverable Email Blocked')) throw err;
+  }
+
   let oauth2Client;
   if (userKey) {
     oauth2Client = getUserOAuthClient(userKey);
@@ -138,6 +159,16 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
  * Creates a ready-to-send draft directly in the user's Gmail app with PDF attached.
  */
 async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey = null, attachmentName = 'santhosh_t_k.pdf') {
+  const cleanTo = (to || '').trim().toLowerCase();
+  if (!cleanTo || !cleanTo.includes('@')) {
+    throw new Error('Invalid recipient email address format.');
+  }
+
+  // 1. Guard against sending cold outreach to candidate's own email address
+  if (cleanTo === 'tksanthosh494@gmail.com' || (userKey && cleanTo === userKey.replace(/_/g, '@'))) {
+    throw new Error(`Self-Email Blocked: Cold outreach cannot be sent to your own email address (${cleanTo}).`);
+  }
+
   let oauth2Client;
   if (userKey) {
     oauth2Client = getUserOAuthClient(userKey);

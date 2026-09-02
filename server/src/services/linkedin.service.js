@@ -933,6 +933,12 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
     const lead = leadsToProcess[i];
 
     // Pre-send safety check: verify deliverability once more before dispatch
+    const cleanLeadEmail = (lead.email || '').trim().toLowerCase();
+    if (cleanLeadEmail === 'tksanthosh494@gmail.com' || (userKey && cleanLeadEmail === userKey.replace(/_/g, '@'))) {
+      console.warn(`[LINKEDIN OUTREACH SKIP] Recipient ${lead.email} matches user's own email address. Skipping.`);
+      continue;
+    }
+
     const preCheck = await verifyEmailDeliverability(lead.email, userKey);
     if (!preCheck.isValid) {
       console.warn(`[LINKEDIN OUTREACH SKIP] Email ${lead.email} failed deliverability check: ${preCheck.reason}`);
