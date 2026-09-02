@@ -485,9 +485,13 @@ function addPendingQuestion(userKey, pendingItem) {
   const filePath = getPendingQaFilePath(userKey);
   const current = getPendingQuestions(userKey);
   const cleanQ = (pendingItem.question || '').trim();
-  const exists = current.some(p => p.question.toLowerCase() === cleanQ.toLowerCase());
+  const existing = current.find(p => p.question.toLowerCase() === cleanQ.toLowerCase());
 
-  if (!exists && cleanQ) {
+  if (existing) {
+    return existing;
+  }
+
+  if (cleanQ) {
     const record = {
       id: `pending_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       jobId: pendingItem.jobId || '',
