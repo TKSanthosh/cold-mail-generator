@@ -746,8 +746,8 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   // 1. Navigate to Naukri Profile if not already there
   if (!page.url().includes('mnjuser/profile')) {
     console.log('[NAUKRI UPLOADER] Navigating to profile page for upload...');
-    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await delay(2500);
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await delay(3500);
   }
 
   const currentUrl = page.url();
@@ -758,55 +758,228 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   // 2. Dismiss any overlay popups or banners
   await dismissNaukriPopups(page);
 
-  // 3. Scroll down slightly to trigger lazy-loaded sections
-  try {
-    await page.evaluate(() => window.scrollBy(0, 400));
-    await delay(1000);
-  } catch (e) {}
+  // 3. Progressive Smooth Scrolling to Mount React Lazy-Loaded Sections
+  console.log('[NAUKRI UPLOADER] Progressively scrolling to trigger lazy-loaded sections...');
+  await page.evaluate(async () => {
+    // Try clicking Quick Links 'Resume' if present to jump directly to section
+    const allLinks = Array.from(document.querySelectorAll('a, button, span, li, div'));
+    const resumeLink = allLinks.find(el => {
+      const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+      const href = (el.getAttribute('href') || '').toLowerCase();
+      const dt = (el.getAttribute('data-target') || '').toLowerCase();
+      return (txt === 'resume' || txt === 'update resume' || href.includes('resume') || href.includes('attachcv') || dt.includes('resume')) && el.offsetParent !== null;
+    });
+    if (resumeLink) {
+      try {
+        resumeLink.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        resumeLink.click();
+      } catch (e) {}
+    }
 
+    // Incremental scroll down to ensure all lazy cards (including #lazyResume) mount
+    for (let scrollY of [300, 600, 900, 1200, 1600, 2000]) {
+      window.scrollTo({ top: scrollY, behavior: 'instant' });
+      await new Promise(r => setTimeout(r, 200));
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  });
+
+  await delay(2000);
   await dismissNaukriPopups(page);
 
-  // 4. Locate Resume Upload Input Element
-  console.log('[NAUKRI UPLOADER] Locating resume upload input element...');
+  // 4. Locate Resume Upload Input Element or Trigger
+  console.log('[NAUKRI UPLOADER] Locating resume upload input element across DOM and shadow trees...');
 
+  let uploadedSuccessfully = false;
+
+  // STRATEGY A: Direct File Input Element Search & Unhiding
   try {
-    await page.waitForSelector('input#attachCV, input[type="file"], input[name="attachCV"], .updateResume, .uploadBtn, [title*="Update resume" i]', { timeout: 12000 });
-  } catch (e) {}
-
-  // 1st priority: direct file input elements
-  let fileInput = await page.$('input#attachCV') ||
-                  await page.$('input[name="attachCV"]') ||
-                  await page.$('input[accept*=".pdf"]') ||
-                  await page.$('input[type="file"]');
-
-  // 2nd priority: click "Update resume" button if input is hidden
-  if (!fileInput) {
-    const updateBtn = await page.$('.updateResume') ||
-                      await page.$('.uploadBtn') ||
-                      await page.$('[title*="Update resume" i]') ||
-                      await page.$('a[href*="attachCV"]') ||
-                      await page.$('button.updateResume');
-    if (updateBtn) {
-      await updateBtn.click();
-      await delay(1500);
-      fileInput = await page.$('input#attachCV') || await page.$('input[type="file"]');
-    }
-  }
-
-  // 3rd priority: evaluate handle across document
-  if (!fileInput) {
-    const inputHandle = await page.evaluateHandle(() => {
-      return document.querySelector('#attachCV') ||
-             document.querySelector('input[type="file"]') ||
-             document.querySelector('input[name="attachCV"]') ||
-             document.querySelector('input[accept*="pdf"]');
+    // Unhide all file inputs in the DOM so Puppeteer can interact with them directly
+    await page.evaluate(() => {
+      const fileInputs = document.querySelectorAll('input#attachCV, input[name="attachCV"], input[type="file"], input[accept*="pdf"], input[accept*="doc"], input.fileUpload, input.uploadCV');
+      fileInputs.forEach(input => {
+        try {
+          input.style.display = 'block';
+          input.style.visibility = 'visible';
+          input.style.opacity = '1';
+          input.style.width = '100px';
+          input.style.height = '40px';
+          input.style.position = 'fixed';
+          input.style.top = '10px';
+          input.style.left = '10px';
+          input.style.zIndex = '999999';
+        } catch (e) {}
+      });
     });
-    if (inputHandle && inputHandle.asElement()) {
-      fileInput = inputHandle.asElement();
+
+    let fileInput = await page.$('input#attachCV') ||
+                    await page.$('input[name="attachCV"]') ||
+                    await page.$('input[accept*=".pdf"]') ||
+                    await page.$('input[accept*="pdf"]') ||
+                    await page.$('input.fileUpload') ||
+                    await page.$('input[type="file"]');
+
+    if (!fileInput) {
+      // Check in all subframes
+      for (const frame of page.frames()) {
+        const frameInput = await frame.$('input#attachCV') || await frame.$('input[type="file"]');
+        if (frameInput) {
+          fileInput = frameInput;
+          break;
+        }
+      }
+    }
+
+    if (fileInput) {
+      console.log(`[NAUKRI UPLOADER] Strategy A: Found direct file input. Uploading resume as ${resumeFileName}...`);
+      await fileInput.uploadFile(uploadPdfPath);
+
+      // Dispatch change and input events with bubbling
+      await page.evaluate(() => {
+        const els = document.querySelectorAll('input#attachCV, input[name="attachCV"], input[accept*=".pdf"], input[type="file"]');
+        els.forEach(el => {
+          try {
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+          } catch (e) {}
+        });
+      });
+
+      uploadedSuccessfully = true;
+    }
+  } catch (errA) {
+    console.warn('[NAUKRI UPLOADER] Strategy A notice:', errA.message);
+  }
+
+  // STRATEGY B: File Chooser Interception on Clickable Buttons, Labels, & Anchors
+  if (!uploadedSuccessfully) {
+    try {
+      console.log('[NAUKRI UPLOADER] Strategy B: Attempting file chooser interception on clickable triggers...');
+      
+      const triggerSelectors = [
+        'label[for="attachCV"]',
+        'label[for*="resume" i]',
+        'label[for*="cv" i]',
+        '.updateResume',
+        '.uploadBtn',
+        '.dummyUploadBtn',
+        '.upload-resume-btn',
+        'button.updateResume',
+        'button.uploadBtn',
+        'a[href*="attachCV"]',
+        'a.updateResume',
+        '[title*="Update resume" i]',
+        '[title*="Upload resume" i]',
+        '.fileUploadBtn',
+        '.btn-upload',
+        '.attachCV'
+      ];
+
+      for (const selector of triggerSelectors) {
+        if (uploadedSuccessfully) break;
+        const triggerEls = await page.$$(selector);
+        for (const trig of triggerEls) {
+          try {
+            const [fileChooser] = await Promise.all([
+              page.waitForFileChooser({ timeout: 3500 }),
+              trig.click()
+            ]);
+            if (fileChooser) {
+              console.log(`[NAUKRI UPLOADER] Strategy B: Intercepted file chooser via ${selector}. Accepting ${uploadPdfPath}...`);
+              await fileChooser.accept([uploadPdfPath]);
+              uploadedSuccessfully = true;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // If still not triggered, search by text content
+      if (!uploadedSuccessfully) {
+        const handle = await page.evaluateHandle(() => {
+          const allEls = Array.from(document.querySelectorAll('button, a, label, span, div'));
+          return allEls.find(el => {
+            const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
+            return (txt === 'update resume' || txt === 'upload resume' || txt === 'attach cv' || txt === 'upload new resume' || txt === 'update cv') && el.offsetParent !== null;
+          }) || null;
+        });
+        const textEl = handle.asElement();
+        if (textEl) {
+          try {
+            const [fileChooser] = await Promise.all([
+              page.waitForFileChooser({ timeout: 3500 }),
+              textEl.click()
+            ]);
+            if (fileChooser) {
+              console.log(`[NAUKRI UPLOADER] Strategy B: Intercepted file chooser via text trigger. Accepting ${uploadPdfPath}...`);
+              await fileChooser.accept([uploadPdfPath]);
+              uploadedSuccessfully = true;
+            }
+          } catch (e) {}
+        }
+      }
+    } catch (errB) {
+      console.warn('[NAUKRI UPLOADER] Strategy B notice:', errB.message);
     }
   }
 
-  if (!fileInput) {
+  // STRATEGY C: Authenticated In-Browser REST API Dispatch
+  if (!uploadedSuccessfully) {
+    try {
+      console.log('[NAUKRI UPLOADER] Strategy C: Triggering authenticated in-browser REST upload API...');
+      const fileBuffer = fs.readFileSync(uploadPdfPath);
+      const base64Data = fileBuffer.toString('base64');
+
+      const apiResult = await page.evaluate(async (b64, fname) => {
+        try {
+          const byteChars = atob(b64);
+          const byteNumbers = new Array(byteChars.length);
+          for (let i = 0; i < byteChars.length; i++) {
+            byteNumbers[i] = byteChars.charCodeAt(i);
+          }
+          const byteArray = new Uint8Array(byteNumbers);
+          const blob = new Blob([byteArray], { type: 'application/pdf' });
+          const file = new File([blob], fname, { type: 'application/pdf' });
+
+          const formData = new FormData();
+          formData.append('attachCV', file);
+          formData.append('userType', 'jobseeker');
+
+          const endpoints = [
+            'https://www.naukri.com/mnjuser/profile/uploadresume',
+            'https://www.naukri.com/mnjuser/profile/attachcv',
+            '/mnjuser/profile/uploadresume',
+            '/mnjuser/profile/attachcv'
+          ];
+
+          for (const ep of endpoints) {
+            try {
+              const res = await fetch(ep, {
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+              });
+              if (res.ok) {
+                return { success: true, endpoint: ep };
+              }
+            } catch (err) {}
+          }
+          return { success: false };
+        } catch (e) {
+          return { success: false, error: e.message };
+        }
+      }, base64Data, resumeFileName);
+
+      if (apiResult && apiResult.success) {
+        console.log(`[NAUKRI UPLOADER] Strategy C: Authenticated REST upload successful via ${apiResult.endpoint}!`);
+        uploadedSuccessfully = true;
+      }
+    } catch (errC) {
+      console.warn('[NAUKRI UPLOADER] Strategy C notice:', errC.message);
+    }
+  }
+
+  if (!uploadedSuccessfully) {
     const currentFinalUrl = page.url();
     const pageTitle = await page.title().catch(() => 'Unknown');
     if (pageTitle.toLowerCase().includes('access denied') || currentFinalUrl.includes('login') || currentFinalUrl.includes('nlogin')) {
@@ -815,24 +988,10 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
     throw new Error(`Could not locate the resume upload element on Naukri (Page: "${pageTitle}" at ${currentFinalUrl}). Please verify your Naukri session or credentials in the settings tab.`);
   }
 
-  console.log(`[NAUKRI UPLOADER] Uploading resume strictly as ${resumeFileName} (${uploadPdfPath})...`);
-  await fileInput.uploadFile(uploadPdfPath);
-
-  // Dispatch change and input events with bubbling to trigger React state updates
-  try {
-    await page.evaluate(() => {
-      const el = document.querySelector('input#attachCV, input[name="attachCV"], input[accept*=".pdf"], input[type="file"]');
-      if (el) {
-        el.dispatchEvent(new Event('change', { bubbles: true }));
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-      }
-    });
-  } catch (e) {}
-
   // Check if a modal Save/Upload button is displayed
   try {
     await page.evaluate(() => {
-      const saveBtn = document.querySelector('button.saveBtn, button.upload-save, .upload-modal button[type="submit"], button.btn-save');
+      const saveBtn = document.querySelector('button.saveBtn, button.upload-save, .upload-modal button[type="submit"], button.btn-save, button.primary-btn');
       if (saveBtn) saveBtn.click();
     });
   } catch (e) {}
@@ -842,7 +1001,7 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   await delay(7000);
 
   const updatedStatusText = await page.evaluate(() => {
-    const selectors = ['.updateOn', '.lastUpdated', '.msg', '.success-msg', '.msg-box', '.status-msg', '.toast', '.snackbar', '.server-msg'];
+    const selectors = ['.updateOn', '.lastUpdated', '.msg', '.success-msg', '.msg-box', '.status-msg', '.toast', '.snackbar', '.server-msg', '.resume-name', '.file-name'];
     for (const s of selectors) {
       const el = document.querySelector(s);
       if (el && el.innerText && el.innerText.trim().length > 0) {
