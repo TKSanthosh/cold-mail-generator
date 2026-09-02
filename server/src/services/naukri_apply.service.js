@@ -1223,18 +1223,13 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
  * Standalone launcher for Easy Apply from API / UI trigger
  */
 async function runStandaloneNaukriApply(userKey = 'default_user', customOptions = {}) {
-  const { findBrowserExecutable, getNaukriSessionCookies, getNaukriConfig, hasValidNaukriSession } = require('./naukri.service');
+  const { findBrowserExecutable, getNaukriConfig, saveNaukriConfig, restoreAndInjectNaukriSession, validateNaukriSessionOnPage } = require('./naukri.service');
 
   if (activeApplyJobState.running) {
     return { success: false, message: 'Naukri Auto-Apply is already in progress.' };
   }
 
-  const hasSession = hasValidNaukriSession(userKey);
   const config = getNaukriConfig(userKey);
-  if (!hasSession && !config.username && !config.hasSession) {
-    throw new Error('Naukri session is unauthenticated. Please link your session cookie or enter credentials in the authorization card.');
-  }
-
   let browserPath = findBrowserExecutable();
   const launchOptions = {
     headless: customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false),
@@ -1268,20 +1263,19 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
       Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
     });
 
-    const cookies = getNaukriSessionCookies(userKey);
-    if (Array.isArray(cookies) && cookies.length > 0) {
-      for (const c of cookies) {
-        if (!c.name || !c.value) continue;
-        const dom = c.domain || '.naukri.com';
-        try {
-          await page.setCookie({
-            name: c.name,
-            value: c.value,
-            domain: dom.startsWith('.') ? dom : `.${dom}`,
-            path: c.path || '/'
-          });
-        } catch (e) {}
-      }
+    // 1. Restore & inject latest authentication state from DB/sandbox
+    await restoreAndInjectNaukriSession(page, userKey);
+
+    // 2. Validate session on Naukri BEFORE performing any applications
+    const validation = await validateNaukriSessionOnPage(page, userKey);
+    if (!validation.isValid) {
+      const cfg = getNaukriConfig(userKey);
+      cfg.hasSession = false;
+      cfg.lastStatus = 'Session Expired / Please Re-link Cookie';
+      cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
+      saveNaukriConfig(userKey, cfg);
+
+      throw new Error(`Naukri session is unauthenticated or expired (${validation.reason}). Please click "Paste Session Cookie" in the Naukri menu to refresh your session.`);
     }
 
     return await applyToNaukriJobsWithPuppeteer(page, userKey, customOptions);

@@ -420,6 +420,156 @@ function clearNaukriSession(userKey = 'default_user') {
   return { success: true, message: 'Naukri session disconnected.' };
 }
 
+/**
+ * Restores and injects latest valid authentication state into Puppeteer page context.
+ * Pulls from Supabase Cloud DB if local sandbox is missing or older (Render-ready).
+ */
+async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  let cookies = [];
+
+  // 1. Check local session file
+  if (fs.existsSync(paths.naukriSessionPath)) {
+    try {
+      cookies = JSON.parse(fs.readFileSync(paths.naukriSessionPath, 'utf8'));
+    } catch (e) {}
+  }
+
+  // 2. Fallback to local config
+  if ((!cookies || cookies.length === 0) && fs.existsSync(paths.naukriConfigPath)) {
+    try {
+      const cfg = JSON.parse(fs.readFileSync(paths.naukriConfigPath, 'utf8'));
+      if (Array.isArray(cfg.sessionCookies) && cfg.sessionCookies.length > 0) {
+        cookies = cfg.sessionCookies;
+      }
+    } catch (e) {}
+  }
+
+  // 3. Fallback to Supabase Database (crucial for Render container restarts and background cron)
+  if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
+    try {
+      const cloudConf = await supabaseGetNaukriConfig(userKey);
+      if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+        cookies = cloudConf.sessionCookies;
+        fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
+        console.log(`[NAUKRI AUTH] 🔄 Restored ${cookies.length} session cookies from Supabase DB into sandbox.`);
+      }
+    } catch (e) {}
+  }
+
+  if (Array.isArray(cookies) && cookies.length > 0) {
+    for (const c of cookies) {
+      if (!c.name || !c.value) continue;
+      const dom = c.domain || '.naukri.com';
+      try {
+        await page.setCookie({
+          name: c.name,
+          value: c.value,
+          domain: dom.startsWith('.') ? dom : `.${dom}`,
+          path: c.path || '/'
+        });
+      } catch (err) {
+        try {
+          await page.setCookie({
+            name: c.name,
+            value: c.value,
+            domain: 'www.naukri.com',
+            path: c.path || '/'
+          });
+        } catch (e2) {}
+      }
+    }
+    console.log(`[NAUKRI AUTH] 🔑 Injected ${cookies.length} session cookies into browser context for user "${userKey}".`);
+    return { hasSession: true, count: cookies.length, cookies };
+  }
+
+  console.log(`[NAUKRI AUTH] ℹ️ No active session cookies available for user "${userKey}".`);
+  return { hasSession: false, count: 0, cookies: [] };
+}
+
+/**
+ * Live Session Validation against Naukri servers
+ * Navigates to Naukri and verifies if the session is actively authenticated without assuming cookie immortality.
+ * If valid, refreshes and saves the latest session cookies in Supabase DB.
+ */
+async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
+  console.log(`[NAUKRI AUTH] 🔍 Validating live session against Naukri servers for user "${userKey}"...`);
+
+  try {
+    // 1. Warm up connection on root domain
+    try {
+      await page.goto('https://www.naukri.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await delay(1200);
+    } catch (e) {}
+
+    // 2. Navigate to candidate profile page
+    console.log('[NAUKRI AUTH] Navigating to https://www.naukri.com/mnjuser/profile to verify authentication...');
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
+    await delay(3000);
+
+    // 3. Inspect page state
+    const currentUrl = page.url();
+    const pageTitle = (await page.title().catch(() => '')) || '';
+    const pageBodyText = (await page.evaluate(() => document.body?.innerText || '').catch(() => '')) || '';
+
+    const isAccessDenied = pageTitle.toLowerCase().includes('access denied') ||
+                           pageTitle.toLowerCase().includes('403') ||
+                           pageBodyText.toLowerCase().includes('access denied') ||
+                           pageBodyText.toLowerCase().includes("you don't have permission");
+
+    const isLoginRedirect = currentUrl.includes('login') ||
+                            currentUrl.includes('nlogin') ||
+                            pageTitle.toLowerCase().includes('login') ||
+                            pageTitle.toLowerCase().includes('jobseeker login') ||
+                            isAccessDenied;
+
+    if (isLoginRedirect) {
+      console.warn(`[NAUKRI AUTH] ⚠️ Session invalidated by Naukri (URL: ${currentUrl}, Title: "${pageTitle}").`);
+      return {
+        isValid: false,
+        reason: isAccessDenied ? 'Access Denied by Naukri' : 'Redirected to login page (Session expired on Naukri)',
+        currentUrl
+      };
+    }
+
+    // 4. Positive verification: Check for candidate profile markers in DOM
+    const profileInfo = await page.evaluate(() => {
+      const nameEl = document.querySelector('.user-name, .fullname, .user-details .name, .candidate-name, .nI-gNb-drawer__user-name, div[class*="user-name"], div[class*="candidateName"]');
+      const candidateName = nameEl?.textContent?.trim() || '';
+      const hasProfileHeader = !!document.querySelector('.profile-page-wrapper, .dashboard-wrapper, a[href*="mnjuser/profile"], .attachCV, input#attachCV, input[name="attachCV"]');
+      return { candidateName, hasProfileHeader };
+    });
+
+    if (currentUrl.includes('mnjuser/profile') || profileInfo.hasProfileHeader || profileInfo.candidateName) {
+      console.log(`[NAUKRI AUTH] ✅ Session is 100% VALID & ACTIVE on Naukri! (Candidate: "${profileInfo.candidateName || userKey}")`);
+
+      // 5. Capture rolling refreshed cookies from Naukri and persist to Supabase DB & sandbox
+      const latestCookies = await page.cookies();
+      if (Array.isArray(latestCookies) && latestCookies.length > 0) {
+        saveNaukriSessionCookies(userKey, latestCookies);
+      }
+
+      return {
+        isValid: true,
+        candidateName: profileInfo.candidateName || userKey,
+        currentUrl
+      };
+    }
+
+    // If login input fields exist, session is expired
+    const hasLoginInputs = await page.$('#usernameField, #login_email, input[placeholder*="Enter your active Email" i], input[type="password"]');
+    if (hasLoginInputs) {
+      return { isValid: false, reason: 'Login form detected on page' };
+    }
+
+    return { isValid: true, candidateName: userKey, currentUrl };
+  } catch (err) {
+    console.error(`[NAUKRI AUTH ERROR] Session validation encountered error:`, err.message);
+    return { isValid: false, reason: err.message };
+  }
+}
+
 function getNaukriConfig(userKey = 'default_user') {
   const paths = getUserPaths(userKey);
   const activeCookies = getNaukriSessionCookies(userKey);
@@ -1169,93 +1319,26 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       'upgrade-insecure-requests': '1'
     });
 
-    // 3. Load Saved User Session Cookies (Google SSO / Session)
-    let cookies = [];
-    if (fs.existsSync(userPaths.naukriSessionPath)) {
-      try {
-        cookies = JSON.parse(fs.readFileSync(userPaths.naukriSessionPath, 'utf8'));
-      } catch (e) {}
-    }
-    if ((!cookies || cookies.length === 0) && Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
-      cookies = config.sessionCookies;
-    }
-    if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
-      try {
-        const cloudConf = await supabaseGetNaukriConfig(userKey);
-        if (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
-          cookies = cloudConf.sessionCookies;
-          fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8');
-        }
-      } catch (e) {}
-    }
+    // 3. Restore and Inject Saved Session State (Hydrated from Supabase DB or sandbox)
+    await restoreAndInjectNaukriSession(page, userKey);
 
-    if (Array.isArray(cookies) && cookies.length > 0) {
-      for (const c of cookies) {
-        if (!c.name || !c.value) continue;
-        const dom = c.domain || '.naukri.com';
-        try {
-          await page.setCookie({
-            name: c.name,
-            value: c.value,
-            domain: dom.startsWith('.') ? dom : `.${dom}`,
-            path: c.path || '/'
-          });
-        } catch (err) {
-          try {
-            await page.setCookie({
-              name: c.name,
-              value: c.value,
-              domain: 'www.naukri.com',
-              path: c.path || '/'
-            });
-          } catch (e2) {}
-        }
-      }
-      console.log(`[NAUKRI UPLOADER] Injected ${cookies.length} session cookies for user ${userKey}.`);
-    }
+    // 4. Validate Live Session on Naukri BEFORE Doing Anything
+    let validation = await validateNaukriSessionOnPage(page, userKey);
 
-    // 4. Warm up root homepage first to establish security handshake
-    try {
-      console.log('[NAUKRI UPLOADER] Warming up connection on Naukri root homepage...');
-      await page.goto('https://www.naukri.com/', { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await delay(1500);
-    } catch (e) {}
-
-    // 5. Navigate to Naukri Profile
-    console.log('[NAUKRI UPLOADER] Navigating to Naukri Profile page...');
-    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 35000 });
-    await delay(3000);
-
-    // 6. Check if redirected to login page, unauthenticated, or Access Denied state
-    let currentUrl = page.url();
-    let pageTitle = (await page.title().catch(() => '')) || '';
-    let pageBodyText = await page.evaluate(() => document.body?.innerText || '').catch(() => '');
-
-    let isAccessDenied = pageTitle.toLowerCase().includes('access denied') ||
-                         pageTitle.toLowerCase().includes('403') ||
-                         pageBodyText.toLowerCase().includes('access denied') ||
-                         pageBodyText.toLowerCase().includes("you don't have permission");
-
-    let isLoginPage = currentUrl.includes('login') || currentUrl.includes('nlogin') || isAccessDenied;
-    if (!isLoginPage && !currentUrl.includes('mnjuser/profile')) {
-      isLoginPage = true;
-    }
-    if (!isLoginPage) {
-      const loginField = await page.$('#usernameField, #login_email, input[placeholder*="Enter your active Email" i]');
-      if (loginField) isLoginPage = true;
-    }
-
-    if (isLoginPage) {
-      console.log(`[NAUKRI UPLOADER] Session not active (Access Denied / Login detected) for user ${userKey}. Attempting credentials authentication...`);
+    if (!validation.isValid) {
+      console.log(`[NAUKRI UPLOADER] Session validation failed (${validation.reason}) for user "${userKey}".`);
       if (!username || !password) {
         const cfg = getNaukriConfig(userKey);
         cfg.hasSession = false;
         cfg.lastStatus = 'Session Expired / Please Re-link Cookie';
+        cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
         saveNaukriConfig(userKey, cfg);
 
-        throw new Error('Naukri session has expired or returned "Access Denied". Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.');
+        throw new Error(`Naukri session has expired on the server (${validation.reason}). Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.`);
       }
 
+      console.log(`[NAUKRI UPLOADER] Attempting automated credentials authentication for user "${userKey}"...`);
+      let currentUrl = page.url();
       if (!currentUrl.includes('login') && !currentUrl.includes('nlogin')) {
         await page.goto('https://www.naukri.com/nlogin/login', { waitUntil: 'domcontentloaded', timeout: 35000 });
         await delay(2500);
@@ -1816,6 +1899,8 @@ module.exports = {
   getNaukriSessionCookies,
   saveNaukriSessionCookies,
   clearNaukriSession,
+  restoreAndInjectNaukriSession,
+  validateNaukriSessionOnPage,
   getNaukriConfig,
   saveNaukriConfig,
   getNaukriHistory,
