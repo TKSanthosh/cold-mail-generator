@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3522,13 +3522,17 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [pendingQuestions, setPendingQuestions] = useState([]);
   const [appliedJobs, setAppliedJobs] = useState([]);
   const [applicationQueue, setApplicationQueue] = useState([]);
+  const [isReconciling, setIsReconciling] = useState(false);
   const [todayStats, setTodayStats] = useState({
     todayCount: 0,
+    verifiedCount: 0,
     dailyTarget: 50,
     remainingTarget: 50,
     percentComplete: 0,
+    inProgressCount: 0,
     discoveredCount: 0,
     waitingForInputCount: 0,
+    unconfirmedCount: 0,
     failedCount: 0,
     skippedCount: 0
   });
@@ -3710,7 +3714,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const handleStartAutoApply = async () => {
     setIsAutoApplying(true);
     setApplyProgress({ current: 1, total: applyTargetCount, status: 'Scanning matching Easy Apply jobs on Naukri...' });
-    showToast(`🚀 Starting Naukri Easy Apply Bot with Company Diversity Interleaving...`, 'info');
+    showToast(`🚀 Starting Naukri Easy Apply — verifying applications with live Naukri confirmation...`, 'info');
 
     try {
       const res = await apiFetch('/api/naukri/apply/start', {
@@ -3725,13 +3729,39 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      showToast(`🎉 Applied to ${data.appliedCount || 0} jobs on Naukri with 100% automated screening!`, 'success');
+      if (data.appliedCount > 0) {
+        showToast(`🎉 ${data.appliedCount} application(s) verified & confirmed on Naukri!`, 'success');
+      } else {
+        showToast(`ℹ️ Easy Apply run complete. Check History tab for unconfirmed/skipped jobs.`, 'info');
+      }
       fetchQaAndAppliedJobs();
     } catch (err) {
       showToast(err.message || 'Failed to run Naukri auto-apply', 'error');
     } finally {
       setIsAutoApplying(false);
       setApplyProgress(null);
+    }
+  };
+
+  const handleReconcileWithNaukri = async () => {
+    setIsReconciling(true);
+    showToast('🔍 Reconciling with official Naukri Applied Jobs section...', 'info');
+    try {
+      const res = await apiFetch('/api/naukri/apply/reconcile', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      if (data.reconciledUpgrades > 0) {
+        showToast(`✅ Reconciled! Upgraded ${data.reconciledUpgrades} unconfirmed application(s) to Confirmed on Naukri!`, 'success');
+      } else {
+        showToast(`✅ Reconciled! Found ${data.naukriRealCount || 0} real applied jobs in your Naukri account.`, 'info');
+      }
+      if (data.todayStats) setTodayStats(data.todayStats);
+      if (data.applications) setAppliedJobs(data.applications);
+    } catch (err) {
+      showToast(err.message || 'Failed to reconcile with Naukri', 'error');
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -4168,17 +4198,23 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
 
         {/* Live Counters Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs pt-0.5">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs pt-0.5">
           <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Submitted Today</span>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Verified Submitted</span>
             <strong className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">
-              {todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50}
+              {todayStats.verifiedCount || todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50}
             </strong>
           </div>
           <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
             <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Remaining</span>
             <strong className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">
-              {Math.max(0, (filterConfig.dailyTarget || 50) - (todayStats.todayCount || 0))}
+              {Math.max(0, (filterConfig.dailyTarget || 50) - (todayStats.verifiedCount || todayStats.todayCount || 0))}
+            </strong>
+          </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-sky-200 dark:border-sky-800/60 flex flex-col">
+            <span className="text-[10px] text-sky-700 dark:text-sky-400 font-bold uppercase">In Progress</span>
+            <strong className="text-sm font-mono font-bold text-sky-600 dark:text-sky-400">
+              {todayStats.inProgressCount || 0}
             </strong>
           </div>
           <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 flex flex-col">
@@ -4187,16 +4223,16 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               {todayStats.waitingForInputCount || pendingQuestions.length}
             </strong>
           </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 flex flex-col">
+            <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase">Unconfirmed</span>
+            <strong className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
+              {todayStats.unconfirmedCount || 0}
+            </strong>
+          </div>
           <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800/60 flex flex-col">
             <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase">Failed</span>
             <strong className="text-sm font-mono font-bold text-rose-600 dark:text-rose-400">
               {todayStats.failedCount || 0}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Skipped (Ext / Exp)</span>
-            <strong className="text-sm font-mono font-bold text-slate-600 dark:text-slate-400">
-              {todayStats.skippedCount || 0}
             </strong>
           </div>
         </div>
@@ -4314,6 +4350,28 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
 
+        {/* Re-Authentication Alert Banner when Session Expired / Invalid / Auth Required */}
+        {(config.sessionStatus === 'EXPIRED' || config.sessionStatus === 'INVALID' || config.sessionStatus === 'AUTHENTICATION_REQUIRED' || config.sessionStatus === 'AUTH_RESTORE_FAILED') && (
+          <div className="mb-4 p-3.5 bg-amber-50 dark:bg-amber-950/40 border border-amber-300 dark:border-amber-800 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-2.5 text-xs text-amber-900 dark:text-amber-200">
+              <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0" />
+              <div>
+                <p className="font-bold">Naukri Session Expired</p>
+                <p className="text-[11px] text-amber-700 dark:text-amber-300">
+                  Re-authentication required for automated profile boosts and Easy Apply.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowCookieModal(true)}
+              className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg shadow-xs shrink-0 cursor-pointer transition-colors"
+            >
+              Re-authenticate Naukri
+            </button>
+          </div>
+        )}
+
         {/* Config & Info Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Credentials Card (Primary) */}
@@ -4343,8 +4401,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
                       : config.sessionStatus === 'CONFIGURED'
                       ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                      : config.sessionStatus === 'EXPIRED' || config.sessionStatus === 'INVALID'
+                      : config.sessionStatus === 'EXPIRED' || config.sessionStatus === 'INVALID' || config.sessionStatus === 'AUTHENTICATION_REQUIRED'
                       ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                      : config.sessionStatus === 'AUTH_RESTORE_FAILED'
+                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
                       : config.hasSession
                       ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
                       : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
@@ -4359,6 +4419,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       ? '🔴 Expired (Re-link Required)'
                       : config.sessionStatus === 'INVALID'
                       ? '❌ Invalid Cookie'
+                      : config.sessionStatus === 'AUTH_RESTORE_FAILED'
+                      ? '⚠️ Restore Failed'
+                      : config.sessionStatus === 'AUTHENTICATION_REQUIRED'
+                      ? '🔴 Auth Required'
                       : config.hasSession
                       ? '🌐 Configured in DB'
                       : '⚪ Not Linked'}
@@ -4380,10 +4444,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       type="button"
                       onClick={handleOpenViewCookiesModal}
                       className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                      title="View active session cookies retrieved from Cloud Database"
+                      title="View session details and encryption status"
                     >
                       <Eye className="w-3 h-3" />
-                      <span>View Cookie</span>
+                      <span>Session Details</span>
                     </button>
                   )}
                   {config.hasSession && (
@@ -5253,17 +5317,28 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
       {/* 7. Detailed Applied Jobs History Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-500" />
             <span>Naukri Easy Apply Detailed Jobs Log ({appliedJobs.length})</span>
           </h3>
-          <button
-            onClick={fetchQaAndAppliedJobs}
-            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold cursor-pointer"
-          >
-            <RefreshCw className="w-3 h-3" /> Refresh
-          </button>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={handleReconcileWithNaukri}
+              disabled={isReconciling}
+              className="text-xs bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold cursor-pointer transition-all disabled:opacity-60"
+              title="Compare database against Naukri's official Applied Jobs page"
+            >
+              <RefreshCw className={`w-3 h-3 ${isReconciling ? 'animate-spin' : ''}`} />
+              {isReconciling ? 'Reconciling...' : 'Reconcile with Naukri'}
+            </button>
+            <button
+              onClick={fetchQaAndAppliedJobs}
+              className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold cursor-pointer"
+            >
+              <RefreshCw className="w-3 h-3" /> Refresh
+            </button>
+          </div>
         </div>
 
         {appliedJobs.length === 0 ? (
@@ -5286,8 +5361,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {appliedJobs.map((app) => {
                   const s = (app.status || '').toLowerCase();
-                  const isFailed = s.includes('failed');
+                  const vStatus = app.verificationStatus || '';
+                  const isVerified = (app.status === 'SUBMITTED' || s.includes('confirmed')) && (vStatus === 'VERIFIED' || vStatus === 'RECONCILED');
+                  const isUnconfirmed = app.status === 'SUBMISSION_UNCONFIRMED' || vStatus === 'UNVERIFIED';
+                  const isLegacy = app.status === 'LEGACY_UNVERIFIED' || vStatus === 'LEGACY_UNVERIFIED';
+                  const isWaiting = app.status === 'WAITING_FOR_USER';
+                  const isFailed = s.includes('failed') || vStatus === 'FAILED';
                   const isSkipped = s.includes('skipped');
+
                   return (
                     <tr key={app.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="p-3">
@@ -5308,17 +5389,33 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                         {app.questionsAnsweredCount || 0}
                       </td>
                       <td className="p-3">
-                        {isFailed ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
-                            🔴 Failed ({app.failureStage || 'Error'})
+                        {isVerified ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800" title={app.verificationDetails || 'Verified on Naukri'}>
+                            <CheckCircle className="w-2.5 h-2.5" /> SUBMITTED (VERIFIED)
+                          </span>
+                        ) : isUnconfirmed ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800" title={app.verificationDetails || 'Naukri confirmation could not be verified on live DOM'}>
+                            <AlertCircle className="w-2.5 h-2.5" /> SUBMISSION UNCONFIRMED
+                          </span>
+                        ) : isWaiting ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700">
+                            WAITING FOR USER
+                          </span>
+                        ) : isLegacy ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700" title="Historical unverified application attempt">
+                            <Clock className="w-2.5 h-2.5" /> LEGACY UNVERIFIED
+                          </span>
+                        ) : isFailed ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800" title={app.error || app.failureStage}>
+                            <XCircle className="w-2.5 h-2.5" /> FAILED ({app.failureStage || 'Error'})
                           </span>
                         ) : isSkipped ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
-                            ⚪ Skipped
+                            ⚪ SKIPPED
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                            <CheckCircle className="w-2.5 h-2.5" /> Applied (Easy Apply)
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            {app.status}
                           </span>
                         )}
                       </td>
@@ -5550,24 +5647,24 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       )}
 
-      {/* View Session Cookies Modal */}
+      {/* Naukri Session Details Modal (Zero Raw Secret Leakage) */}
       {showViewCookiesModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
-                  <Key className="w-6 h-6" />
+                  <ShieldCheck className="w-6 h-6" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                    <span>Active Naukri Session Cookies</span>
+                    <span>Naukri Session Details</span>
                     <span className="text-[10px] bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 font-bold px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
-                      ☁️ Synced to DB
+                      🔒 AES-256-GCM Encrypted
                     </span>
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400">
-                    Encrypted with AES-256-GCM and preserved in Supabase Cloud DB for 24/7 background boosts.
+                    Production session management with automated restoration across crons, restarts, and deploys.
                   </p>
                 </div>
               </div>
@@ -5583,98 +5680,157 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             {loadingViewCookies ? (
               <div className="p-8 flex flex-col items-center justify-center gap-2 text-slate-500">
                 <Loader2 className="w-6 h-6 animate-spin text-indigo-600" />
-                <span className="text-xs">Fetching active cookies from Cloud Database...</span>
+                <span className="text-xs">Fetching session state from Cloud Database...</span>
               </div>
             ) : (
-              <div className="flex flex-col gap-3">
-                {/* Status bar */}
-                <div className="p-3 bg-emerald-50/70 dark:bg-emerald-950/30 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex items-center justify-between text-xs">
-                  <span className="text-emerald-800 dark:text-emerald-300 font-medium">
-                    🔒 <strong>{activeSessionCookiesData?.cookieCount || 0} Cookies Loaded</strong> from isolated cloud sandbox.
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleOpenViewCookiesModal}
-                    className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    <RefreshCw className="w-3 h-3" />
-                    <span>Refresh</span>
-                  </button>
+              <div className="flex flex-col gap-4">
+                {/* Session Health Overview Card */}
+                <div className="p-3.5 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700 grid grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-0.5">Session Status</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block ${
+                      activeSessionCookiesData?.status === 'ACTIVE'
+                        ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
+                        : activeSessionCookiesData?.status === 'CONFIGURED'
+                        ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
+                        : activeSessionCookiesData?.status === 'EXPIRED' || activeSessionCookiesData?.status === 'INVALID' || activeSessionCookiesData?.status === 'AUTHENTICATION_REQUIRED'
+                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
+                        : activeSessionCookiesData?.status === 'AUTH_RESTORE_FAILED'
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
+                        : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
+                    }`}>
+                      {activeSessionCookiesData?.status === 'ACTIVE' ? '🟢 Active (Verified)' :
+                       activeSessionCookiesData?.status === 'CONFIGURED' ? '🌐 Configured in DB' :
+                       activeSessionCookiesData?.status === 'EXPIRED' ? '🔴 Expired (Re-link Required)' :
+                       activeSessionCookiesData?.status === 'AUTH_RESTORE_FAILED' ? '⚠️ Restore Failed' :
+                       activeSessionCookiesData?.status === 'INVALID' ? '❌ Invalid Cookie' :
+                       activeSessionCookiesData?.hasSession ? '🌐 Configured' : '⚪ Not Linked'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-0.5">Storage Engine</span>
+                    <span className="font-semibold text-slate-700 dark:text-slate-300">
+                      {activeSessionCookiesData?.storedInDb ? 'Supabase DB (Encrypted)' : 'Local File Sandbox'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-0.5">Last Verified</span>
+                    <span className="text-slate-600 dark:text-slate-300 font-mono text-[11px]">
+                      {activeSessionCookiesData?.lastVerifiedAt ? new Date(activeSessionCookiesData.lastVerifiedAt).toLocaleString() : 'Not yet verified'}
+                    </span>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 uppercase font-bold tracking-wider block mb-0.5">Last Updated</span>
+                    <span className="text-slate-600 dark:text-slate-300 font-mono text-[11px]">
+                      {activeSessionCookiesData?.lastUpdatedAt ? new Date(activeSessionCookiesData.lastUpdatedAt).toLocaleString() : (config.lastUploadAt ? new Date(config.lastUploadAt).toLocaleString() : 'N/A')}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Cookie String View */}
+                {/* Structured Cookies List (Metadata Only) */}
                 <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
-                      Document Cookie String:
+                  <div className="flex justify-between items-center mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-indigo-500" />
+                      <span>Stored Authentication Cookies ({activeSessionCookiesData?.cookieCount || 0})</span>
                     </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        if (activeSessionCookiesData?.cookieString) {
-                          navigator.clipboard.writeText(activeSessionCookiesData.cookieString);
-                          showToast('📋 Cookie string copied to clipboard!', 'success');
-                        }
-                      }}
-                      className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 flex items-center gap-1 cursor-pointer"
+                      onClick={handleOpenViewCookiesModal}
+                      className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
                     >
-                      <Copy className="w-3 h-3" />
-                      <span>Copy Cookie String</span>
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Refresh</span>
                     </button>
                   </div>
-                  <pre className="w-full bg-slate-900 text-emerald-400 p-3 rounded-xl text-[11px] font-mono whitespace-pre-wrap break-all max-h-36 overflow-y-auto border border-slate-700">
-                    {activeSessionCookiesData?.cookieString || 'No active cookies found.'}
-                  </pre>
-                </div>
 
-                {/* Structured Cookies List */}
-                {Array.isArray(activeSessionCookiesData?.cookies) && activeSessionCookiesData.cookies.length > 0 && (
-                  <div>
-                    <label className="text-xs font-bold text-slate-700 dark:text-slate-300 block mb-1">
-                      Individual Cookies ({activeSessionCookiesData.cookies.length}):
-                    </label>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                  {Array.isArray(activeSessionCookiesData?.cookies) && activeSessionCookiesData.cookies.length > 0 ? (
+                    <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1 border border-slate-200 dark:border-slate-800 rounded-xl p-2 bg-slate-900">
                       {activeSessionCookiesData.cookies.map((c, idx) => (
                         <div
                           key={idx}
-                          className="p-2 bg-slate-50 dark:bg-slate-800/80 rounded-lg border border-slate-200 dark:border-slate-700 flex justify-between items-center text-xs font-mono"
+                          className="p-2 bg-slate-800/90 rounded-lg border border-slate-700 flex justify-between items-center text-xs font-mono"
                         >
                           <div className="flex flex-col min-w-0 pr-2">
-                            <span className="font-bold text-indigo-600 dark:text-indigo-400 truncate">{c.name}</span>
-                            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{c.domain || '.naukri.com'}</span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-indigo-300 truncate">{c.name}</span>
+                              {c.httpOnly && (
+                                <span className="text-[9px] bg-slate-700 text-slate-300 px-1 py-0.2 rounded font-sans">HttpOnly</span>
+                              )}
+                              {c.secure && (
+                                <span className="text-[9px] bg-emerald-950 text-emerald-300 border border-emerald-700 px-1 py-0.2 rounded font-sans">Secure</span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-slate-400 truncate">{c.domain || '.naukri.com'}</span>
                           </div>
-                          <span className="text-[10px] text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 truncate max-w-[200px]">
-                            {c.value ? `${c.value.substring(0, 16)}...` : '(empty)'}
+                          <span className="text-[10px] text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-700/60 shrink-0 flex items-center gap-1">
+                            <Lock className="w-2.5 h-2.5" />
+                            <span>Stored Securely</span>
                           </span>
                         </div>
                       ))}
                     </div>
-                  </div>
-                )}
+                  ) : (
+                    <div className="p-4 text-center text-xs text-slate-500 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
+                      No active cookies stored in database. Click "Paste Session Cookie" to configure.
+                    </div>
+                  )}
+                </div>
 
-                <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-800">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowViewCookiesModal(false);
-                      setShowCookieModal(true);
-                    }}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-                  >
-                    ✏️ Update / Replace Cookies
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowViewCookiesModal(false)}
-                    className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                  >
-                    Close
-                  </button>
+                {/* Action Buttons */}
+                <div className="flex flex-wrap justify-between items-center gap-2 pt-3 border-t border-slate-200 dark:border-slate-800">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowViewCookiesModal(false);
+                        setShowCookieModal(true);
+                      }}
+                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
+                    >
+                      <Key className="w-3.5 h-3.5" />
+                      <span>Paste Fresh Cookie</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        await handleValidateSession();
+                        handleOpenViewCookiesModal();
+                      }}
+                      disabled={validatingSession}
+                      className="bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/60 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {validatingSession ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                      <span>Validate Live</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowViewCookiesModal(false);
+                        handleDisconnectSession();
+                      }}
+                      className="text-xs text-rose-500 hover:text-rose-700 font-semibold px-2 py-1 cursor-pointer"
+                    >
+                      Disconnect
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowViewCookiesModal(false)}
+                      className="bg-slate-800 hover:bg-slate-900 text-white dark:bg-slate-700 dark:hover:bg-slate-600 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                    >
+                      Close
+                    </button>
+                  </div>
                 </div>
               </div>
             )}
-          </div>
-        </div>
       )}
     </div>
   );

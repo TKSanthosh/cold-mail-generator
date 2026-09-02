@@ -16,7 +16,27 @@ const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } =
 const { harvestRecruiterPosts, scrapeLinkedInJobPost, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
 const { verifyEmailDeliverability } = require('./services/email_verifier.service');
 const { scanGmailBounces, getBouncedEmails, clearBounces } = require('./services/bounce.service');
-const { getNaukriConfig, saveNaukriConfig, getNaukriHistory, clearNaukriHistory, getNaukriSessionCookies, saveNaukriSessionCookies, clearNaukriSession, uploadResumeToNaukri, verifyNaukriOtp, startInteractiveGoogleSsoLogin, initNaukriScheduler, triggerNaukriUploadForActiveUsers, validateNaukriSession } = require('./services/naukri.service');
+const {
+  getNaukriConfig,
+  getNaukriConfigAsync,
+  saveNaukriConfig,
+  saveNaukriConfigAsync,
+  getNaukriHistory,
+  clearNaukriHistory,
+  getNaukriSessionCookies,
+  saveNaukriSessionCookies,
+  saveNaukriSessionCookiesAsync,
+  clearNaukriSession,
+  clearNaukriSessionAsync,
+  uploadResumeToNaukri,
+  verifyNaukriOtp,
+  startInteractiveGoogleSsoLogin,
+  initNaukriScheduler,
+  triggerNaukriUploadForActiveUsers,
+  validateNaukriSession,
+  getNaukriSessionStatus,
+  getNaukriSessionStatusAsync
+} = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
@@ -67,6 +87,7 @@ const {
   updateQueueItemState,
   clearNaukriQueue,
   runStandaloneNaukriApply,
+  reconcileNaukriAppliedJobs,
   getAutoApplyStatus
 } = require('./services/naukri_apply.service');
 
@@ -881,17 +902,17 @@ app.get('/api/supabase/status', (req, res) => {
 app.get('/api/naukri/config', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   if (isSupabaseConfigured()) {
-    const paths = getUserPaths(userKey);
-    if (!fs.existsSync(paths.naukriConfigPath) || !fs.existsSync(paths.naukriSessionPath)) {
+    try {
       await hydrateUserSandboxFromDatabase(userKey);
-    }
+    } catch (e) {}
   }
-  res.json({ config: maskSensitiveConfig(getNaukriConfig(userKey)) });
+  const config = await getNaukriConfigAsync(userKey);
+  res.json({ config: maskSensitiveConfig(config) });
 });
 
-app.post('/api/naukri/config', (req, res) => {
+app.post('/api/naukri/config', async (req, res) => {
   const userKey = resolveUserKey(req, res);
-  const updated = saveNaukriConfig(userKey, req.body || {});
+  const updated = await saveNaukriConfigAsync(userKey, req.body || {});
   res.json({ success: true, config: maskSensitiveConfig(updated) });
 });
 
@@ -1083,8 +1104,19 @@ app.post('/api/naukri/verify-otp', async (req, res) => {
   }
 });
 
+app.get('/api/naukri/session/status', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const status = await getNaukriSessionStatusAsync(userKey);
+    res.json({ success: true, ...status });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.get('/api/naukri/session/cookies', async (req, res) => {
   const userKey = resolveUserKey(req, res);
+  const statusInfo = await getNaukriSessionStatusAsync(userKey);
   let cookies = getNaukriSessionCookies(userKey);
   if ((!cookies || cookies.length === 0) && isSupabaseConfigured()) {
     try {
@@ -1097,17 +1129,29 @@ app.get('/api/naukri/session/cookies', async (req, res) => {
     } catch (e) {}
   }
 
-  const cookieString = Array.isArray(cookies)
-    ? cookies.map(c => `${c.name}=${c.value}`).join('; ')
-    : '';
+  // Redacted cookie metadata - never expose raw cookie values
+  const sanitizedCookies = (cookies || []).map(c => ({
+    name: c.name,
+    domain: c.domain,
+    path: c.path,
+    expires: c.expires,
+    httpOnly: c.httpOnly,
+    secure: c.secure,
+    sameSite: c.sameSite,
+    hasValue: Boolean(c.value),
+    value: 'Stored Securely'
+  }));
 
   res.json({
     success: true,
     hasSession: Array.isArray(cookies) && cookies.length > 0,
     cookieCount: Array.isArray(cookies) ? cookies.length : 0,
-    cookies: cookies || [],
-    cookieString,
-    storedInDb: isSupabaseConfigured()
+    cookies: sanitizedCookies,
+    storedInDb: isSupabaseConfigured(),
+    status: statusInfo.status,
+    authenticated: statusInfo.authenticated,
+    lastVerifiedAt: statusInfo.lastVerifiedAt,
+    lastUpdatedAt: statusInfo.lastUpdatedAt
   });
 });
 
@@ -1125,14 +1169,16 @@ function maskSensitiveConfig(conf) {
       httpOnly: c.httpOnly,
       secure: c.secure,
       sameSite: c.sameSite,
-      hasValue: Boolean(c.value)
+      hasValue: Boolean(c.value),
+      value: 'Stored Securely'
     }));
   }
   return masked;
 }
 
-app.get('/api/naukri/session', (req, res) => {
+app.get('/api/naukri/session', async (req, res) => {
   const userKey = resolveUserKey(req, res);
+  const statusInfo = await getNaukriSessionStatusAsync(userKey);
   const cookies = getNaukriSessionCookies(userKey);
   const sanitizedCookies = (cookies || []).map(c => ({
     name: c.name,
@@ -1142,36 +1188,36 @@ app.get('/api/naukri/session', (req, res) => {
     httpOnly: c.httpOnly,
     secure: c.secure,
     sameSite: c.sameSite,
-    hasValue: Boolean(c.value)
+    hasValue: Boolean(c.value),
+    value: 'Stored Securely'
   }));
 
   res.json({
     success: true,
-    hasSession: Array.isArray(cookies) && cookies.length > 0,
-    cookieCount: Array.isArray(cookies) ? cookies.length : 0,
+    ...statusInfo,
     cookies: sanitizedCookies,
     storedInDb: isSupabaseConfigured()
   });
 });
 
-app.post('/api/naukri/import-session', (req, res) => {
+app.post('/api/naukri/import-session', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const { cookies } = req.body;
   if (!cookies) {
     return res.status(400).json({ error: 'Please provide session cookies.' });
   }
   try {
-    const result = saveNaukriSessionCookies(userKey, cookies);
+    const result = await saveNaukriSessionCookiesAsync(userKey, cookies);
     res.json(result);
   } catch (e) {
     res.status(400).json({ error: e.message });
   }
 });
 
-app.post('/api/naukri/clear-session', (req, res) => {
+app.post('/api/naukri/clear-session', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
-    const result = clearNaukriSession(userKey);
+    const result = await clearNaukriSessionAsync(userKey);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1182,9 +1228,11 @@ app.all('/api/naukri/session/validate', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
     const result = await validateNaukriSession(userKey);
-    res.json({ success: true, ...result, config: maskSensitiveConfig(getNaukriConfig(userKey)) });
+    const config = await getNaukriConfigAsync(userKey);
+    res.json({ success: true, ...result, config: maskSensitiveConfig(config) });
   } catch (e) {
-    res.status(500).json({ success: false, error: e.message, config: maskSensitiveConfig(getNaukriConfig(userKey)) });
+    const config = await getNaukriConfigAsync(userKey);
+    res.status(500).json({ success: false, error: e.message, config: maskSensitiveConfig(config) });
   }
 });
 
@@ -1208,6 +1256,40 @@ app.post('/api/naukri/apply/resume-job', async (req, res) => {
     });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/apply/reconcile', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { findBrowserExecutable, getNaukriConfig, restoreAndInjectNaukriSession } = require('./services/naukri.service');
+  const puppeteer = require('puppeteer');
+
+  let browser = null;
+  try {
+    const config = getNaukriConfig(userKey);
+    const browserPath = findBrowserExecutable();
+    browser = await puppeteer.launch({
+      headless: 'new',
+      executablePath: browserPath || undefined,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    await restoreAndInjectNaukriSession(page, userKey);
+
+    const result = await reconcileNaukriAppliedJobs(page, userKey);
+    res.json({
+      ...result,
+      todayStats: getTodayAppliedStats(userKey),
+      applications: getNaukriAppliedJobs(userKey)
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch (err) {}
+    }
   }
 });
 

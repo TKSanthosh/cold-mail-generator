@@ -388,33 +388,45 @@ function hasValidNaukriSession(userKey = 'default_user') {
   return false;
 }
 
-function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
-  ensureUserSandbox(userKey);
-  const paths = getUserPaths(userKey);
-  let cookiesToSave = [];
-
-  const sanitizeCookieObj = (c) => {
-    if (!c || !c.name || !c.value) return null;
-    const cookie = {
-      name: String(c.name).trim(),
-      value: String(c.value).trim(),
-      domain: c.domain || '.naukri.com',
-      path: c.path || '/'
-    };
-    if (c.expires !== undefined && c.expires !== null && !isNaN(Number(c.expires))) {
-      cookie.expires = Number(c.expires);
-    }
-    if (typeof c.httpOnly === 'boolean') {
-      cookie.httpOnly = c.httpOnly;
-    }
-    if (typeof c.secure === 'boolean') {
-      cookie.secure = c.secure;
-    }
-    if (c.sameSite && ['Strict', 'Lax', 'None', 'strict', 'lax', 'none'].includes(c.sameSite)) {
-      cookie.sameSite = c.sameSite;
-    }
-    return cookie;
+function sanitizeCookieObj(c) {
+  if (!c || !c.name || !c.value) return null;
+  const rawDomain = (c.domain || '.naukri.com').trim();
+  const cookie = {
+    name: String(c.name).trim(),
+    value: String(c.value).trim(),
+    domain: rawDomain.startsWith('.') ? rawDomain : `.${rawDomain}`,
+    path: c.path ? String(c.path).trim() : '/'
   };
+
+  const rawExp = c.expires !== undefined ? c.expires : c.expirationDate;
+  if (rawExp !== undefined && rawExp !== null && !isNaN(Number(rawExp))) {
+    let numExp = Number(rawExp);
+    if (numExp > 100000000000) { // Milliseconds epoch timestamp -> convert to seconds
+      numExp = Math.floor(numExp / 1000);
+    }
+    if (numExp > 0) {
+      cookie.expires = numExp;
+    }
+  }
+
+  if (typeof c.httpOnly === 'boolean') {
+    cookie.httpOnly = c.httpOnly;
+  }
+  if (typeof c.secure === 'boolean') {
+    cookie.secure = c.secure;
+  }
+  if (c.sameSite) {
+    const s = String(c.sameSite).toLowerCase();
+    if (s === 'strict') cookie.sameSite = 'Strict';
+    else if (s === 'lax') cookie.sameSite = 'Lax';
+    else if (s === 'none' || s === 'no_restriction') cookie.sameSite = 'None';
+  }
+
+  return cookie;
+}
+
+function parseCookieInput(cookieInput) {
+  let cookiesToSave = [];
 
   if (Array.isArray(cookieInput)) {
     cookiesToSave = cookieInput.map(sanitizeCookieObj).filter(Boolean);
@@ -458,7 +470,8 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
           const attr = parts[i].trim();
           const attrLower = attr.toLowerCase();
           if (attrLower.startsWith('domain=')) {
-            cookie.domain = attr.substring(7).trim();
+            const d = attr.substring(7).trim();
+            cookie.domain = d.startsWith('.') ? d : `.${d}`;
           } else if (attrLower.startsWith('path=')) {
             cookie.path = attr.substring(5).trim();
           } else if (attrLower.startsWith('expires=')) {
@@ -471,7 +484,10 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
           } else if (attrLower === 'secure') {
             cookie.secure = true;
           } else if (attrLower.startsWith('samesite=')) {
-            cookie.sameSite = attr.substring(9).trim();
+            const s = attr.substring(9).trim().toLowerCase();
+            if (s === 'strict') cookie.sameSite = 'Strict';
+            else if (s === 'lax') cookie.sameSite = 'Lax';
+            else if (s === 'none' || s === 'no_restriction') cookie.sameSite = 'None';
           }
         }
         cookiesToSave.push(cookie);
@@ -505,26 +521,51 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
     }
   }
 
+  return cookiesToSave;
+}
+
+async function saveNaukriSessionCookiesAsync(userKey = 'default_user', cookieInput, options = {}) {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  const cookiesToSave = parseCookieInput(cookieInput);
+
   if (cookiesToSave.length > 0) {
     fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookiesToSave, null, 2), 'utf8');
     const config = getNaukriConfig(userKey);
+    const newStatus = options.status || (config.sessionStatus === 'ACTIVE' ? 'ACTIVE' : 'CONFIGURED');
     config.hasSession = true;
-    config.sessionStatus = 'CONFIGURED'; // Marked CONFIGURED until live validation confirms ACTIVE
-    config.lastStatus = 'Session Configured (Pending Live Verification)';
+    config.sessionStatus = newStatus;
+    config.lastStatus = newStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Configured (Pending Live Verification)';
     config.lastError = null;
+    config.lastUpdatedAt = new Date().toISOString();
+    if (newStatus === 'ACTIVE') {
+      config.lastVerifiedAt = new Date().toISOString();
+    }
     config.sessionCookies = cookiesToSave;
-    saveNaukriConfig(userKey, config);
+    fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(config, null, 2), 'utf8');
 
     if (isSupabaseConfigured()) {
-      supabaseSaveNaukriConfig(userKey, { ...config, sessionCookies: cookiesToSave, hasSession: true, sessionStatus: 'CONFIGURED' }).catch(() => {});
+      try {
+        await supabaseSaveNaukriConfig(userKey, {
+          ...config,
+          sessionCookies: cookiesToSave,
+          hasSession: true,
+          sessionStatus: newStatus,
+          lastUpdatedAt: config.lastUpdatedAt,
+          lastVerifiedAt: config.lastVerifiedAt,
+          lastError: null
+        });
+      } catch (e) {
+        console.warn('[SUPABASE] saveNaukriSessionCookiesAsync notice:', e.message);
+      }
     }
 
     const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
 
     appendNaukriHistory(userKey, {
-      status: 'Session Configured',
+      status: newStatus === 'ACTIVE' ? 'Session Refreshed' : 'Session Configured',
       detail: `Stored ${cookiesToSave.length} session cookies into Supabase database`,
-      profileStatus: 'Session Configured - Ready for Verification'
+      profileStatus: newStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Configured - Ready for Verification'
     });
 
     logStructured('AUTH', `Successfully saved and persisted ${cookiesToSave.length} complete session cookies to Supabase DB for user "${userKey}"`);
@@ -533,7 +574,65 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput) {
       success: true,
       count: cookiesToSave.length,
       hasAuthToken: hasNaukSession,
-      status: 'CONFIGURED',
+      status: newStatus,
+      lastVerifiedAt: config.lastVerifiedAt || null,
+      lastUpdatedAt: config.lastUpdatedAt,
+      message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Supabase database is now configured.`
+    };
+  }
+
+  throw new Error('Could not parse session cookies. Please copy the "cookie:" request header from Network tab or paste a JSON array / cookie string.');
+}
+
+function saveNaukriSessionCookies(userKey = 'default_user', cookieInput, options = {}) {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  const cookiesToSave = parseCookieInput(cookieInput);
+
+  if (cookiesToSave.length > 0) {
+    fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookiesToSave, null, 2), 'utf8');
+    const config = getNaukriConfig(userKey);
+    const newStatus = options.status || (config.sessionStatus === 'ACTIVE' ? 'ACTIVE' : 'CONFIGURED');
+    config.hasSession = true;
+    config.sessionStatus = newStatus;
+    config.lastStatus = newStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Configured (Pending Live Verification)';
+    config.lastError = null;
+    config.lastUpdatedAt = new Date().toISOString();
+    if (newStatus === 'ACTIVE') {
+      config.lastVerifiedAt = new Date().toISOString();
+    }
+    config.sessionCookies = cookiesToSave;
+    fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(config, null, 2), 'utf8');
+
+    if (isSupabaseConfigured()) {
+      supabaseSaveNaukriConfig(userKey, {
+        ...config,
+        sessionCookies: cookiesToSave,
+        hasSession: true,
+        sessionStatus: newStatus,
+        lastUpdatedAt: config.lastUpdatedAt,
+        lastVerifiedAt: config.lastVerifiedAt,
+        lastError: null
+      }).catch(() => {});
+    }
+
+    const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
+
+    appendNaukriHistory(userKey, {
+      status: newStatus === 'ACTIVE' ? 'Session Refreshed' : 'Session Configured',
+      detail: `Stored ${cookiesToSave.length} session cookies into Supabase database`,
+      profileStatus: newStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Configured - Ready for Verification'
+    });
+
+    logStructured('AUTH', `Successfully saved and persisted ${cookiesToSave.length} complete session cookies to Supabase DB for user "${userKey}"`);
+
+    return {
+      success: true,
+      count: cookiesToSave.length,
+      hasAuthToken: hasNaukSession,
+      status: newStatus,
+      lastVerifiedAt: config.lastVerifiedAt || null,
+      lastUpdatedAt: config.lastUpdatedAt,
       message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Supabase database is now configured.`
     };
   }
@@ -563,6 +662,29 @@ function getNaukriSessionCookies(userKey = 'default_user') {
   return [];
 }
 
+async function clearNaukriSessionAsync(userKey = 'default_user') {
+  ensureUserSandbox(userKey);
+  const paths = getUserPaths(userKey);
+  if (fs.existsSync(paths.naukriSessionPath)) {
+    try { fs.unlinkSync(paths.naukriSessionPath); } catch (e) {}
+  }
+  const config = getNaukriConfig(userKey);
+  config.hasSession = false;
+  config.sessionStatus = 'NOT_CONFIGURED';
+  config.lastStatus = 'Session Disconnected';
+  config.sessionCookies = [];
+  config.lastUpdatedAt = new Date().toISOString();
+  saveNaukriConfig(userKey, config);
+
+  if (isSupabaseConfigured()) {
+    try {
+      await supabaseSaveNaukriConfig(userKey, { sessionCookies: [], hasSession: false, sessionStatus: 'NOT_CONFIGURED', lastUpdatedAt: config.lastUpdatedAt });
+    } catch (e) {}
+  }
+  logStructured('AUTH', `Naukri session disconnected for user "${userKey}"`);
+  return { success: true, message: 'Naukri session disconnected.' };
+}
+
 function clearNaukriSession(userKey = 'default_user') {
   ensureUserSandbox(userKey);
   const paths = getUserPaths(userKey);
@@ -571,13 +693,14 @@ function clearNaukriSession(userKey = 'default_user') {
   }
   const config = getNaukriConfig(userKey);
   config.hasSession = false;
-  config.sessionStatus = 'DISCONNECTED';
+  config.sessionStatus = 'NOT_CONFIGURED';
   config.lastStatus = 'Session Disconnected';
   config.sessionCookies = [];
+  config.lastUpdatedAt = new Date().toISOString();
   saveNaukriConfig(userKey, config);
 
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, { sessionCookies: [], hasSession: false, sessionStatus: 'DISCONNECTED' }).catch(() => {});
+    supabaseSaveNaukriConfig(userKey, { sessionCookies: [], hasSession: false, sessionStatus: 'NOT_CONFIGURED', lastUpdatedAt: config.lastUpdatedAt }).catch(() => {});
   }
   logStructured('AUTH', `Naukri session disconnected for user "${userKey}"`);
   return { success: true, message: 'Naukri session disconnected.' };
@@ -593,6 +716,8 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
   let cookies = [];
   let source = 'none';
 
+  logStructured('AUTH', `Loading persisted Naukri session for user "${userKey}"...`);
+
   // 1. SUPABASE DATABASE IS AUTHORITATIVE SOURCE OF TRUTH (Crucial for Render container restarts)
   if (isSupabaseConfigured()) {
     try {
@@ -602,7 +727,6 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
         source = 'supabase_database';
         // Cache to local sandbox for session operations
         try { fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cookies, null, 2), 'utf8'); } catch (e) {}
-        logStructured('AUTH', `Loaded ${cookies.length} persisted session cookies from Supabase DB for user "${userKey}"`);
       }
     } catch (e) {
       console.warn('[AUTH WARNING] Supabase session retrieval notice:', e.message);
@@ -629,13 +753,21 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
     } catch (e) {}
   }
 
-  if (Array.isArray(cookies) && cookies.length > 0) {
+  if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
+    logStructured('AUTH', `No persisted session cookies found in Supabase DB or cache for user "${userKey}"`);
+    return { hasSession: false, count: 0, restored: false, source: 'none', status: 'NOT_CONFIGURED' };
+  }
+
+  logStructured('AUTH', `Session found (${cookies.length} cookies from ${source})`);
+  logStructured('AUTH', `Restoring browser authentication...`);
+
+  try {
     for (const c of cookies) {
-      if (!c.name || !c.value) continue;
+      if (!c || !c.name || !c.value) continue;
       const dom = c.domain || '.naukri.com';
       const cookieObj = {
-        name: c.name,
-        value: c.value,
+        name: String(c.name).trim(),
+        value: String(c.value).trim(),
         domain: dom.startsWith('.') ? dom : `.${dom}`,
         path: c.path || '/'
       };
@@ -648,7 +780,7 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
       if (typeof c.secure === 'boolean') {
         cookieObj.secure = c.secure;
       }
-      if (c.sameSite && ['Strict', 'Lax', 'None', 'strict', 'lax', 'none'].includes(c.sameSite)) {
+      if (c.sameSite && ['Strict', 'Lax', 'None'].includes(c.sameSite)) {
         cookieObj.sameSite = c.sameSite;
       }
 
@@ -660,15 +792,51 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
             ...cookieObj,
             domain: 'www.naukri.com'
           });
-        } catch (e2) {}
+        } catch (e2) {
+          try {
+            await page.setCookie({
+              ...cookieObj,
+              domain: 'naukri.com'
+            });
+          } catch (e3) {}
+        }
       }
     }
-    logStructured('AUTH', `Injected ${cookies.length} session cookies into browser context from ${source} for user "${userKey}"`);
-    return { hasSession: true, count: cookies.length, cookies, source };
-  }
 
-  logStructured('AUTH', `No persisted session cookies found in Supabase DB or cache for user "${userKey}"`);
-  return { hasSession: false, count: 0, cookies: [], source: 'none' };
+    const browserCookies = await page.cookies().catch(() => []);
+    if (!browserCookies || browserCookies.length === 0) {
+      logStructured('AUTH', `Session restore failed for user "${userKey}": Browser context failed to accept cookies`);
+      const config = getNaukriConfig(userKey);
+      config.sessionStatus = 'AUTH_RESTORE_FAILED';
+      config.lastError = 'Browser context failed to accept injected cookies (AUTH_RESTORE_FAILED)';
+      saveNaukriConfig(userKey, config);
+      return {
+        hasSession: false,
+        count: 0,
+        restored: false,
+        failureType: 'AUTH_RESTORE_FAILED',
+        error: 'Browser context rejected cookie injection',
+        source
+      };
+    }
+
+    logStructured('AUTH', `Browser authentication restored (${browserCookies.length} cookies active)`);
+    return { hasSession: true, count: browserCookies.length, restored: true, cookies, source };
+  } catch (injectErr) {
+    logStructured('AUTH', `Session restore failed for user "${userKey}": ${injectErr.message}`);
+    const config = getNaukriConfig(userKey);
+    config.sessionStatus = 'AUTH_RESTORE_FAILED';
+    config.lastError = `Cookie injection error: ${injectErr.message}`;
+    saveNaukriConfig(userKey, config);
+    return {
+      hasSession: false,
+      count: 0,
+      restored: false,
+      failureType: 'AUTH_RESTORE_FAILED',
+      error: injectErr.message,
+      source
+    };
+  }
 }
 
 /**
@@ -678,7 +846,7 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
  * If invalid, halts automation and marks session expired.
  */
 async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
-  logStructured('AUTH', `Live verification started against Naukri servers for user "${userKey}"...`);
+  logStructured('AUTH', `Validating Naukri session for user "${userKey}"...`);
 
   try {
     // 1. Warm up connection on root domain
@@ -709,7 +877,8 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
                             isAccessDenied;
 
     if (isLoginRedirect) {
-      logStructured('AUTH', `Session invalidated by Naukri (URL: ${currentUrl}, Title: "${pageTitle}")`);
+      logStructured('AUTH', `Naukri login redirect detected (URL: ${currentUrl}, Title: "${pageTitle}")`);
+      logStructured('AUTH', `Session marked EXPIRED`);
       const reason = isAccessDenied ? 'Access Denied by Naukri' : 'Redirected to login page (Session expired on Naukri)';
 
       const config = getNaukriConfig(userKey);
@@ -718,6 +887,7 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
       config.lastStatus = 'SESSION EXPIRED (Authentication Required)';
       config.lastError = `Naukri session expired: ${reason}`;
       config.lastVerifiedAt = new Date().toISOString();
+      config.lastUpdatedAt = new Date().toISOString();
       saveNaukriConfig(userKey, config);
 
       if (isSupabaseConfigured()) {
@@ -726,7 +896,8 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
           sessionStatus: 'EXPIRED',
           lastStatus: config.lastStatus,
           lastError: config.lastError,
-          lastVerifiedAt: config.lastVerifiedAt
+          lastVerifiedAt: config.lastVerifiedAt,
+          lastUpdatedAt: config.lastUpdatedAt
         }).catch(() => {});
       }
 
@@ -740,8 +911,10 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
         authenticated: false,
         isValid: false,
         status: 'EXPIRED',
-        reason,
-        currentUrl
+        reason: 'NAUKRI_LOGIN_REDIRECT',
+        detail: reason,
+        currentUrl,
+        lastVerifiedAt: config.lastVerifiedAt
       };
     }
 
@@ -754,20 +927,22 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
     });
 
     if (currentUrl.includes('mnjuser/profile') || profileInfo.hasProfileHeader || profileInfo.candidateName) {
-      logStructured('AUTH', `Session ACTIVE on Naukri! Candidate: "${profileInfo.candidateName || userKey}"`);
+      logStructured('AUTH', `Naukri session ACTIVE for candidate: "${profileInfo.candidateName || userKey}"`);
 
       // 5. Capture complete rolling refreshed cookies from Naukri and persist to Supabase DB & sandbox
-      const latestCookies = await page.cookies();
+      const latestCookies = await page.cookies().catch(() => []);
       if (Array.isArray(latestCookies) && latestCookies.length > 0) {
-        saveNaukriSessionCookies(userKey, latestCookies);
+        saveNaukriSessionCookies(userKey, latestCookies, { status: 'ACTIVE' });
       }
 
       const config = getNaukriConfig(userKey);
       config.hasSession = true;
       config.sessionStatus = 'ACTIVE';
       config.lastVerifiedAt = new Date().toISOString();
+      config.lastUpdatedAt = new Date().toISOString();
       config.lastStatus = 'Active & Verified';
       config.lastError = null;
+      if (profileInfo.candidateName) config.candidateName = profileInfo.candidateName;
       saveNaukriConfig(userKey, config);
 
       if (isSupabaseConfigured()) {
@@ -776,6 +951,8 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
           sessionStatus: 'ACTIVE',
           lastStatus: config.lastStatus,
           lastVerifiedAt: config.lastVerifiedAt,
+          lastUpdatedAt: config.lastUpdatedAt,
+          candidateName: profileInfo.candidateName || null,
           lastError: null
         }).catch(() => {});
       }
@@ -793,7 +970,8 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
     // Check for login input fields on page
     const hasLoginInputs = await page.$('#usernameField, #login_email, input[placeholder*="Enter your active Email" i], input[type="password"]');
     if (hasLoginInputs) {
-      logStructured('AUTH', 'Login form detected on page. Session is expired.');
+      logStructured('AUTH', 'Naukri login redirect detected (Login form present)');
+      logStructured('AUTH', 'Session marked EXPIRED');
       const reason = 'Login form detected on page';
 
       const config = getNaukriConfig(userKey);
@@ -802,6 +980,7 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
       config.lastStatus = 'SESSION EXPIRED (Authentication Required)';
       config.lastError = reason;
       config.lastVerifiedAt = new Date().toISOString();
+      config.lastUpdatedAt = new Date().toISOString();
       saveNaukriConfig(userKey, config);
 
       if (isSupabaseConfigured()) {
@@ -810,7 +989,8 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
           sessionStatus: 'EXPIRED',
           lastStatus: config.lastStatus,
           lastError: config.lastError,
-          lastVerifiedAt: config.lastVerifiedAt
+          lastVerifiedAt: config.lastVerifiedAt,
+          lastUpdatedAt: config.lastUpdatedAt
         }).catch(() => {});
       }
 
@@ -818,7 +998,9 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
         authenticated: false,
         isValid: false,
         status: 'EXPIRED',
-        reason
+        reason: 'NAUKRI_LOGIN_REDIRECT',
+        detail: reason,
+        lastVerifiedAt: config.lastVerifiedAt
       };
     }
 
@@ -859,7 +1041,24 @@ async function validateNaukriSession(userKey = 'default_user') {
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    await restoreAndInjectNaukriSession(page, userKey);
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+        return {
+          authenticated: false,
+          isValid: false,
+          status: 'AUTH_RESTORE_FAILED',
+          reason: restoreResult.error || 'Browser failed to restore session'
+        };
+      }
+      return {
+        authenticated: false,
+        isValid: false,
+        status: 'NOT_CONFIGURED',
+        reason: 'No session cookies found'
+      };
+    }
+
     const result = await validateNaukriSessionOnPage(page, userKey);
     return result;
   } finally {
@@ -867,6 +1066,85 @@ async function validateNaukriSession(userKey = 'default_user') {
       try { await browser.close(); } catch (e) {}
     }
   }
+}
+
+/**
+ * Single source of truth for session health
+ */
+async function getNaukriSessionStatusAsync(userKey = 'default_user') {
+  let cloudConf = null;
+  if (isSupabaseConfigured()) {
+    try {
+      cloudConf = await supabaseGetNaukriConfig(userKey);
+    } catch (e) {}
+  }
+
+  const localConf = getNaukriConfig(userKey);
+  const activeCookies = (cloudConf && Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0)
+    ? cloudConf.sessionCookies
+    : (localConf.sessionCookies || getNaukriSessionCookies(userKey));
+
+  const hasCookies = Array.isArray(activeCookies) && activeCookies.length > 0;
+  let status = cloudConf?.sessionStatus || localConf.sessionStatus || (hasCookies ? 'CONFIGURED' : 'NOT_CONFIGURED');
+
+  if (!hasCookies && (status === 'ACTIVE' || status === 'CONFIGURED')) {
+    status = 'NOT_CONFIGURED';
+  }
+
+  const lastVerifiedAt = cloudConf?.lastVerifiedAt || localConf.lastVerifiedAt || null;
+  const lastUpdatedAt = cloudConf?.lastUpdatedAt || cloudConf?.updatedAt || localConf.lastUpdatedAt || null;
+  const lastError = cloudConf?.lastError || localConf.lastError || null;
+
+  return {
+    status,
+    authenticated: status === 'ACTIVE',
+    lastVerifiedAt,
+    lastUpdatedAt,
+    reason: status === 'EXPIRED' ? (lastError || 'NAUKRI_LOGIN_REDIRECT') : (status === 'AUTH_RESTORE_FAILED' ? (lastError || 'AUTH_RESTORE_FAILED') : null),
+    cookieCount: hasCookies ? activeCookies.length : 0,
+    candidateName: cloudConf?.candidateName || localConf.candidateName || null
+  };
+}
+
+function getNaukriSessionStatus(userKey = 'default_user') {
+  const localConf = getNaukriConfig(userKey);
+  const activeCookies = localConf.sessionCookies || getNaukriSessionCookies(userKey);
+  const hasCookies = Array.isArray(activeCookies) && activeCookies.length > 0;
+  let status = localConf.sessionStatus || (hasCookies ? 'CONFIGURED' : 'NOT_CONFIGURED');
+
+  if (!hasCookies && (status === 'ACTIVE' || status === 'CONFIGURED')) {
+    status = 'NOT_CONFIGURED';
+  }
+
+  return {
+    status,
+    authenticated: status === 'ACTIVE',
+    lastVerifiedAt: localConf.lastVerifiedAt || null,
+    lastUpdatedAt: localConf.lastUpdatedAt || null,
+    reason: status === 'EXPIRED' ? (localConf.lastError || 'NAUKRI_LOGIN_REDIRECT') : (status === 'AUTH_RESTORE_FAILED' ? (localConf.lastError || 'AUTH_RESTORE_FAILED') : null),
+    cookieCount: hasCookies ? activeCookies.length : 0,
+    candidateName: localConf.candidateName || null
+  };
+}
+
+async function getNaukriConfigAsync(userKey = 'default_user') {
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudConf = await supabaseGetNaukriConfig(userKey);
+      if (cloudConf && typeof cloudConf === 'object') {
+        const local = getNaukriConfig(userKey);
+        const merged = { ...local, ...cloudConf };
+        if (Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
+          merged.sessionCookies = cloudConf.sessionCookies;
+          merged.hasSession = true;
+          const paths = getUserPaths(userKey);
+          try { fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(cloudConf.sessionCookies, null, 2), 'utf8'); } catch (e) {}
+        }
+        return merged;
+      }
+    } catch (e) {}
+  }
+  return getNaukriConfig(userKey);
 }
 
 function getNaukriConfig(userKey = 'default_user') {
@@ -888,7 +1166,7 @@ function getNaukriConfig(userKey = 'default_user') {
         username: process.env.NAUKRI_USERNAME || '',
         password: process.env.NAUKRI_PASSWORD || '',
         hasSession: hasActiveSession || Boolean(envCookies),
-        sessionStatus: hasActiveSession ? (saved.sessionStatus || 'ACTIVE') : 'DISCONNECTED',
+        sessionStatus: hasActiveSession ? (saved.sessionStatus || 'CONFIGURED') : 'NOT_CONFIGURED',
         sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
         headless: true,
         autoApplyOnBoost: true,
@@ -898,6 +1176,7 @@ function getNaukriConfig(userKey = 'default_user') {
         lastUploadAt: null,
         nextUploadAt: null,
         lastVerifiedAt: null,
+        lastUpdatedAt: null,
         lastStatus: hasActiveSession ? 'Session Connected (Cookies)' : null,
         lastError: null,
         ...saved
@@ -927,7 +1206,7 @@ function getNaukriConfig(userKey = 'default_user') {
     username: process.env.NAUKRI_USERNAME || '',
     password: process.env.NAUKRI_PASSWORD || '',
     hasSession: hasActiveSession || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD),
-    sessionStatus: hasActiveSession ? 'ACTIVE' : 'DISCONNECTED',
+    sessionStatus: hasActiveSession ? 'CONFIGURED' : 'NOT_CONFIGURED',
     sessionCookies: activeCookies.length > 0 ? activeCookies : (envCookies || []),
     headless: true,
     autoApplyOnBoost: true,
@@ -935,10 +1214,21 @@ function getNaukriConfig(userKey = 'default_user') {
     searchKeywords: 'Full Stack Developer React Node.js Bangalore',
     eodTarget: 50,
     lastVerifiedAt: null,
+    lastUpdatedAt: null,
     lastError: null
   };
   defaultConf.nextUploadAt = calculateNextUploadTime(defaultConf).toISOString();
   return defaultConf;
+}
+
+async function saveNaukriConfigAsync(userKey = 'default_user', config = {}) {
+  const updated = saveNaukriConfig(userKey, config);
+  if (isSupabaseConfigured()) {
+    try {
+      await supabaseSaveNaukriConfig(userKey, updated);
+    } catch (e) {}
+  }
+  return updated;
 }
 
 function saveNaukriConfig(userKey = 'default_user', config = {}) {
@@ -947,19 +1237,20 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   const current = getNaukriConfig(userKey);
   const existingCookies = getNaukriSessionCookies(userKey);
 
-  const cookiesToKeep = (config.sessionCookies && config.sessionCookies.length > 0)
+  const cookiesToKeep = (config.sessionCookies && Array.isArray(config.sessionCookies))
     ? config.sessionCookies
     : (existingCookies.length > 0 ? existingCookies : (current.sessionCookies || []));
 
   const updated = {
     ...current,
     ...config,
-    sessionCookies: cookiesToKeep
+    sessionCookies: cookiesToKeep,
+    lastUpdatedAt: new Date().toISOString()
   };
 
   updated.hasSession = Array.isArray(updated.sessionCookies) && updated.sessionCookies.length > 0;
   if (updated.hasSession && (!updated.lastStatus || updated.lastStatus.includes('Disconnected'))) {
-    updated.lastStatus = 'Session Connected (Cookies)';
+    updated.lastStatus = updated.sessionStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Connected (Cookies)';
   }
 
   // Always recalculate nextUploadAt if scheduleMode or customSlots changed
@@ -972,6 +1263,8 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   // Save session file if cookies are present
   if (Array.isArray(updated.sessionCookies) && updated.sessionCookies.length > 0) {
     fs.writeFileSync(paths.naukriSessionPath, JSON.stringify(updated.sessionCookies, null, 2), 'utf8');
+  } else if (updated.sessionCookies && updated.sessionCookies.length === 0 && fs.existsSync(paths.naukriSessionPath)) {
+    try { fs.unlinkSync(paths.naukriSessionPath); } catch (e) {}
   }
 
   // Supabase Cloud Multi-Device Sync
@@ -1509,7 +1802,8 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
  */
 async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = {}) {
   // 0. Acquire Distributed Concurrency Lock
-  if (!acquireUserLock(userKey, 'resume_uploader')) {
+  const lockAcquired = await acquireUserLockAsync(userKey, 'resume_uploader');
+  if (!lockAcquired) {
     throw new Error(`Account "${userKey}" is already executing an active Naukri automation task. Concurrent run prevented.`);
   }
 
@@ -1517,27 +1811,13 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     clearActiveOtpSession(userKey);
 
     const userPaths = getUserPaths(userKey);
-    const config = getNaukriConfig(userKey);
+    const config = await getNaukriConfigAsync(userKey);
     let username = overrideOptions.username || config.username;
     let password = overrideOptions.password || config.password;
     const headless = overrideOptions.headless !== undefined ? overrideOptions.headless : (config.headless !== false);
 
-    if (isSupabaseConfigured()) {
-      try {
-        const cloudConf = await supabaseGetNaukriConfig(userKey);
-        if (cloudConf) {
-          if (!username && cloudConf.username) username = cloudConf.username;
-          if (!password && cloudConf.password) password = cloudConf.password;
-          if (Array.isArray(cloudConf.sessionCookies) && cloudConf.sessionCookies.length > 0) {
-            config.sessionCookies = cloudConf.sessionCookies;
-            config.hasSession = true;
-          }
-        }
-      } catch (e) {}
-    }
-
     if (overrideOptions.username || overrideOptions.password) {
-      saveNaukriConfig(userKey, {
+      await saveNaukriConfigAsync(userKey, {
         username: username || config.username,
         password: password || config.password
       });
@@ -1551,7 +1831,6 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     const resolvedResume = await resolveUserResumeFile(userKey);
     const uploadPdfPath = resolvedResume.filePath;
     const resumeFileName = resolvedResume.fileName;
-    const candidateName = resolvedResume.candidateName;
 
     logStructured('RESUME', `File resolved: ${resumeFileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
 
@@ -1609,23 +1888,36 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
       });
 
-      // 3. Restore and Inject Saved Session State
-      await restoreAndInjectNaukriSession(page, userKey);
+      // 3. Restore and Inject Saved Session State BEFORE navigating to Naukri
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+          logStructured('AUTH', `Session restore failed for user "${userKey}"`);
+          throw new Error(`[AUTH_RESTORE_FAILED] Application failed to restore saved session into browser context: ${restoreResult.error}`);
+        }
+        if (!username || !password) {
+          logStructured('AUTH', `No session found for user "${userKey}"`);
+          throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie".');
+        }
+      }
 
       // 4. Validate Live Session on Naukri BEFORE Doing Anything
-      let validation = await validateNaukriSessionOnPage(page, userKey);
+      let validation = { isValid: false, reason: 'NOT_CHECKED' };
+      if (restoreResult.hasSession) {
+        validation = await validateNaukriSessionOnPage(page, userKey);
+      }
 
       if (!validation.isValid) {
-        logStructured('AUTH', `Session validation failed (${validation.reason}) for user "${userKey}"`);
+        logStructured('AUTH', `Live session validation rejected by Naukri (${validation.reason || 'Session expired'}) for user "${userKey}"`);
         if (!username || !password) {
           const cfg = getNaukriConfig(userKey);
           cfg.hasSession = false;
           cfg.sessionStatus = 'EXPIRED';
           cfg.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
-          cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
-          saveNaukriConfig(userKey, cfg);
+          cfg.lastError = `Naukri session has expired on the server (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
+          await saveNaukriConfigAsync(userKey, cfg);
 
-          throw new Error(`Naukri session has expired on the server (${validation.reason}). Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie, or enter your Naukri password in the authorization card for automated 24/7 background refreshes.`);
+          throw new Error(`Naukri session has expired on the server (${validation.detail || validation.reason || 'Redirected to login page'}). Please click the "Paste Session Cookie" button in the Naukri menu to link your fresh browser cookie.`);
         }
 
         logStructured('AUTH', `Attempting automated credentials authentication for user "${userKey}"...`);
@@ -1756,10 +2048,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         }
 
         const sessionCookies = await page.cookies();
-        fs.writeFileSync(userPaths.naukriSessionPath, JSON.stringify(sessionCookies, null, 2), 'utf8');
-        if (isSupabaseConfigured()) {
-          supabaseSaveNaukriConfig(userKey, { sessionCookies, hasSession: true, sessionStatus: 'ACTIVE', lastVerifiedAt: new Date().toISOString() }).catch(() => {});
-        }
+        await saveNaukriSessionCookiesAsync(userKey, sessionCookies, { status: 'ACTIVE' });
         logStructured('AUTH', `Authentication successful. Session cookies saved for user ${userKey}.`);
       }
 
@@ -1783,20 +2072,28 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     } catch (err) {
       logStructured('ERROR', `Automation workflow error for user "${userKey}": ${err.message}`);
       const durationSec = Math.round((Date.now() - startTime) / 1000);
-      const isAuthError = err.message.toLowerCase().includes('unauthenticated') ||
-                          err.message.toLowerCase().includes('session has expired') ||
-                          err.message.toLowerCase().includes('access denied') ||
-                          err.message.toLowerCase().includes('login');
+      const isRestoreError = err.message.includes('AUTH_RESTORE_FAILED');
+      const isAuthError = !isRestoreError && (
+        err.message.toLowerCase().includes('unauthenticated') ||
+        err.message.toLowerCase().includes('session has expired') ||
+        err.message.toLowerCase().includes('access denied') ||
+        err.message.toLowerCase().includes('login')
+      );
 
       uploadResult = {
         status: 'error',
         error: err.message,
-        failureStage: isAuthError ? 'Authentication Required' : 'Execution Error',
+        failureStage: isRestoreError ? 'AUTH_RESTORE_FAILED' : (isAuthError ? 'Authentication Required' : 'Execution Error'),
         duration: `${durationSec}s`,
         timestamp: new Date().toISOString()
       };
 
-      if (isAuthError) {
+      if (isRestoreError) {
+        config.sessionStatus = 'AUTH_RESTORE_FAILED';
+        config.lastStatus = 'Session Restore Failed (Internal Browser Error)';
+        config.lastError = err.message;
+        config.nextUploadAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
+      } else if (isAuthError) {
         config.hasSession = false;
         config.sessionStatus = 'EXPIRED';
         config.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
@@ -1807,12 +2104,12 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
         config.lastError = err.message;
         config.nextUploadAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
       }
-      saveNaukriConfig(userKey, config);
+      await saveNaukriConfigAsync(userKey, config);
 
       appendNaukriHistory(userKey, {
-        status: isAuthError ? 'SESSION_EXPIRED' : 'failed',
+        status: isRestoreError ? 'AUTH_RESTORE_FAILED' : (isAuthError ? 'SESSION_EXPIRED' : 'failed'),
         error: err.message,
-        profileStatus: isAuthError ? 'Session Expired - Re-authentication Required' : 'Upload Failed',
+        profileStatus: isRestoreError ? 'Restore Failed' : (isAuthError ? 'Session Expired - Re-authentication Required' : 'Upload Failed'),
         duration: `${durationSec}s`
       });
 
@@ -1825,7 +2122,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
     return uploadResult;
   } finally {
-    releaseUserLock(userKey);
+    await releaseUserLockAsync(userKey, 'resume_uploader');
   }
 }
 
@@ -2033,7 +2330,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
   for (const userKey of targetUsers) {
     logStructured('ACCOUNT', `Evaluating user account: "${userKey}"...`);
     try {
-      if (isUserLocked(userKey)) {
+      if (await isUserLockedAsync(userKey)) {
         logStructured('LOCK', `Skipped "${userKey}": Account is locked by an ongoing automation process.`);
         results.push({ userKey, skipped: true, reason: 'Account locked by ongoing process' });
         continue;
@@ -2045,7 +2342,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
         } catch (e) {}
       }
 
-      const config = getNaukriConfig(userKey);
+      const config = await getNaukriConfigAsync(userKey);
       if (!config.enabled && !force) {
         logStructured('CRON', `Skipped "${userKey}": Scheduler disabled in config.`);
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
@@ -2053,7 +2350,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       }
 
       const paths = getUserPaths(userKey);
-      const hasSession = fs.existsSync(paths.naukriSessionPath) || Boolean(config.username) || Boolean(config.hasSession);
+      const hasSession = (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) || fs.existsSync(paths.naukriSessionPath) || Boolean(config.username);
       if (!hasSession && !force) {
         logStructured('CRON', `Skipped "${userKey}": No active session or credentials found.`);
         results.push({ userKey, skipped: true, reason: 'No active session or credentials found' });
@@ -2068,7 +2365,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       if (force || isDue) {
         logStructured('CRON', `Executing slot workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
         const uploadResult = await uploadResumeToNaukri(userKey);
-        const updatedConfig = getNaukriConfig(userKey);
+        const updatedConfig = await getNaukriConfigAsync(userKey);
         const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
 
         logStructured('CRON', `Auto-upload and Easy Apply completed successfully for user "${userKey}" (File: ${uploadedFileName})`);
@@ -2117,12 +2414,18 @@ module.exports = {
   hasValidNaukriSession,
   getNaukriSessionCookies,
   saveNaukriSessionCookies,
+  saveNaukriSessionCookiesAsync,
   clearNaukriSession,
+  clearNaukriSessionAsync,
   restoreAndInjectNaukriSession,
   validateNaukriSessionOnPage,
   validateNaukriSession,
+  getNaukriSessionStatus,
+  getNaukriSessionStatusAsync,
   getNaukriConfig,
+  getNaukriConfigAsync,
   saveNaukriConfig,
+  saveNaukriConfigAsync,
   getNaukriHistory,
   clearNaukriHistory,
   appendNaukriHistory,

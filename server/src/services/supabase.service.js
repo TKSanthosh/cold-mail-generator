@@ -337,7 +337,7 @@ async function supabaseGetLinkedInConfig() {
  * NAUKRI CONFIG & HISTORY (Per-User)
  */
 async function supabaseSaveNaukriConfig(userKey, config) {
-  if (!isSupabaseConfigured()) return false;
+  if (!isSupabaseConfigured() || !userKey) return false;
   try {
     // 1. Fetch existing cloud config to merge and avoid overwriting session cookies / passwords with undefined
     let existingRaw = null;
@@ -352,22 +352,29 @@ async function supabaseSaveNaukriConfig(userKey, config) {
     } catch (e) {}
 
     const secureConfig = { ...(existingRaw || {}), ...config };
+    secureConfig.lastUpdatedAt = secureConfig.lastUpdatedAt || new Date().toISOString();
 
     // Encrypt sensitive password before storing in DB
     if (config.password && typeof config.password === 'string' && !config.password.startsWith('enc:v1:')) {
       secureConfig.password = encryptText(config.password);
-    } else if (!config.password && existingRaw?.password) {
+    } else if (config.password === '') {
+      secureConfig.password = '';
+    } else if (config.password === undefined && existingRaw?.password) {
       secureConfig.password = existingRaw.password;
     }
 
     // Encrypt sensitive session cookies before storing in DB
-    if (config.sessionCookies && (Array.isArray(config.sessionCookies) || typeof config.sessionCookies === 'object')) {
+    if (Array.isArray(config.sessionCookies)) {
+      secureConfig.sessionCookies = config.sessionCookies.length > 0 ? encryptData(config.sessionCookies) : [];
+      secureConfig.hasSession = config.sessionCookies.length > 0;
+    } else if (config.sessionCookies && typeof config.sessionCookies === 'object') {
       secureConfig.sessionCookies = encryptData(config.sessionCookies);
-    } else if (!config.sessionCookies && existingRaw?.sessionCookies) {
+      secureConfig.hasSession = true;
+    } else if (config.sessionCookies === undefined && existingRaw?.sessionCookies) {
       secureConfig.sessionCookies = existingRaw.sessionCookies;
     }
 
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
       method: 'POST',
       headers: {
         ...getHeaders(),
@@ -379,6 +386,27 @@ async function supabaseSaveNaukriConfig(userKey, config) {
         updated_at: new Date().toISOString()
       })
     });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      // If user record doesn't exist yet, auto-provision user and retry
+      if (errText.includes('foreign key') || errText.includes('23503')) {
+        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : '' });
+        res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
+          method: 'POST',
+          headers: {
+            ...getHeaders(),
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify({
+            user_key: userKey,
+            config_data: secureConfig,
+            updated_at: new Date().toISOString()
+          })
+        });
+      }
+    }
+
     if (res.ok) return true;
 
     // Fallback: Store into users.tokens.naukri_config if standalone table is not yet created

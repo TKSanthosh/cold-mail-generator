@@ -67,7 +67,7 @@ const DEFAULT_FILTER_CONFIG = {
   minRelevanceScore: 40
 };
 
-// Application State Enum
+// Application State Machine (12 Explicit Lifecycle States)
 const ApplicationState = {
   DISCOVERED: 'DISCOVERED',
   ELIGIBLE: 'ELIGIBLE',
@@ -75,18 +75,38 @@ const ApplicationState = {
   STARTED: 'STARTED',
   FORM_OPENED: 'FORM_OPENED',
   FILLING: 'FILLING',
+  FORM_INCOMPLETE: 'FORM_INCOMPLETE',
   WAITING_FOR_USER: 'WAITING_FOR_USER',
   READY_TO_RESUME: 'READY_TO_RESUME',
   READY_TO_SUBMIT: 'READY_TO_SUBMIT',
   SUBMITTING: 'SUBMITTING',
+  SUBMISSION_UNCONFIRMED: 'SUBMISSION_UNCONFIRMED',
   SUBMITTED: 'SUBMITTED',
   FAILED: 'FAILED',
   SKIPPED: 'SKIPPED',
   EXPIRED: 'EXPIRED',
+  AUTHENTICATION_REQUIRED: 'AUTHENTICATION_REQUIRED',
+  AUTH_REQUIRED: 'AUTHENTICATION_REQUIRED',
+  LEGACY_UNVERIFIED: 'LEGACY_UNVERIFIED',
   // Backward compatibility aliases
   FORM_DETECTED: 'FORM_OPENED',
   AUTO_FILLED: 'FILLING',
   WAITING_FOR_USER_ANSWER: 'WAITING_FOR_USER'
+};
+
+const VerificationStatus = {
+  VERIFIED: 'VERIFIED',
+  UNVERIFIED: 'UNVERIFIED',
+  LEGACY_UNVERIFIED: 'LEGACY_UNVERIFIED',
+  RECONCILED: 'RECONCILED',
+  FAILED: 'FAILED'
+};
+
+const VerificationSource = {
+  NAUKRI_DOM_CONFIRMATION: 'NAUKRI_DOM_CONFIRMATION',
+  NAUKRI_APPLIED_SECTION: 'NAUKRI_APPLIED_SECTION',
+  NAUKRI_RECONCILIATION: 'NAUKRI_RECONCILIATION',
+  NONE: 'NONE'
 };
 
 function getQaFilePath(userKey) {
@@ -659,6 +679,61 @@ function clearNaukriQueue(userKey) {
 }
 
 /**
+ * Normalizes an applied job record and guarantees truthful verification status.
+ * Reclassifies legacy / unverified records as LEGACY_UNVERIFIED (does not delete history).
+ */
+function normalizeAppliedJobRecord(jobData) {
+  if (!jobData) return null;
+  const isExplicitlyVerified =
+    jobData.verificationStatus === VerificationStatus.VERIFIED ||
+    jobData.verificationStatus === VerificationStatus.RECONCILED;
+
+  let verificationStatus = jobData.verificationStatus;
+  let status = jobData.status;
+
+  if (!verificationStatus) {
+    if (status === 'Applied (Naukri Easy Apply - Confirmed)' || status === ApplicationState.SUBMITTED) {
+      verificationStatus = VerificationStatus.LEGACY_UNVERIFIED;
+      status = ApplicationState.LEGACY_UNVERIFIED;
+    } else if (status === 'Submission Unconfirmed' || status === ApplicationState.SUBMISSION_UNCONFIRMED) {
+      verificationStatus = VerificationStatus.UNVERIFIED;
+      status = ApplicationState.SUBMISSION_UNCONFIRMED;
+    } else if ((status || '').toLowerCase().includes('failed')) {
+      verificationStatus = VerificationStatus.FAILED;
+      status = ApplicationState.FAILED;
+    } else if ((status || '').toLowerCase().includes('skipped')) {
+      verificationStatus = VerificationStatus.UNVERIFIED;
+      status = ApplicationState.SKIPPED;
+    } else {
+      verificationStatus = VerificationStatus.LEGACY_UNVERIFIED;
+      status = ApplicationState.LEGACY_UNVERIFIED;
+    }
+  }
+
+  return {
+    id: jobData.id || `naukri_app_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    jobId: jobData.jobId || jobData.naukriJobId || `job_${Date.now()}`,
+    naukriJobId: jobData.naukriJobId || jobData.jobId || null,
+    jobTitle: jobData.jobTitle || 'Full Stack Developer',
+    company: jobData.company || 'Naukri Employer',
+    location: jobData.location || 'Bangalore / Remote',
+    experience: jobData.experience || '3-6 Yrs',
+    appliedAt: jobData.appliedAt || new Date().toISOString(),
+    status: status || ApplicationState.SUBMISSION_UNCONFIRMED,
+    verificationStatus: verificationStatus || VerificationStatus.UNVERIFIED,
+    verificationSource: jobData.verificationSource || VerificationSource.NONE,
+    verifiedAt: isExplicitlyVerified ? (jobData.verifiedAt || jobData.appliedAt) : null,
+    verificationDetails: jobData.verificationDetails || null,
+    failureStage: jobData.failureStage || null,
+    resumeUsed: jobData.resumeUsed || 'candidate_resume.pdf',
+    questionsAnsweredCount: jobData.questionsAnsweredCount || 0,
+    jobUrl: jobData.jobUrl || 'https://www.naukri.com/',
+    duration: jobData.duration || '10s',
+    error: jobData.error || null
+  };
+}
+
+/**
  * Applied Jobs History Logger (Database-First)
  */
 async function getNaukriAppliedJobsAsync(userKey) {
@@ -666,10 +741,11 @@ async function getNaukriAppliedJobsAsync(userKey) {
     try {
       const dbApps = await supabaseGetNaukriAppliedJobs(userKey);
       if (Array.isArray(dbApps)) {
+        const normalized = dbApps.map(normalizeAppliedJobRecord).filter(Boolean);
         ensureUserSandbox(userKey);
         const filePath = getNaukriAppsFilePath(userKey);
-        try { fs.writeFileSync(filePath, JSON.stringify(dbApps, null, 2), 'utf8'); } catch (e) {}
-        return dbApps;
+        try { fs.writeFileSync(filePath, JSON.stringify(normalized, null, 2), 'utf8'); } catch (e) {}
+        return normalized;
       }
     } catch (e) {}
   }
@@ -680,7 +756,10 @@ function getNaukriAppliedJobs(userKey) {
   const filePath = getNaukriAppsFilePath(userKey);
   if (fs.existsSync(filePath)) {
     try {
-      return JSON.parse(fs.readFileSync(filePath, 'utf8')) || [];
+      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (Array.isArray(parsed)) {
+        return parsed.map(normalizeAppliedJobRecord).filter(Boolean);
+      }
     } catch (e) {}
   }
   return [];
@@ -690,25 +769,9 @@ function logNaukriAppliedJob(userKey, jobData) {
   ensureUserSandbox(userKey);
   const filePath = getNaukriAppsFilePath(userKey);
   const current = getNaukriAppliedJobs(userKey);
+  const normalized = normalizeAppliedJobRecord(jobData);
 
-  const record = {
-    id: jobData.id || `naukri_app_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-    jobId: jobData.jobId || `job_${Date.now()}`,
-    jobTitle: jobData.jobTitle || 'Full Stack Developer',
-    company: jobData.company || 'Naukri Employer',
-    location: jobData.location || 'Bangalore / Remote',
-    experience: jobData.experience || '3-6 Yrs',
-    appliedAt: jobData.appliedAt || new Date().toISOString(),
-    status: jobData.status || 'Applied (Naukri Easy Apply - Confirmed)',
-    failureStage: jobData.failureStage || null,
-    resumeUsed: jobData.resumeUsed || 'candidate_resume.pdf',
-    questionsAnsweredCount: jobData.questionsAnsweredCount || 0,
-    jobUrl: jobData.jobUrl || 'https://www.naukri.com/',
-    duration: jobData.duration || '10s',
-    error: jobData.error || null
-  };
-
-  current.unshift(record);
+  current.unshift(normalized);
   try {
     fs.writeFileSync(filePath, JSON.stringify(current.slice(0, 300), null, 2), 'utf8');
   } catch (e) {}
@@ -716,13 +779,106 @@ function logNaukriAppliedJob(userKey, jobData) {
     supabaseSaveNaukriAppliedJobs(userKey, current.slice(0, 300)).catch(() => {});
   }
 
+  return normalized;
+}
+
+/**
+ * CANONICAL APPLICATION CONFIRMATION AUTHORITY
+ * The ONLY function in the codebase allowed to transition an application to SUBMITTED.
+ * Requires hard verification evidence from live Naukri DOM confirmation or Applied section match.
+ */
+function confirmNaukriApplicationSubmission(userKey, jobItem, verificationEvidence) {
+  if (!verificationEvidence || (verificationEvidence.status !== VerificationStatus.VERIFIED && verificationEvidence.status !== VerificationStatus.RECONCILED)) {
+    throw new Error(`Cannot confirm application submission for "${jobItem?.company || 'job'}" without positive verification evidence.`);
+  }
+
+  const durationSec = jobItem.duration || (jobItem.startTime ? `${Math.round((Date.now() - jobItem.startTime) / 1000)}s` : '10s');
+  const now = new Date().toISOString();
+
+  const record = {
+    id: jobItem.id || `naukri_app_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    jobId: jobItem.jobId || jobItem.naukriJobId || `job_${Date.now()}`,
+    naukriJobId: jobItem.naukriJobId || jobItem.jobId || null,
+    jobTitle: jobItem.jobTitle || jobItem.title || 'Full Stack Developer',
+    company: jobItem.company || 'Naukri Employer',
+    location: jobItem.location || 'Bangalore / Remote',
+    experience: jobItem.experience || jobItem.exp || '3-6 Yrs',
+    jobUrl: jobItem.jobUrl || jobItem.url || 'https://www.naukri.com/',
+    status: ApplicationState.SUBMITTED,
+    verificationStatus: verificationEvidence.status || VerificationStatus.VERIFIED,
+    verificationSource: verificationEvidence.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+    verifiedAt: verificationEvidence.verifiedAt || now,
+    verificationDetails: verificationEvidence.details || 'Explicit Naukri confirmation signal verified on DOM',
+    appliedAt: now,
+    resumeUsed: jobItem.resumeUsed || 'candidate_resume.pdf',
+    questionsAnsweredCount: jobItem.questionsAnsweredCount || 0,
+    duration: durationSec,
+    failureStage: null,
+    error: null
+  };
+
+  logNaukriAppliedJob(userKey, record);
+
+  updateQueueItemState(userKey, record.jobId, {
+    state: ApplicationState.SUBMITTED,
+    stage: 'Application Confirmed & Verified on Naukri',
+    verificationStatus: record.verificationStatus,
+    verificationSource: record.verificationSource,
+    verifiedAt: record.verifiedAt,
+    appliedAt: record.appliedAt
+  });
+
+  return record;
+}
+
+/**
+ * CANONICAL UNCONFIRMED APPLICATION RECORDER
+ * Logs applications where submit was triggered but positive confirmation could not be unequivocally proven.
+ * Preserves the record in DB for reconciliation and prevents immediate retry without incrementing daily counter.
+ */
+function recordUnconfirmedNaukriApplication(userKey, jobItem, reason = 'Naukri post-submit confirmation could not be verified on live DOM') {
+  const durationSec = jobItem.duration || (jobItem.startTime ? `${Math.round((Date.now() - jobItem.startTime) / 1000)}s` : '10s');
+  const now = new Date().toISOString();
+
+  const record = {
+    id: jobItem.id || `naukri_app_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    jobId: jobItem.jobId || jobItem.naukriJobId || `job_${Date.now()}`,
+    naukriJobId: jobItem.naukriJobId || jobItem.jobId || null,
+    jobTitle: jobItem.jobTitle || jobItem.title || 'Full Stack Developer',
+    company: jobItem.company || 'Naukri Employer',
+    location: jobItem.location || 'Bangalore / Remote',
+    experience: jobItem.experience || jobItem.exp || '3-6 Yrs',
+    jobUrl: jobItem.jobUrl || jobItem.url || 'https://www.naukri.com/',
+    status: ApplicationState.SUBMISSION_UNCONFIRMED,
+    verificationStatus: VerificationStatus.UNVERIFIED,
+    verificationSource: VerificationSource.NONE,
+    verifiedAt: null,
+    verificationDetails: reason,
+    appliedAt: now,
+    resumeUsed: jobItem.resumeUsed || 'candidate_resume.pdf',
+    questionsAnsweredCount: jobItem.questionsAnsweredCount || 0,
+    duration: durationSec,
+    failureStage: 'Post-Submit Confirmation Inconclusive',
+    error: reason
+  };
+
+  logNaukriAppliedJob(userKey, record);
+
+  updateQueueItemState(userKey, record.jobId, {
+    state: ApplicationState.SUBMISSION_UNCONFIRMED,
+    stage: 'Submission Unconfirmed on Naukri',
+    verificationStatus: VerificationStatus.UNVERIFIED,
+    verificationDetails: reason,
+    appliedAt: now
+  });
+
   return record;
 }
 
 /**
  * Strict Daily Target & Applications Metric Calculator
- * Counts ONLY confirmed SUBMITTED applications today.
- * Does not count WAITING, FAILED, SKIPPED, or UNCONFIRMED submissions.
+ * Counts ONLY confirmed SUBMITTED applications today with explicit verification evidence (VERIFIED / RECONCILED).
+ * Does not count WAITING, FAILED, SKIPPED, LEGACY_UNVERIFIED, or UNCONFIRMED submissions.
  */
 function getTodayAppliedStats(userKey) {
   const allApps = getNaukriAppliedJobs(userKey);
@@ -733,26 +889,46 @@ function getTodayAppliedStats(userKey) {
   const todayStr = new Date().toISOString().split('T')[0];
   const todayApps = allApps.filter(a => (a.appliedAt || '').startsWith(todayStr));
 
-  // Strict Definition: Count ONLY confirmed SUBMITTED applications today
-  const submittedToday = todayApps.filter(a =>
-    a.status === 'Applied (Naukri Easy Apply - Confirmed)' ||
-    a.status === 'SUBMITTED' ||
-    a.status === 'Applied (Naukri Easy Apply)'
+  // STRICT RULE: Count ONLY confirmed SUBMITTED applications today with verified evidence
+  const verifiedToday = todayApps.filter(a =>
+    a.status === ApplicationState.SUBMITTED &&
+    (a.verificationStatus === VerificationStatus.VERIFIED || a.verificationStatus === VerificationStatus.RECONCILED)
   );
-  const failedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('failed'));
-  const skippedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('skipped'));
-  const unconfirmedToday = todayApps.filter(a => (a.status || '').toLowerCase().includes('unconfirmed'));
+
+  const unconfirmedToday = todayApps.filter(a =>
+    (a.status === ApplicationState.SUBMISSION_UNCONFIRMED ||
+     a.verificationStatus === VerificationStatus.UNVERIFIED ||
+     a.verificationStatus === VerificationStatus.LEGACY_UNVERIFIED) &&
+    a.status !== ApplicationState.SKIPPED &&
+    a.status !== ApplicationState.FAILED &&
+    !(a.status || '').toLowerCase().includes('failed') &&
+    !(a.status || '').toLowerCase().includes('skipped')
+  );
+
+  const failedToday = todayApps.filter(a =>
+    a.status === ApplicationState.FAILED || (a.status || '').toLowerCase().includes('failed')
+  );
+
+  const skippedToday = todayApps.filter(a =>
+    a.status === ApplicationState.SKIPPED || (a.status || '').toLowerCase().includes('skipped')
+  );
+
+  const inProgressQueue = queue.filter(q =>
+    [ApplicationState.STARTED, ApplicationState.FORM_OPENED, ApplicationState.FILLING, ApplicationState.SUBMITTING].includes(q.state)
+  );
+
   const waitingForUserQueue = queue.filter(q => q.state === ApplicationState.WAITING_FOR_USER);
 
   const dailyTarget = config.dailyTarget || 50;
-  const submittedCount = submittedToday.length;
+  const verifiedCount = verifiedToday.length;
 
   return {
-    todayCount: submittedCount,
-    submittedCount,
+    todayCount: verifiedCount,
+    verifiedCount,
     dailyTarget,
-    remainingTarget: Math.max(0, dailyTarget - submittedCount),
-    percentComplete: Math.min(100, Math.round((submittedCount / dailyTarget) * 100)),
+    remainingTarget: Math.max(0, dailyTarget - verifiedCount),
+    percentComplete: Math.min(100, Math.round((verifiedCount / dailyTarget) * 100)),
+    inProgressCount: inProgressQueue.length,
     discoveredCount: queue.length,
     waitingForInputCount: pending.length > 0 ? pending.length : waitingForUserQueue.length,
     failedCount: failedToday.length,
@@ -1038,6 +1214,235 @@ function getAutoApplyStatus() {
 }
 
 /**
+ * Multi-Stage Naukri Submission Verifier
+ * Stage 1: Live DOM Success Detection with active polling (up to 8 seconds).
+ * Stage 2: Fallback page reload check for button state change to "Applied".
+ */
+async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
+  const timeoutMs = options.timeoutMs || 8000;
+  const pollInterval = 600;
+  const startTime = Date.now();
+
+  console.log(`[VERIFY] Inspecting live Naukri DOM for explicit confirmation signals for "${jobItem.company}" (Timeout: ${timeoutMs / 1000}s)...`);
+
+  // Stage 1: Active polling on the current page / modal
+  while (Date.now() - startTime < timeoutMs) {
+    const domCheck = await page.evaluate(() => {
+      // 1. Explicit Success Containers / Modal confirmation
+      const successContainers = document.querySelectorAll(
+        '.chatbot-container .success-msg, .apply-dialog .success-message, .apply-success-container, .success-drawer, .apply-message .success, .chat-bubble.bot-success, .success-title, .status-applied, .applied-message'
+      );
+      for (const el of successContainers) {
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (
+          text.includes('application sent') ||
+          text.includes('successfully applied') ||
+          text.includes('applied on') ||
+          text.includes('application submitted') ||
+          text.includes('applied successfully') ||
+          text.includes('thank you for applying')
+        ) {
+          return { verified: true, source: 'NAUKRI_DOM_CONTAINER', details: `Found success container: "${el.className}" ("${text.slice(0, 60)}")` };
+        }
+      }
+
+      // 2. Scoped Modal / Chatbot Text Analysis
+      const modal = document.querySelector('.apply-dialog, .chatbot-container, .chatbot-wrapper, .modal-content');
+      if (modal) {
+        const modalText = (modal.innerText || modal.textContent || '').toLowerCase();
+        if (
+          modalText.includes('application sent to recruiter') ||
+          modalText.includes('your application has been sent') ||
+          modalText.includes('successfully applied') ||
+          modalText.includes('you have already applied') ||
+          modalText.includes('application has been submitted')
+        ) {
+          return { verified: true, source: 'NAUKRI_MODAL_TEXT', details: `Modal text confirmed: "${modalText.slice(0, 60)}"` };
+        }
+      }
+
+      // 3. Apply Button State Transformation
+      const applyBtn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i]');
+      if (applyBtn) {
+        const btnText = (applyBtn.innerText || applyBtn.textContent || '').trim().toLowerCase();
+        const isDisabled = applyBtn.disabled || applyBtn.getAttribute('aria-disabled') === 'true' || applyBtn.classList.contains('applied');
+        if (btnText.includes('applied') || (isDisabled && btnText.includes('already'))) {
+          return { verified: true, source: 'NAUKRI_BUTTON_TRANSFORMATION', details: `Apply button changed to disabled "${btnText}"` };
+        }
+      }
+
+      // 4. Check for explicit error / limit reached signals
+      const errorContainers = document.querySelectorAll('.error-msg, .alert-danger, .error-message, .chatbot-container .error');
+      for (const errEl of errorContainers) {
+        const errText = (errEl.innerText || errEl.textContent || '').trim();
+        if (errText.length > 5) {
+          return { verified: false, hasError: true, error: `Naukri reported error: "${errText}"` };
+        }
+      }
+
+      return { verified: false };
+    });
+
+    if (domCheck.verified) {
+      console.log(`[VERIFY] ✅ SUCCESS: Verified live Naukri DOM confirmation (${domCheck.source}: ${domCheck.details})`);
+      return {
+        isVerified: true,
+        source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+        details: domCheck.details
+      };
+    }
+
+    if (domCheck.hasError) {
+      console.warn(`[VERIFY] ❌ Live Naukri rejection detected: ${domCheck.error}`);
+      return {
+        isVerified: false,
+        source: VerificationSource.NONE,
+        details: domCheck.error
+      };
+    }
+
+    await new Promise(r => setTimeout(r, pollInterval));
+  }
+
+  // If Stage 1 timed out without definitive signal, attempt Stage 2: Page Refresh / URL Check
+  console.log(`[VERIFY] Stage 1 DOM check inconclusive for ${jobItem.company}. Checking if button refreshed to "Applied"...`);
+  try {
+    await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    const refreshedCheck = await page.evaluate(() => {
+      const btn = document.querySelector('button#apply-button, button.apply-button, .apply-message, .already-applied');
+      const text = (btn?.innerText || btn?.textContent || document.body?.innerText || '').toLowerCase();
+      if (text.includes('applied on') || text.includes('already applied') || text.includes('you have applied')) {
+        return { verified: true, details: `Page refreshed state shows: "${text.slice(0, 50)}"` };
+      }
+      return { verified: false };
+    });
+
+    if (refreshedCheck.verified) {
+      console.log(`[VERIFY] ✅ SUCCESS: Verified on page refresh (${refreshedCheck.details})`);
+      return {
+        isVerified: true,
+        source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+        details: refreshedCheck.details
+      };
+    }
+  } catch (reloadErr) {
+    console.warn(`[VERIFY] Page reload check failed: ${reloadErr.message}`);
+  }
+
+  console.warn(`[VERIFY] ⚠️ WARNING: No verifiable confirmation signal detected from Naukri for ${jobItem.company}.`);
+  return {
+    isVerified: false,
+    source: VerificationSource.NONE,
+    details: 'No positive confirmation signal received from Naukri within timeout'
+  };
+}
+
+/**
+ * Naukri Applied Jobs Reconciliation Engine
+ * Navigates to https://www.naukri.com/mnjuser/appliedjobs
+ * Scrapes all real applied jobs recorded in Naukri's official applied log.
+ * Reconciles with our database.
+ */
+async function reconcileNaukriAppliedJobs(page, userKey) {
+  console.log(`[RECONCILE] Navigating to official Naukri Applied Jobs section (https://www.naukri.com/mnjuser/appliedjobs)...`);
+  try {
+    await page.goto('https://www.naukri.com/mnjuser/appliedjobs', { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Check if logged in / redirected
+    const currentUrl = page.url();
+    if (currentUrl.includes('/nlogin/') || currentUrl.includes('login')) {
+      console.warn(`[RECONCILE] Session expired or login required to access Applied Jobs.`);
+      return { success: false, error: 'Session expired - login required' };
+    }
+
+    // Scrape real applied jobs list from Naukri
+    const realAppliedJobs = await page.evaluate(() => {
+      const list = [];
+      const cards = document.querySelectorAll('.applied-job-card, .job-card, .tuple, article.jobTuple, div[class*="applied"]');
+
+      cards.forEach(card => {
+        const titleEl = card.querySelector('a.title, .title, a[href*="job-listings"]');
+        const compEl = card.querySelector('.comp-name, .company, .subTitle');
+        const dateEl = card.querySelector('.applied-date, .date, span[class*="date"]');
+        const href = titleEl?.href || '';
+        let jobId = card.getAttribute('data-job-id') || '';
+        if (!jobId && href) {
+          const match = href.match(/-([0-9]{8,15})(?:\?|$)/);
+          if (match) jobId = match[1];
+        }
+
+        const title = titleEl?.textContent?.trim() || '';
+        const company = compEl?.textContent?.trim() || '';
+        const appliedDate = dateEl?.textContent?.trim() || '';
+
+        if (title || company) {
+          list.push({
+            jobId,
+            title,
+            company,
+            url: href,
+            appliedDate
+          });
+        }
+      });
+
+      return list;
+    });
+
+    console.log(`[RECONCILE] Scraped ${realAppliedJobs.length} real applied jobs directly from Naukri Applied Jobs section.`);
+
+    // Reconcile our database records
+    const ourApps = getNaukriAppliedJobs(userKey);
+    let upgradedCount = 0;
+
+    for (const ourApp of ourApps) {
+      if (
+        ourApp.status === ApplicationState.SUBMISSION_UNCONFIRMED ||
+        ourApp.verificationStatus === VerificationStatus.UNVERIFIED ||
+        ourApp.verificationStatus === VerificationStatus.LEGACY_UNVERIFIED
+      ) {
+        const match = realAppliedJobs.find(real =>
+          (real.jobId && ourApp.jobId && real.jobId === ourApp.jobId) ||
+          (real.company && ourApp.company && real.company.toLowerCase().includes(ourApp.company.toLowerCase())) ||
+          (real.title && ourApp.jobTitle && real.title.toLowerCase().includes(ourApp.jobTitle.toLowerCase()))
+        );
+
+        if (match) {
+          ourApp.status = ApplicationState.SUBMITTED;
+          ourApp.verificationStatus = VerificationStatus.RECONCILED;
+          ourApp.verificationSource = VerificationSource.NAUKRI_RECONCILIATION;
+          ourApp.verifiedAt = new Date().toISOString();
+          ourApp.verificationDetails = `Reconciled with Naukri Applied Jobs list (Date: ${match.appliedDate || 'Recent'})`;
+          upgradedCount++;
+        }
+      }
+    }
+
+    if (upgradedCount > 0) {
+      const filePath = getNaukriAppsFilePath(userKey);
+      try { fs.writeFileSync(filePath, JSON.stringify(ourApps, null, 2), 'utf8'); } catch (e) {}
+      if (isSupabaseConfigured()) {
+        await supabaseSaveNaukriAppliedJobs(userKey, ourApps);
+      }
+      console.log(`[RECONCILE] ✅ Upgraded ${upgradedCount} unconfirmed application(s) to SUBMITTED (RECONCILED)!`);
+    }
+
+    return {
+      success: true,
+      naukriRealCount: realAppliedJobs.length,
+      reconciledUpgrades: upgradedCount,
+      realAppliedJobs
+    };
+  } catch (err) {
+    console.error(`[RECONCILE ERROR] Failed reconciling with Naukri:`, err.message);
+    return { success: false, error: err.message };
+  }
+}
+
+/**
  * End-to-End Naukri Easy Apply Process
  * Integrates dynamic DB resume, multi-factor ranking, company diversity, strict Easy Apply verification,
  * container-scoped question filling, and zero-hallucination Q&A memory.
@@ -1061,11 +1466,16 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     throw new Error(`Resume resolution failed from DB: ${resumeErr.message}`);
   }
 
-  // 2. Check for Paused Applications Ready to Resume (State = READY_TO_RESUME or READY_TO_SUBMIT)
+  // 2. Check for Paused Applications Ready to Resume (State = READY_TO_RESUME, READY_TO_SUBMIT, or AUTH_REQUIRED)
   const existingQueue = await getNaukriQueueAsync(userKey);
-  const readyToResumeJobs = existingQueue.filter(q => q.state === ApplicationState.READY_TO_RESUME || q.state === ApplicationState.READY_TO_SUBMIT);
+  const readyToResumeJobs = existingQueue.filter(q =>
+    q.state === ApplicationState.READY_TO_RESUME ||
+    q.state === ApplicationState.READY_TO_SUBMIT ||
+    q.state === ApplicationState.AUTHENTICATION_REQUIRED ||
+    q.state === 'AUTH_REQUIRED'
+  );
   if (readyToResumeJobs.length > 0) {
-    console.log(`[APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused application(s) with user-provided answers! Prioritizing resumption...`);
+    console.log(`[APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused/auth-required application(s)! Prioritizing resumption...`);
   }
 
   // 3. Load Q&A Knowledge Database directly from Supabase DB
@@ -1127,6 +1537,48 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     try {
       await page.goto(jobItem.jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
       await new Promise(r => setTimeout(r, 2000));
+
+      // Inspect if session expired / redirected to login
+      const currentUrl = page.url();
+      const pageTitle = (await page.title().catch(() => '')) || '';
+      const isLoginRedirect = currentUrl.includes('login') || currentUrl.includes('nlogin') ||
+                              pageTitle.toLowerCase().includes('access denied') ||
+                              pageTitle.toLowerCase().includes('403') ||
+                              pageTitle.toLowerCase().includes('jobseeker login');
+
+      if (isLoginRedirect) {
+        console.warn(`[APPLY] [AUTH_REQUIRED] Session expired during application for "${jobItem.jobTitle}" at "${jobItem.company}". Halting automation.`);
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.AUTHENTICATION_REQUIRED,
+          stage: 'Session Expired during Application (Authentication Required)',
+          error: 'Naukri session expired'
+        });
+
+        // Save current queue state to Supabase DB so remaining jobs stay QUEUED
+        await saveNaukriQueueAsync(userKey, combinedQueue);
+
+        // Mark session EXPIRED in config and Supabase DB
+        try {
+          const { getNaukriConfigAsync, saveNaukriConfigAsync } = require('./naukri.service');
+          const cfg = await getNaukriConfigAsync(userKey);
+          cfg.hasSession = false;
+          cfg.sessionStatus = 'EXPIRED';
+          cfg.lastStatus = 'SESSION EXPIRED (Authentication Required)';
+          cfg.lastError = 'Session expired mid-run on Naukri';
+          await saveNaukriConfigAsync(userKey, cfg);
+        } catch (e) {}
+
+        activeApplyJobState.running = false;
+        activeApplyJobState.progress.status = `Session expired on Naukri. Successfully submitted ${appliedResults.length} applications before expiry. Re-authentication required.`;
+
+        return {
+          success: false,
+          authExpired: true,
+          appliedCount: appliedResults.length,
+          appliedJobs: appliedResults,
+          queueRemaining: getNaukriQueue(userKey).filter(q => q.state !== ApplicationState.SUBMITTED && q.state !== ApplicationState.SKIPPED)
+        };
+      }
 
       // Check if job expired or closed
       const isJobExpired = await page.evaluate(() => {
@@ -1318,47 +1770,103 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         } catch (e) {}
       }
 
-      // Final Submit Button Click
-      console.log(`[APPLY] All fields verified complete. Submitting Easy Apply to ${jobItem.company}...`);
-      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SUBMITTING, stage: 'Submitting Application' });
+      // Pre-Submit Form Validation Check
+      const formValidation = await page.evaluate(() => {
+        const invalidFields = Array.from(document.querySelectorAll('input:invalid, select:invalid, textarea:invalid, .error-field, .has-error input'));
+        if (invalidFields.length > 0) {
+          return { valid: false, reason: `Found ${invalidFields.length} invalid or incomplete required field(s)` };
+        }
+        return { valid: true };
+      });
+
+      if (!formValidation.valid) {
+        console.warn(`[FORM_VALIDATION] ${jobItem.company}: ${formValidation.reason}. Pausing.`);
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.FORM_INCOMPLETE,
+          stage: 'Form Incomplete (Validation Error)',
+          error: formValidation.reason
+        });
+        continue;
+      }
+
+      // Final Submit Button Click -> State = SUBMITTING (Never immediately SUBMITTED)
+      console.log(`[APPLY] Submitting Easy Apply to ${jobItem.company}...`);
+      updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SUBMITTING, stage: 'Submitting Application to Naukri' });
 
       await page.evaluate(() => {
         const submitBtn = document.querySelector('.apply-dialog button[type="submit"], button.submit, button.apply-btn, .chatbot-container button, button.blue-btn, button.btn-primary');
         if (submitBtn) submitBtn.click();
       });
-      await new Promise(r => setTimeout(r, 2500));
 
-      // Post-Submission Verification
-      const submissionConfirmation = await page.evaluate(() => {
-        const text = document.body?.innerText?.toLowerCase() || '';
-        return text.includes('application sent') || text.includes('successfully applied') || text.includes('applied on') || text.includes('already applied');
-      });
-
+      // Multi-Stage Post-Submission Live DOM Verification
       const durationSec = `${Math.round((Date.now() - jobStartTime) / 1000)}s`;
+      const verification = await verifyNaukriSubmissionOnPage(page, jobItem, { timeoutMs: 8000 });
 
-      if (submissionConfirmation) {
-        const record = logNaukriAppliedJob(userKey, {
-          jobId: jobItem.jobId,
-          jobTitle: jobItem.jobTitle,
-          company: jobItem.company,
-          location: jobItem.location,
-          experience: jobItem.experience,
-          jobUrl: jobItem.jobUrl,
-          status: 'Applied (Naukri Easy Apply - Confirmed)',
-          resumeUsed: resolvedResume.fileName,
-          questionsAnsweredCount,
-          duration: durationSec
-        });
-
-        updateQueueItemState(userKey, jobItem.jobId, {
-          state: ApplicationState.SUBMITTED,
-          stage: 'Application Confirmed on Naukri',
-          appliedAt: new Date().toISOString()
-        });
+      if (verification.isVerified) {
+        const record = confirmNaukriApplicationSubmission(
+          userKey,
+          {
+            jobId: jobItem.jobId,
+            jobTitle: jobItem.jobTitle,
+            company: jobItem.company,
+            location: jobItem.location,
+            experience: jobItem.experience,
+            jobUrl: jobItem.jobUrl,
+            resumeUsed: resolvedResume.fileName,
+            questionsAnsweredCount,
+            duration: durationSec
+          },
+          {
+            status: VerificationStatus.VERIFIED,
+            source: verification.source,
+            details: verification.details,
+            verifiedAt: new Date().toISOString()
+          }
+        );
 
         appliedResults.push(record);
-        console.log(`[APPLY] Submission confirmed for "${jobItem.jobTitle}" at "${jobItem.company}" in ${durationSec}!`);
+        console.log(`[APPLY] ✅ VERIFIED SUBMISSION: Application confirmed for "${jobItem.jobTitle}" at "${jobItem.company}" in ${durationSec}!`);
       } else {
+        recordUnconfirmedNaukriApplication(
+          userKey,
+          {
+            jobId: jobItem.jobId,
+            jobTitle: jobItem.jobTitle,
+            company: jobItem.company,
+            location: jobItem.location,
+            experience: jobItem.experience,
+            jobUrl: jobItem.jobUrl,
+            resumeUsed: resolvedResume.fileName,
+            questionsAnsweredCount,
+            duration: durationSec
+          },
+          verification.details || 'Naukri post-submit confirmation could not be verified on live DOM'
+        );
+
+        console.warn(`[APPLY] ⚠️ UNCONFIRMED SUBMISSION: Recorded as SUBMISSION_UNCONFIRMED for "${jobItem.jobTitle}" at "${jobItem.company}". Daily target NOT incremented.`);
+      }
+
+      // Polite pacing delay between jobs
+      await new Promise(r => setTimeout(r, 2000));
+    } catch (jobErr) {
+      console.error(`[NAUKRI APPLY ERROR] Application failed for ${jobItem.jobTitle} at ${jobItem.company}:`, jobErr.message);
+
+      const isAuthError = jobErr.message.toLowerCase().includes('session') || jobErr.message.toLowerCase().includes('login') || jobErr.message.toLowerCase().includes('auth');
+
+      if (isAuthError) {
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.AUTHENTICATION_REQUIRED,
+          stage: 'Naukri Authentication Required',
+          error: jobErr.message
+        });
+        console.warn(`[AUTH] Session failure during application. Queue item preserved as AUTHENTICATION_REQUIRED.`);
+      } else {
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.FAILED,
+          stage: 'Execution Error',
+          error: jobErr.message
+        });
+
         logNaukriAppliedJob(userKey, {
           jobId: jobItem.jobId,
           jobTitle: jobItem.jobTitle,
@@ -1366,43 +1874,13 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
           location: jobItem.location,
           experience: jobItem.experience,
           jobUrl: jobItem.jobUrl,
-          status: 'Submission Unconfirmed',
-          resumeUsed: resolvedResume.fileName,
-          questionsAnsweredCount,
-          duration: durationSec
+          status: ApplicationState.FAILED,
+          verificationStatus: VerificationStatus.FAILED,
+          failureStage: 'Browser Navigation / Submission Error',
+          resumeUsed: resolvedResume?.fileName || 'candidate_resume.pdf',
+          error: jobErr.message
         });
-
-        updateQueueItemState(userKey, jobItem.jobId, {
-          state: 'SUBMISSION_UNCONFIRMED',
-          stage: 'Submission Unconfirmed on Naukri',
-          appliedAt: new Date().toISOString()
-        });
-
-        console.log(`[APPLY] Warning: Submission unconfirmed for "${jobItem.jobTitle}" at "${jobItem.company}".`);
       }
-
-      // Polite pacing delay between jobs
-      await new Promise(r => setTimeout(r, 2000));
-    } catch (jobErr) {
-      console.error(`[NAUKRI APPLY ERROR] Application failed for ${jobItem.jobTitle} at ${jobItem.company}:`, jobErr.message);
-      updateQueueItemState(userKey, jobItem.jobId, {
-        state: ApplicationState.FAILED,
-        stage: 'Execution Error',
-        error: jobErr.message
-      });
-
-      logNaukriAppliedJob(userKey, {
-        jobId: jobItem.jobId,
-        jobTitle: jobItem.jobTitle,
-        company: jobItem.company,
-        location: jobItem.location,
-        experience: jobItem.experience,
-        jobUrl: jobItem.jobUrl,
-        status: 'Failed',
-        failureStage: 'Browser Navigation / Submission Error',
-        resumeUsed: resolvedResume?.fileName || 'candidate_resume.pdf',
-        error: jobErr.message
-      });
     }
   }
 
@@ -1421,33 +1899,46 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
  * Standalone launcher for Easy Apply from API / UI trigger
  */
 async function runStandaloneNaukriApply(userKey = 'default_user', customOptions = {}) {
-  const { findBrowserExecutable, getNaukriConfig, saveNaukriConfig, restoreAndInjectNaukriSession, validateNaukriSessionOnPage } = require('./naukri.service');
+  const {
+    findBrowserExecutable,
+    getNaukriConfigAsync,
+    saveNaukriConfigAsync,
+    restoreAndInjectNaukriSession,
+    validateNaukriSessionOnPage,
+    acquireUserLockAsync,
+    releaseUserLockAsync
+  } = require('./naukri.service');
 
   if (activeApplyJobState.running) {
     return { success: false, message: 'Naukri Auto-Apply is already in progress.' };
   }
 
-  const config = getNaukriConfig(userKey);
-  let browserPath = findBrowserExecutable();
-  const launchOptions = {
-    headless: customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false),
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-accelerated-2d-canvas',
-      '--no-first-run',
-      '--no-zygote',
-      '--disable-gpu',
-      '--disable-blink-features=AutomationControlled',
-      '--window-size=1366,768'
-    ],
-    defaultViewport: { width: 1366, height: 768 }
-  };
-  if (browserPath) launchOptions.executablePath = browserPath;
+  const lockAcquired = await acquireUserLockAsync(userKey, 'easy_apply');
+  if (!lockAcquired) {
+    return { success: false, message: `Account "${userKey}" is currently locked by another automation process.` };
+  }
 
   let browser = null;
   try {
+    const config = await getNaukriConfigAsync(userKey);
+    let browserPath = findBrowserExecutable();
+    const launchOptions = {
+      headless: customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false),
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1366,768'
+      ],
+      defaultViewport: { width: 1366, height: 768 }
+    };
+    if (browserPath) launchOptions.executablePath = browserPath;
+
     browser = await puppeteer.launch(launchOptions);
     const pages = await browser.pages();
     const page = pages.length > 0 ? pages[0] : await browser.newPage();
@@ -1462,18 +1953,25 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
     });
 
     // 1. Restore & inject latest authentication state from DB/sandbox
-    await restoreAndInjectNaukriSession(page, userKey);
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+        throw new Error(`[AUTH_RESTORE_FAILED] Application failed to restore saved session into browser context: ${restoreResult.error}`);
+      }
+      throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie".');
+    }
 
     // 2. Validate session on Naukri BEFORE performing any applications
     const validation = await validateNaukriSessionOnPage(page, userKey);
     if (!validation.isValid) {
-      const cfg = getNaukriConfig(userKey);
+      const cfg = await getNaukriConfigAsync(userKey);
       cfg.hasSession = false;
-      cfg.lastStatus = 'Session Expired / Please Re-link Cookie';
-      cfg.lastError = `Naukri session has expired on the server (${validation.reason}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
-      saveNaukriConfig(userKey, cfg);
+      cfg.sessionStatus = 'EXPIRED';
+      cfg.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie)';
+      cfg.lastError = `Naukri session has expired on the server (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
+      await saveNaukriConfigAsync(userKey, cfg);
 
-      throw new Error(`Naukri session is unauthenticated or expired (${validation.reason}). Please click "Paste Session Cookie" in the Naukri menu to refresh your session.`);
+      throw new Error(`Naukri session is unauthenticated or expired (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in the Naukri menu to refresh your session.`);
     }
 
     return await applyToNaukriJobsWithPuppeteer(page, userKey, customOptions);
@@ -1481,6 +1979,7 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
     if (browser) {
       try { await browser.close(); } catch (e) {}
     }
+    await releaseUserLockAsync(userKey, 'easy_apply');
   }
 }
 
@@ -1513,6 +2012,12 @@ module.exports = {
   getNaukriAppliedJobs,
   getNaukriAppliedJobsAsync,
   logNaukriAppliedJob,
+  confirmNaukriApplicationSubmission,
+  recordUnconfirmedNaukriApplication,
+  verifyNaukriSubmissionOnPage,
+  reconcileNaukriAppliedJobs,
+  VerificationStatus,
+  VerificationSource,
   getTodayAppliedStats,
   calculateJobRelevanceScore,
   buildDiverseApplicationQueue,
