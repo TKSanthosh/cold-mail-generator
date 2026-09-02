@@ -104,7 +104,8 @@ async function analyzeAllLogs() {
   if (isSupabaseConfigured()) {
     try {
       const { createClient } = require('@supabase/supabase-js');
-      const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_KEY);
+      const sbKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_dDMl14z59IIbxq2utpKMmQ_HrISgSU9';
+      const supabase = createClient(process.env.SUPABASE_URL || 'https://gnuezthgywjfbalrcnbh.supabase.co', sbKey);
       
       const { data: dbLogs, error: logErr } = await supabase.from('outreach_logs').select('*').limit(500);
       if (dbLogs) {

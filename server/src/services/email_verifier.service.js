@@ -62,7 +62,7 @@ async function getDomainMxRecords(domain) {
  * Performs a fast lightweight SMTP socket handshake (HELO -> MAIL FROM -> RCPT TO)
  * to verify if the remote mail exchange accepts the recipient mailbox.
  */
-async function checkSmtpMailbox(email, mxHost, timeoutMs = 800) {
+async function checkSmtpMailbox(email, mxHost, timeoutMs = 250) {
   return new Promise((resolve) => {
     let socket;
     let step = 0;
@@ -73,8 +73,6 @@ async function checkSmtpMailbox(email, mxHost, timeoutMs = 800) {
       isDone = true;
       if (socket) {
         try {
-          socket.write('QUIT\r\n');
-          socket.end();
           socket.destroy();
         } catch (e) {}
       }
@@ -91,7 +89,7 @@ async function checkSmtpMailbox(email, mxHost, timeoutMs = 800) {
     }, timeoutMs);
 
     try {
-      socket = net.createConnection(25, mxHost);
+      socket = net.createConnection({ host: mxHost, port: 25, timeout: timeoutMs });
       socket.setTimeout(timeoutMs);
 
       socket.on('error', (err) => {

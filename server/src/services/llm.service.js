@@ -8,8 +8,16 @@ const MODEL_NAME = process.env.NVIDIA_MODEL || 'meta/llama-3.2-11b-vision-instru
 // In-memory cache to make repeated generations instantaneous
 const llmResponseCache = new Map();
 
+const CANDIDATE_MODELS = [
+  MODEL_NAME,
+  'meta/llama-3.2-11b-vision-instruct',
+  'meta/llama-3.1-8b-instruct',
+  'meta/llama-3.1-70b-instruct',
+  'meta/llama-3.3-70b-instruct'
+];
+
 /**
- * Calls NVIDIA NIM API with optimized low-latency token streaming & caching.
+ * Calls NVIDIA NIM API with optimized low-latency token streaming, multi-model fallback & caching.
  */
 async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
   if (!API_KEY) {
@@ -21,81 +29,57 @@ async function callLlm(systemPrompt, userPrompt, maxTokens = 800) {
     return llmResponseCache.get(cacheKey);
   }
 
-  const payload = {
-    model: MODEL_NAME,
-    messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userPrompt }
-    ],
-    temperature: 0.15,
-    max_tokens: maxTokens
-  };
+  const uniqueModels = [...new Set(CANDIDATE_MODELS)];
+  let lastError = null;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  for (const model of uniqueModels) {
+    const payload = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.15,
+      max_tokens: maxTokens
+    };
 
-  let response;
-  try {
-    response = await fetch(API_URL, {
-      method: 'POST',
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
-      },
-      body: JSON.stringify(payload)
-    });
-  } catch (err) {
-    clearTimeout(timeoutId);
-    // If fast model had network abort, try one fallback with longer timeout
+    const timeoutMs = Math.max(20000, Math.min(35000, maxTokens * 25));
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-      payload.model = 'meta/llama-3.2-11b-vision-instruct';
-      const retryRes = await fetch(API_URL, {
+      const response = await fetch(API_URL, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${API_KEY}`
         },
         body: JSON.stringify(payload)
       });
-      if (retryRes.ok) {
-        const retryData = await retryRes.json();
-        const content = retryData.choices[0].message.content.trim();
-        llmResponseCache.set(cacheKey, content);
-        return content;
-      }
-    } catch (e2) {}
-    throw new Error(`LLM Fetch error: ${err.message}`);
-  }
-  clearTimeout(timeoutId);
 
-  if (!response.ok) {
-    // If fast model has rate limit, fallback to llama-3.2-11b-vision-instruct
-    if (MODEL_NAME !== 'meta/llama-3.2-11b-vision-instruct') {
-      payload.model = 'meta/llama-3.2-11b-vision-instruct';
-      const fallbackRes = await fetch(API_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${API_KEY}`
-        },
-        body: JSON.stringify(payload)
-      });
-      if (fallbackRes.ok) {
-        const fbData = await fallbackRes.json();
-        const content = fbData.choices[0].message.content.trim();
-        llmResponseCache.set(cacheKey, content);
-        return content;
+      clearTimeout(timeoutId);
+
+      if (response.ok) {
+        const data = await response.json();
+        const content = data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content
+          ? data.choices[0].message.content.trim()
+          : '';
+        if (content) {
+          llmResponseCache.set(cacheKey, content);
+          return content;
+        }
+      } else {
+        const errText = await response.text().catch(() => '');
+        lastError = new Error(`NVIDIA NIM API error with model ${model} (${response.status}): ${errText}`);
       }
+    } catch (err) {
+      clearTimeout(timeoutId);
+      lastError = err;
     }
-    const errText = await response.text();
-    throw new Error(`NVIDIA NIM API error (${response.status}): ${errText}`);
   }
 
-  const data = await response.json();
-  const content = data.choices[0].message.content.trim();
-  llmResponseCache.set(cacheKey, content);
-  return content;
+  throw new Error(`LLM Fetch error: ${lastError ? lastError.message : 'All model attempts failed'}`);
 }
 
 function sanitizeHrName(rawName) {

@@ -603,57 +603,50 @@ OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences.`;
     }
 
     if (posts.length === 0) return [];
-    const verifiedPosts = [];
+    const validRawPosts = posts.filter(p => p.email && p.email.includes('@') && !isEmailBounced(p.email.toLowerCase().trim(), userKey));
 
-    for (const p of posts) {
-      if (!p.email || !p.email.includes('@')) continue;
-      const cleanEmail = p.email.toLowerCase().trim();
+    const verificationResults = await Promise.all(
+      validRawPosts.map(async (p) => {
+        const cleanEmail = p.email.toLowerCase().trim();
+        const verification = await verifyEmailDeliverability(cleanEmail, userKey);
+        let deliverableEmail = cleanEmail;
 
-      // Anti-Bounce Check: reject if blacklisted from previous bounces
-      if (isEmailBounced(cleanEmail, userKey)) {
-        continue;
-      }
-
-      // Multi-tier verification check
-      const verification = await verifyEmailDeliverability(cleanEmail, userKey);
-      let deliverableEmail = cleanEmail;
-
-      if (!verification.isValid) {
-        // Attempt to find verified recruiter corporate email
-        const domain = resolveCompanyDomain(p.company);
-        const resolved = await generateAndVerifyRecruiterEmail(p.recruiterName, p.company, domain, userKey);
-        if (resolved && resolved.email) {
-          deliverableEmail = resolved.email;
-        } else {
-          continue; // Skip invalid, non-deliverable email
+        if (!verification.isValid) {
+          const domain = resolveCompanyDomain(p.company);
+          const resolved = await generateAndVerifyRecruiterEmail(p.recruiterName, p.company, domain, userKey);
+          if (resolved && resolved.email) {
+            deliverableEmail = resolved.email;
+          } else {
+            return null; // Skip invalid, non-deliverable email
+          }
         }
-      }
 
-      const companyClean = (p.company || 'Tech Company').trim();
-      const days = p.postedDaysAgo || (timeFrame === '24h' ? 1 : 2);
-      const cleanRecruiterName = (p.recruiterName || `${companyClean} Hiring Team`)
-        .replace(/\([^)]*\)/g, '')
-        .replace(/\[[^\]]*\]/g, '')
-        .trim();
+        const companyClean = (p.company || 'Tech Company').trim();
+        const days = p.postedDaysAgo || (timeFrame === '24h' ? 1 : 2);
+        const cleanRecruiterName = (p.recruiterName || `${companyClean} Hiring Team`)
+          .replace(/\([^)]*\)/g, '')
+          .replace(/\[[^\]]*\]/g, '')
+          .trim();
 
-      verifiedPosts.push({
-        id: `lead_live_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-        email: deliverableEmail,
-        recruiterName: cleanRecruiterName || `${companyClean} Hiring Team`,
-        company: companyClean,
-        role: p.role || `Full Stack Developer (${keywords.split(',')[0] || 'MERN'})`,
-        postSnippet: p.postSnippet || `${companyClean} is hiring for ${p.role || keywords}. Send your updated resume to ${deliverableEmail}.`,
-        sourceUrl: p.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(companyClean + ' ' + (p.role || keywords))}&location=India`,
-        postedAt: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
-        postedDaysAgo: days,
-        timeFrame: `${days}d ago (Live Verified)`,
-        isVerified: true,
-        isLive: true,
-        deliverabilityScore: verification.score || 95
-      });
-    }
+        return {
+          id: `lead_live_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+          email: deliverableEmail,
+          recruiterName: cleanRecruiterName || `${companyClean} Hiring Team`,
+          company: companyClean,
+          role: p.role || `Full Stack Developer (${keywords.split(',')[0] || 'MERN'})`,
+          postSnippet: p.postSnippet || `${companyClean} is hiring for ${p.role || keywords}. Send your updated resume to ${deliverableEmail}.`,
+          sourceUrl: p.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(companyClean + ' ' + (p.role || keywords))}&location=India`,
+          postedAt: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
+          postedDaysAgo: days,
+          timeFrame: `${days}d ago (Live Verified)`,
+          isVerified: true,
+          isLive: true,
+          deliverabilityScore: verification.score || 95
+        };
+      })
+    );
 
-    return verifiedPosts;
+    return verificationResults.filter(Boolean);
   } catch (err) {
     console.warn('[LINKEDIN LIVE DISCOVERY WARN]', err.message);
     return [];
@@ -697,28 +690,43 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
   }
 
   // 3. Supplement from verified corporate tech directory with verification
-  const shuffledVerified = [...VERIFIED_RECRUITER_POSTS].sort(() => Math.random() - 0.5);
-  for (const post of shuffledVerified) {
-    if (discoveredLeads.length >= targetCount + 6) break;
-    const em = post.email.toLowerCase();
-    if (!seenEmails.has(em) && !contactedEmails.has(em) && !bouncedEmails.has(em)) {
-      const verification = await verifyEmailDeliverability(post.email, userKey);
-      if (verification.isValid) {
-        seenEmails.add(em);
-        discoveredLeads.push({
-          id: `lead_verified_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          email: post.email,
-          recruiterName: post.recruiterName,
-          company: post.company,
-          role: post.role,
-          postSnippet: post.postSnippet,
-          sourceUrl: post.sourceUrl,
-          postedAt: post.postedAt,
-          postedDaysAgo: post.postedDaysAgo,
-          timeFrame: `${post.postedDaysAgo}d ago (Verified Corporate)`,
-          isVerified: true,
-          deliverabilityScore: 98
-        });
+  if (discoveredLeads.length < targetCount + 6) {
+    const candidates = VERIFIED_RECRUITER_POSTS.filter(post => {
+      const em = post.email.toLowerCase();
+      return !seenEmails.has(em) && !contactedEmails.has(em) && !bouncedEmails.has(em);
+    });
+
+    const needed = (targetCount + 6) - discoveredLeads.length;
+    const batch = candidates.slice(0, needed + 5);
+
+    const verifiedBatch = await Promise.all(
+      batch.map(async (post) => {
+        const verification = await verifyEmailDeliverability(post.email, userKey);
+        if (verification.isValid) {
+          return {
+            id: `lead_verified_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            email: post.email,
+            recruiterName: post.recruiterName,
+            company: post.company,
+            role: post.role,
+            postSnippet: post.postSnippet,
+            sourceUrl: post.sourceUrl,
+            postedAt: post.postedAt,
+            postedDaysAgo: post.postedDaysAgo,
+            timeFrame: `${post.postedDaysAgo}d ago (Verified Corporate)`,
+            isVerified: true,
+            deliverabilityScore: 98
+          };
+        }
+        return null;
+      })
+    );
+
+    for (const lead of verifiedBatch) {
+      if (lead && !seenEmails.has(lead.email.toLowerCase())) {
+        seenEmails.add(lead.email.toLowerCase());
+        discoveredLeads.push(lead);
+        if (discoveredLeads.length >= targetCount + 6) break;
       }
     }
   }
@@ -734,8 +742,9 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
       `SDE-2 Full Stack Engineer (JavaScript/TypeScript)`
     ];
 
+    const fallbackCandidates = [];
     for (const compKey of companyKeys) {
-      if (discoveredLeads.length >= targetCount + 4) break;
+      if (fallbackCandidates.length >= (targetCount - discoveredLeads.length) * 2) break;
       const domain = KNOWN_COMPANY_DOMAINS[compKey];
       const compName = compKey.charAt(0).toUpperCase() + compKey.slice(1);
       const emailCandidates = [`careers@${domain}`, `tech-hiring@${domain}`, `talent@${domain}`, `jobs@${domain}`];
@@ -743,33 +752,46 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
       for (const candEmail of emailCandidates) {
         const cleanCand = candEmail.toLowerCase();
         if (!seenEmails.has(cleanCand) && !bouncedEmails.has(cleanCand)) {
-          // If already contacted, we can still include if discovered leads are too low
           const isContacted = contactedEmails.has(cleanCand);
           if (!isContacted || discoveredLeads.length === 0) {
-            const verification = await verifyEmailDeliverability(cleanCand, userKey);
-            if (verification.isValid) {
-              seenEmails.add(cleanCand);
-              const randomRole = techRoles[Math.floor(Math.random() * techRoles.length)];
-              discoveredLeads.push({
-                id: `lead_dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-                email: cleanCand,
-                recruiterName: `${compName} Talent Team`,
-                company: compName,
-                role: randomRole,
-                postSnippet: `${compName} Engineering is actively hiring for ${randomRole}. Looking for passionate developers with 3+ years experience. Apply directly to ${cleanCand}.`,
-                sourceUrl: `https://www.linkedin.com/company/${compKey}/jobs/`,
-                postedAt: daysAgoIso(1),
-                postedDaysAgo: 1,
-                timeFrame: '1d ago (Verified Corporate)',
-                isVerified: true,
-                isLive: true,
-                alreadyContacted: isContacted,
-                deliverabilityScore: 98
-              });
-              break;
-            }
+            fallbackCandidates.push({ compKey, domain, compName, cleanCand, isContacted });
+            break;
           }
         }
+      }
+    }
+
+    const verifiedFallback = await Promise.all(
+      fallbackCandidates.map(async ({ compKey, domain, compName, cleanCand, isContacted }) => {
+        const verification = await verifyEmailDeliverability(cleanCand, userKey);
+        if (verification.isValid) {
+          const randomRole = techRoles[Math.floor(Math.random() * techRoles.length)];
+          return {
+            id: `lead_dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+            email: cleanCand,
+            recruiterName: `${compName} Talent Team`,
+            company: compName,
+            role: randomRole,
+            postSnippet: `${compName} Engineering is actively hiring for ${randomRole}. Looking for passionate developers with 3+ years experience. Apply directly to ${cleanCand}.`,
+            sourceUrl: `https://www.linkedin.com/company/${compKey}/jobs/`,
+            postedAt: daysAgoIso(1),
+            postedDaysAgo: 1,
+            timeFrame: '1d ago (Verified Corporate)',
+            isVerified: true,
+            isLive: true,
+            alreadyContacted: isContacted,
+            deliverabilityScore: 98
+          };
+        }
+        return null;
+      })
+    );
+
+    for (const lead of verifiedFallback) {
+      if (lead && !seenEmails.has(lead.email.toLowerCase())) {
+        seenEmails.add(lead.email.toLowerCase());
+        discoveredLeads.push(lead);
+        if (discoveredLeads.length >= targetCount + 4) break;
       }
     }
   }
