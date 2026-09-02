@@ -581,6 +581,31 @@ async function supabaseGetAllUsers() {
   }
 }
 
+async function supabaseSaveQaDatabase(userKey, qaItems) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    const config = await supabaseGetNaukriConfig(userKey) || {};
+    return await supabaseSaveNaukriConfig(userKey, { ...config, qaItems });
+  } catch (e) {
+    console.warn('[SUPABASE] saveQaDatabase error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetQaDatabase(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return null;
+  try {
+    const config = await supabaseGetNaukriConfig(userKey);
+    if (config && Array.isArray(config.qaItems) && config.qaItems.length > 0) {
+      return config.qaItems;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[SUPABASE] getQaDatabase error:', e.message);
+    return null;
+  }
+}
+
 module.exports = {
   isSupabaseConfigured,
   supabaseUpsertUser,
@@ -596,6 +621,8 @@ module.exports = {
   supabaseGetLinkedInConfig,
   supabaseSaveNaukriConfig,
   supabaseGetNaukriConfig,
+  supabaseSaveQaDatabase,
+  supabaseGetQaDatabase,
   supabaseAppendNaukriHistory,
   supabaseGetNaukriHistory,
   supabaseSaveScheduledJob,

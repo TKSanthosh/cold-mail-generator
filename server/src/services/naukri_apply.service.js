@@ -8,7 +8,7 @@ try {
 }
 const { getUserPaths, ensureUserSandbox, addUserLog } = require('./user.service');
 const { resolveUserResumeFile } = require('./resume.service');
-const { isSupabaseConfigured, supabaseSaveNaukriConfig } = require('./supabase.service');
+const { isSupabaseConfigured, supabaseSaveNaukriConfig, supabaseGetQaDatabase, supabaseSaveQaDatabase } = require('./supabase.service');
 
 // Default initial Q&A knowledge base
 const DEFAULT_QA_ITEMS = [
@@ -125,8 +125,39 @@ function saveFilterConfig(userKey, config) {
 }
 
 /**
- * Q&A Database Management
+ * Q&A Database Management (Cloud DB as Source of Truth)
  */
+async function getQaDatabaseAsync(userKey) {
+  console.log(`[NAUKRI Q&A DB] 🔍 Fetching Q&A items from database for user "${userKey}"...`);
+
+  // 1. Fetch directly from Supabase Cloud Database
+  if (isSupabaseConfigured()) {
+    try {
+      const dbItems = await supabaseGetQaDatabase(userKey);
+      if (Array.isArray(dbItems) && dbItems.length > 0) {
+        console.log(`[NAUKRI Q&A DB] ✅ Retrieved ${dbItems.length} Q&A items directly from Supabase DB.`);
+        // Cache locally for fast in-session queries
+        ensureUserSandbox(userKey);
+        const filePath = getQaFilePath(userKey);
+        try { fs.writeFileSync(filePath, JSON.stringify(dbItems, null, 2), 'utf8'); } catch (e) {}
+        return dbItems;
+      }
+    } catch (dbErr) {
+      console.warn(`[NAUKRI Q&A DB WARNING] Failed fetching from Supabase: ${dbErr.message}`);
+    }
+  }
+
+  // 2. Fallback to local sandbox if DB offline or empty
+  const localItems = getQaDatabase(userKey);
+
+  // If local items exist, seed them to Supabase DB
+  if (isSupabaseConfigured() && Array.isArray(localItems) && localItems.length > 0) {
+    supabaseSaveQaDatabase(userKey, localItems).catch(() => {});
+  }
+
+  return localItems;
+}
+
 function getQaDatabase(userKey) {
   const filePath = getQaFilePath(userKey);
   if (fs.existsSync(filePath)) {
@@ -139,6 +170,20 @@ function getQaDatabase(userKey) {
   return DEFAULT_QA_ITEMS;
 }
 
+async function saveQaDatabaseAsync(userKey, items) {
+  ensureUserSandbox(userKey);
+  const filePath = getQaFilePath(userKey);
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(items, null, 2), 'utf8');
+  } catch (e) {}
+
+  if (isSupabaseConfigured()) {
+    console.log(`[NAUKRI Q&A DB] 💾 Persisting ${items.length} Q&A items to Supabase DB for user "${userKey}"...`);
+    await supabaseSaveQaDatabase(userKey, items);
+  }
+  return items;
+}
+
 function saveQaDatabase(userKey, items) {
   ensureUserSandbox(userKey);
   const filePath = getQaFilePath(userKey);
@@ -146,8 +191,34 @@ function saveQaDatabase(userKey, items) {
     fs.writeFileSync(filePath, JSON.stringify(items, null, 2), 'utf8');
   } catch (e) {}
   if (isSupabaseConfigured()) {
-    supabaseSaveNaukriConfig(userKey, { qaItems: items }).catch(() => {});
+    supabaseSaveQaDatabase(userKey, items).catch(() => {});
   }
+}
+
+async function saveQaItemAsync(userKey, item) {
+  const current = await getQaDatabaseAsync(userKey);
+  const cleanQ = (item.question || '').trim();
+  const cleanA = (item.answer || '').trim();
+  const id = item.id || `qa_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+
+  const existingIdx = current.findIndex(q => q.id === id || q.question.toLowerCase() === cleanQ.toLowerCase());
+  const newItem = {
+    id,
+    question: cleanQ,
+    answer: cleanA,
+    category: item.category || 'General',
+    keywords: item.keywords || cleanQ.toLowerCase().split(/\s+/).filter(w => w.length > 3),
+    updatedAt: new Date().toISOString()
+  };
+
+  if (existingIdx >= 0) {
+    current[existingIdx] = { ...current[existingIdx], ...newItem };
+  } else {
+    current.push(newItem);
+  }
+
+  await saveQaDatabaseAsync(userKey, current);
+  return newItem;
 }
 
 function saveQaItem(userKey, item) {
@@ -176,6 +247,13 @@ function saveQaItem(userKey, item) {
   return newItem;
 }
 
+async function deleteQaItemAsync(userKey, id) {
+  const current = await getQaDatabaseAsync(userKey);
+  const updated = current.filter(q => q.id !== id);
+  await saveQaDatabaseAsync(userKey, updated);
+  return true;
+}
+
 function deleteQaItem(userKey, id) {
   const current = getQaDatabase(userKey);
   const updated = current.filter(q => q.id !== id);
@@ -198,9 +276,9 @@ function normalizeQuestionText(text) {
  * Advanced Semantic Question Matcher
  * Maps variations (e.g. Bangalore vs Bengaluru, YOE variations, CTC parsing)
  */
-function findBestAnswer(userKey, rawQuestionText, availableOptions = []) {
+function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
   if (!rawQuestionText) return null;
-  const db = getQaDatabase(userKey);
+  const db = Array.isArray(userKeyOrDb) ? userKeyOrDb : getQaDatabase(userKeyOrDb);
   const normalized = normalizeQuestionText(rawQuestionText);
 
   // 1. Direct or Substring Match
@@ -413,6 +491,42 @@ function addPendingQuestion(userKey, pendingItem) {
     return record;
   }
   return null;
+}
+
+async function resolvePendingQuestionAsync(userKey, pendingId, answer) {
+  ensureUserSandbox(userKey);
+  const filePath = getPendingQaFilePath(userKey);
+  const current = getPendingQuestions(userKey);
+  const target = current.find(p => p.id === pendingId);
+
+  if (target) {
+    // 1. Save answer permanently into Q&A database (Supabase DB)
+    await saveQaItemAsync(userKey, {
+      question: target.question,
+      answer: answer.trim(),
+      category: 'Recruiter Screening'
+    });
+
+    // 2. Remove from pending list
+    const updated = current.filter(p => p.id !== pendingId);
+    try { fs.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8'); } catch (e) {}
+    if (isSupabaseConfigured()) {
+      await supabaseSaveNaukriConfig(userKey, { pendingQuestions: updated }).catch(() => {});
+    }
+
+    // 3. Update application queue item state to READY_TO_SUBMIT if exists
+    if (target.jobId) {
+      updateQueueItemState(userKey, target.jobId, {
+        state: ApplicationState.READY_TO_SUBMIT,
+        userAnswerProvided: answer.trim(),
+        stage: 'Answer Provided by User'
+      });
+    }
+
+    return { success: true, savedAnswer: answer.trim(), targetQuestion: target.question };
+  }
+
+  return { success: false, error: 'Pending question not found' };
 }
 
 function resolvePendingQuestion(userKey, pendingId, answer) {
@@ -848,13 +962,18 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     console.log(`[NAUKRI EASY APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused application(s) with user-provided answers! Prioritizing resumption...`);
   }
 
-  // 3. Load Past Applied Records for Deduplication
+  // 3. Load Q&A Knowledge Database directly from Supabase DB
+  console.log(`[NAUKRI EASY APPLY] [Q&A DB] Loading recruiter Q&A knowledge base from database for user "${userKey}"...`);
+  const qaDb = await getQaDatabaseAsync(userKey);
+  console.log(`[NAUKRI EASY APPLY] [Q&A DB] ✅ Loaded ${qaDb.length} verified recruiter Q&A records directly from database.`);
+
+  // 4. Load Past Applied Records for Deduplication
   const pastAppliedList = getNaukriAppliedJobs(userKey);
   const pastAppliedSet = new Set(
     pastAppliedList.map(j => `${(j.company || '').toLowerCase().trim()}___${(j.jobTitle || '').toLowerCase().trim()}`)
   );
 
-  // 4. Discover Real Jobs across Multiple Queries
+  // 5. Discover Real Jobs across Multiple Queries
   console.log(`[NAUKRI EASY APPLY] [SEARCH] Discovering jobs on Naukri...`);
   const rawDiscovered = await discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig);
 
@@ -967,7 +1086,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         console.log(`[NAUKRI APPLY] [Q&A] Detected ${formDetection.questions.length} screening questions.`);
 
         for (const qText of formDetection.questions) {
-          const match = findBestAnswer(userKey, qText);
+          const match = findBestAnswer(qaDb, qText);
 
           if (match && match.confidence >= 80) {
             console.log(`[NAUKRI APPLY] [Q&A] Matched saved answer: "${qText}" -> "${match.answer}" (${match.confidence}% confidence)`);
@@ -1180,13 +1299,18 @@ module.exports = {
   getFilterConfig,
   saveFilterConfig,
   getQaDatabase,
+  getQaDatabaseAsync,
   saveQaDatabase,
+  saveQaDatabaseAsync,
   saveQaItem,
+  saveQaItemAsync,
   deleteQaItem,
+  deleteQaItemAsync,
   findBestAnswer,
   getPendingQuestions,
   addPendingQuestion,
   resolvePendingQuestion,
+  resolvePendingQuestionAsync,
   getNaukriQueue,
   saveNaukriQueue,
   updateQueueItemState,

@@ -50,10 +50,14 @@ const {
 } = require('./services/supabase.service');
 const {
   getQaDatabase,
+  getQaDatabaseAsync,
   saveQaItem,
+  saveQaItemAsync,
   deleteQaItem,
+  deleteQaItemAsync,
   getPendingQuestions,
   resolvePendingQuestion,
+  resolvePendingQuestionAsync,
   getNaukriAppliedJobs,
   getTodayAppliedStats,
   getFilterConfig,
@@ -953,22 +957,39 @@ app.all('/api/naukri/cron-trigger', async (req, res) => {
   }
 });
 
-// --- NAUKRI 1-CLICK EASY APPLY & SMART Q&A MEMORY ENDPOINTS ---
-app.get('/api/naukri/qa', (req, res) => {
+// --- NAUKRI 1-CLICK EASY APPLY & SMART Q&A MEMORY ENDPOINTS (STORE & RETRIEVE FROM DB) ---
+app.get('/api/naukri/qa', async (req, res) => {
   const userKey = resolveUserKey(req, res);
-  res.json({ qaItems: getQaDatabase(userKey) });
+  try {
+    const qaItems = await getQaDatabaseAsync(userKey);
+    res.json({ qaItems: Array.isArray(qaItems) ? qaItems : [] });
+  } catch (e) {
+    res.json({ qaItems: getQaDatabase(userKey) });
+  }
 });
 
-app.post('/api/naukri/qa', (req, res) => {
+app.post('/api/naukri/qa', async (req, res) => {
   const userKey = resolveUserKey(req, res);
-  const item = saveQaItem(userKey, req.body || {});
-  res.json({ success: true, item, qaItems: getQaDatabase(userKey) });
+  try {
+    const item = await saveQaItemAsync(userKey, req.body || {});
+    const qaItems = await getQaDatabaseAsync(userKey);
+    res.json({ success: true, item, qaItems });
+  } catch (e) {
+    const item = saveQaItem(userKey, req.body || {});
+    res.json({ success: true, item, qaItems: getQaDatabase(userKey) });
+  }
 });
 
-app.delete('/api/naukri/qa/:id', (req, res) => {
+app.delete('/api/naukri/qa/:id', async (req, res) => {
   const userKey = resolveUserKey(req, res);
-  deleteQaItem(userKey, req.params.id);
-  res.json({ success: true, qaItems: getQaDatabase(userKey) });
+  try {
+    await deleteQaItemAsync(userKey, req.params.id);
+    const qaItems = await getQaDatabaseAsync(userKey);
+    res.json({ success: true, qaItems });
+  } catch (e) {
+    deleteQaItem(userKey, req.params.id);
+    res.json({ success: true, qaItems: getQaDatabase(userKey) });
+  }
 });
 
 app.get('/api/naukri/qa/pending', (req, res) => {
@@ -976,11 +997,17 @@ app.get('/api/naukri/qa/pending', (req, res) => {
   res.json({ pending: getPendingQuestions(userKey) });
 });
 
-app.post('/api/naukri/qa/answer-pending', (req, res) => {
+app.post('/api/naukri/qa/answer-pending', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const { id, answer } = req.body;
-  const result = resolvePendingQuestion(userKey, id, answer);
-  res.json({ ...result, pending: getPendingQuestions(userKey), qaItems: getQaDatabase(userKey) });
+  try {
+    const result = await resolvePendingQuestionAsync(userKey, id, answer);
+    const qaItems = await getQaDatabaseAsync(userKey);
+    res.json({ ...result, pending: getPendingQuestions(userKey), qaItems });
+  } catch (e) {
+    const result = resolvePendingQuestion(userKey, id, answer);
+    res.json({ ...result, pending: getPendingQuestions(userKey), qaItems: getQaDatabase(userKey) });
+  }
 });
 
 // Job Discovery & Filter Configurations (Configurable diversity limits, keywords, roles)
