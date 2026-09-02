@@ -1013,6 +1013,7 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
   });
 
   const durationSec = Math.round((Date.now() - startTime) / 1000);
+  console.log(`[RESUME] Upload successful (${resumeFileName} active just now in ${durationSec}s)!`);
   console.log(`[NAUKRI UPLOADER] SUCCESS! Profile refreshed in ${durationSec}s as ${resumeFileName} for user ${userKey}. Status: ${updatedStatusText}`);
 
   // Save session cookies
@@ -1058,6 +1059,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   // Clear any existing orphaned OTP session before starting a fresh run
   clearActiveOtpSession(userKey);
 
+  const userPaths = getUserPaths(userKey);
   const config = getNaukriConfig(userKey);
   let username = overrideOptions.username || config.username;
   let password = overrideOptions.password || config.password;
@@ -1088,21 +1090,15 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   console.log(`[NAUKRI UPLOADER] Starting resume upload workflow for user ${userKey}...`);
 
   // 1. Dynamically Retrieve and Resolve Resume from Database (Zero hardcoded names or paths)
-  console.log(`[NAUKRI UPLOADER] 📥 Fetching & resolving resume from database for user "${userKey}"...`);
+  console.log(`[RESUME] Fetching resume from DB for user "${userKey}"...`);
   const resolvedResume = await resolveUserResumeFile(userKey);
+  console.log(`[RESUME] Resume record found for user "${userKey}".`);
+  console.log(`[RESUME] Resolving storage reference & file formatting...`);
   const uploadPdfPath = resolvedResume.filePath;
   const resumeFileName = resolvedResume.fileName;
   const candidateName = resolvedResume.candidateName;
 
-  console.log(
-    `[NAUKRI UPLOADER] 📄 Resume resolved successfully:\n` +
-    `  • User: ${userKey}\n` +
-    `  • Candidate: ${candidateName}\n` +
-    `  • File Name: ${resumeFileName}\n` +
-    `  • File Path: ${uploadPdfPath}\n` +
-    `  • File Size: ${(resolvedResume.fileSize / 1024).toFixed(1)} KB (${resolvedResume.fileSize} bytes)\n` +
-    `  • Source: ${resolvedResume.source}`
-  );
+  console.log(`[RESUME] File resolved: ${resumeFileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
   let browserPath = await ensureBrowserInstalled();

@@ -4123,7 +4123,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <span className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <span>🎯 Daily Target: {filterConfig.dailyTarget || 50} Jobs Applied / EOD</span>
                 <span className="text-xs bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
-                  {todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length} / {filterConfig.dailyTarget || 50} Completed Today
+                  {todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0]) && !a.status?.toLowerCase().includes('failed') && !a.status?.toLowerCase().includes('skipped')).length} / {filterConfig.dailyTarget || 50} Successfully Submitted
                 </span>
                 {todayStats.waitingForInputCount > 0 && (
                   <span className="text-xs bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-bold px-2.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 animate-pulse">
@@ -4142,11 +4142,45 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         </div>
 
+        {/* Live Counters Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs pt-0.5">
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Submitted Today</span>
+            <strong className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">
+              {todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50}
+            </strong>
+          </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Remaining</span>
+            <strong className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">
+              {Math.max(0, (filterConfig.dailyTarget || 50) - (todayStats.todayCount || 0))}
+            </strong>
+          </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 flex flex-col">
+            <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase">Waiting for You</span>
+            <strong className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
+              {todayStats.waitingForInputCount || pendingQuestions.length}
+            </strong>
+          </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800/60 flex flex-col">
+            <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase">Failed</span>
+            <strong className="text-sm font-mono font-bold text-rose-600 dark:text-rose-400">
+              {todayStats.failedCount || 0}
+            </strong>
+          </div>
+          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Skipped (Ext / Exp)</span>
+            <strong className="text-sm font-mono font-bold text-slate-600 dark:text-slate-400">
+              {todayStats.skippedCount || 0}
+            </strong>
+          </div>
+        </div>
+
         {/* EOD Progress Bar */}
         <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
           <div
             className="bg-gradient-to-r from-emerald-500 to-indigo-600 h-2.5 transition-all duration-500 rounded-full"
-            style={{ width: `${Math.min(100, Math.round(((todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length) / (filterConfig.dailyTarget || 50)) * 100))}%` }}
+            style={{ width: `${Math.min(100, Math.round(((todayStats.todayCount || 0) / (filterConfig.dailyTarget || 50)) * 100))}%` }}
           ></div>
         </div>
 

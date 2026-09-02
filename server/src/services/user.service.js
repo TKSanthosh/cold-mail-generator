@@ -314,6 +314,36 @@ async function hydrateUserSandboxFromDatabase(userKey) {
         dbNaukriConfig.lastStatus = dbNaukriConfig.lastStatus || 'Session Connected (Cookies)';
       }
       fs.writeFileSync(paths.naukriConfigPath, JSON.stringify(dbNaukriConfig, null, 2), 'utf8');
+
+      // Hydrate Q&A Database from cloud DB
+      if (Array.isArray(dbNaukriConfig.qaItems) && dbNaukriConfig.qaItems.length > 0) {
+        const qaPath = path.join(paths.userDir, 'naukri_qa.json');
+        fs.writeFileSync(qaPath, JSON.stringify(dbNaukriConfig.qaItems, null, 2), 'utf8');
+      }
+
+      // Hydrate Filter & Diversity Config from cloud DB
+      if (dbNaukriConfig.filterConfig && typeof dbNaukriConfig.filterConfig === 'object') {
+        const filterPath = path.join(paths.userDir, 'naukri_filter_config.json');
+        fs.writeFileSync(filterPath, JSON.stringify(dbNaukriConfig.filterConfig, null, 2), 'utf8');
+      }
+
+      // Hydrate Application Queue from cloud DB
+      if (Array.isArray(dbNaukriConfig.applicationQueue) && dbNaukriConfig.applicationQueue.length > 0) {
+        const queuePath = path.join(paths.userDir, 'naukri_application_queue.json');
+        fs.writeFileSync(queuePath, JSON.stringify(dbNaukriConfig.applicationQueue, null, 2), 'utf8');
+      }
+
+      // Hydrate Pending Questions from cloud DB
+      if (Array.isArray(dbNaukriConfig.pendingQuestions) && dbNaukriConfig.pendingQuestions.length > 0) {
+        const pendingPath = path.join(paths.userDir, 'naukri_pending_qa.json');
+        fs.writeFileSync(pendingPath, JSON.stringify(dbNaukriConfig.pendingQuestions, null, 2), 'utf8');
+      }
+
+      // Hydrate Applied Jobs Log from cloud DB
+      if (Array.isArray(dbNaukriConfig.appliedJobs) && dbNaukriConfig.appliedJobs.length > 0) {
+        const appliedJobsPath = path.join(paths.userDir, 'naukri_applied_jobs.json');
+        fs.writeFileSync(appliedJobsPath, JSON.stringify(dbNaukriConfig.appliedJobs, null, 2), 'utf8');
+      }
     }
 
     // 6. Hydrate Naukri History

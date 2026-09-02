@@ -8,7 +8,7 @@ try {
 }
 const { getUserPaths, ensureUserSandbox, addUserLog } = require('./user.service');
 const { resolveUserResumeFile } = require('./resume.service');
-const { isSupabaseConfigured, supabaseAppendLog } = require('./supabase.service');
+const { isSupabaseConfigured, supabaseSaveNaukriConfig } = require('./supabase.service');
 
 // Default initial Q&A knowledge base
 const DEFAULT_QA_ITEMS = [
@@ -118,6 +118,9 @@ function saveFilterConfig(userKey, config) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8');
   } catch (e) {}
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, { filterConfig: updated }).catch(() => {});
+  }
   return updated;
 }
 
@@ -142,6 +145,9 @@ function saveQaDatabase(userKey, items) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(items, null, 2), 'utf8');
   } catch (e) {}
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, { qaItems: items }).catch(() => {});
+  }
 }
 
 function saveQaItem(userKey, item) {
@@ -401,6 +407,9 @@ function addPendingQuestion(userKey, pendingItem) {
     };
     current.push(record);
     try { fs.writeFileSync(filePath, JSON.stringify(current, null, 2), 'utf8'); } catch (e) {}
+    if (isSupabaseConfigured()) {
+      supabaseSaveNaukriConfig(userKey, { pendingQuestions: current }).catch(() => {});
+    }
     return record;
   }
   return null;
@@ -423,6 +432,9 @@ function resolvePendingQuestion(userKey, pendingId, answer) {
     // 2. Remove from pending list
     const updated = current.filter(p => p.id !== pendingId);
     try { fs.writeFileSync(filePath, JSON.stringify(updated, null, 2), 'utf8'); } catch (e) {}
+    if (isSupabaseConfigured()) {
+      supabaseSaveNaukriConfig(userKey, { pendingQuestions: updated }).catch(() => {});
+    }
 
     // 3. Update application queue item state to READY_TO_SUBMIT if exists
     if (target.jobId) {
@@ -458,6 +470,9 @@ function saveNaukriQueue(userKey, queue) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(queue.slice(0, 500), null, 2), 'utf8');
   } catch (e) {}
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, { applicationQueue: queue.slice(0, 500) }).catch(() => {});
+  }
 }
 
 function updateQueueItemState(userKey, jobId, updates = {}) {
@@ -519,6 +534,9 @@ function logNaukriAppliedJob(userKey, jobData) {
   try {
     fs.writeFileSync(filePath, JSON.stringify(current.slice(0, 300), null, 2), 'utf8');
   } catch (e) {}
+  if (isSupabaseConfigured()) {
+    supabaseSaveNaukriConfig(userKey, { appliedJobs: current.slice(0, 300) }).catch(() => {});
+  }
 
   return record;
 }
@@ -683,15 +701,40 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
  */
 async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = null) {
   const config = filterConfig || getFilterConfig(userKey);
-  const searchQueries = [
-    'Full Stack Developer React Node Bangalore',
-    'Backend Developer Node.js Express Bangalore',
-    'Frontend Developer React.js Next.js Bangalore',
-    'Software Engineer MERN Stack Bangalore',
-    'SDE-2 Full Stack Developer Remote Bangalore'
-  ];
 
-  console.log(`[NAUKRI DISCOVERY] Starting multi-query discovery across ${searchQueries.length} search variations...`);
+  // Dynamically build search queries from user DB configuration
+  const titles = (Array.isArray(config.jobTitles) && config.jobTitles.length > 0)
+    ? config.jobTitles
+    : [
+        'Full Stack Developer',
+        'Backend Developer',
+        'Frontend Developer',
+        'Node.js Developer',
+        'React Developer',
+        'Software Development Engineer',
+        'MERN Stack Engineer'
+      ];
+
+  const primaryLoc = (Array.isArray(config.locations) && config.locations[0]) ? config.locations[0] : 'Bangalore';
+  const searchQueries = [];
+
+  // 1. Title + Location queries for every configured role
+  for (const title of titles) {
+    searchQueries.push(`${title} ${primaryLoc}`);
+  }
+
+  // 2. Skill + Location queries
+  if (Array.isArray(config.skills) && config.skills.length > 0) {
+    const topSkills = config.skills.slice(0, 3).join(' ');
+    searchQueries.push(`${topSkills} Developer ${primaryLoc}`);
+  }
+
+  // 3. Remote role query if remote preference is enabled
+  if (config.remotePreference === 'remote' || (Array.isArray(config.locations) && config.locations.some(l => l.toLowerCase().includes('remote')))) {
+    searchQueries.push(`${titles[0] || 'Software Engineer'} Remote`);
+  }
+
+  console.log(`[NAUKRI DISCOVERY] Starting dynamic multi-query discovery across ${searchQueries.length} search variations derived from DB config: [${searchQueries.join(', ')}]...`);
   const allDiscovered = [];
   const seenUrls = new Set();
 
@@ -785,37 +828,51 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
   console.log(`[NAUKRI EASY APPLY] Initiating automation for user "${userKey}" (Target: ${targetCount} jobs)...`);
 
-  // 1. Resolve Latest Candidate Resume from Database
-  console.log(`[NAUKRI EASY APPLY] [RESUME] Fetching resume from DB for user ${userKey}...`);
+  // 1. Resolve Latest Candidate Resume from Database with explicit logs
+  console.log(`[RESUME] Fetching resume from DB for user "${userKey}"...`);
   let resolvedResume = null;
   try {
     resolvedResume = await resolveUserResumeFile(userKey);
-    console.log(`[NAUKRI EASY APPLY] [RESUME] Resolved resume file: ${resolvedResume.fileName} (${resolvedResume.source})`);
+    console.log(`[RESUME] Resume record found for user "${userKey}".`);
+    console.log(`[RESUME] Resolving storage reference & file formatting...`);
+    console.log(`[RESUME] File resolved: ${resolvedResume.fileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
   } catch (resumeErr) {
     console.error(`[NAUKRI EASY APPLY ERROR] Failed resolving resume from DB:`, resumeErr.message);
     throw new Error(`Resume resolution failed from DB: ${resumeErr.message}`);
   }
 
-  // 2. Load Past Applied Records for Deduplication
+  // 2. Check for Paused Applications Ready to Resume (State = READY_TO_SUBMIT)
+  const existingQueue = getNaukriQueue(userKey);
+  const readyToResumeJobs = existingQueue.filter(q => q.state === ApplicationState.READY_TO_SUBMIT);
+  if (readyToResumeJobs.length > 0) {
+    console.log(`[NAUKRI EASY APPLY] 🔄 Found ${readyToResumeJobs.length} previously paused application(s) with user-provided answers! Prioritizing resumption...`);
+  }
+
+  // 3. Load Past Applied Records for Deduplication
   const pastAppliedList = getNaukriAppliedJobs(userKey);
   const pastAppliedSet = new Set(
     pastAppliedList.map(j => `${(j.company || '').toLowerCase().trim()}___${(j.jobTitle || '').toLowerCase().trim()}`)
   );
 
-  // 3. Discover Real Jobs across Multiple Queries
+  // 4. Discover Real Jobs across Multiple Queries
   console.log(`[NAUKRI EASY APPLY] [SEARCH] Discovering jobs on Naukri...`);
   const rawDiscovered = await discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig);
 
-  // 4. Build Diverse Ranked Queue
-  console.log(`[NAUKRI EASY APPLY] [DIVERSITY] Applying company diversity rules (Max ${filterConfig.maxJobsPerCompanyPerRun} per company)...`);
-  const diverseQueue = buildDiverseApplicationQueue(rawDiscovered, filterConfig, pastAppliedSet);
-  console.log(`[NAUKRI EASY APPLY] Created diverse queue with ${diverseQueue.length} ranked candidate jobs.`);
+  // 5. Build Diverse Ranked Queue
+  console.log(`[NAUKRI EASY APPLY] [DIVERSITY] Applying company diversity rules (Max ${filterConfig.maxJobsPerCompanyPerRun || 2} per company)...`);
+  const freshDiverseQueue = buildDiverseApplicationQueue(rawDiscovered, filterConfig, pastAppliedSet);
 
-  // Save to persistent queue
-  saveNaukriQueue(userKey, diverseQueue);
+  // Merge: Prioritize ready-to-resume jobs at the front, then new diverse jobs
+  const combinedQueue = [
+    ...readyToResumeJobs,
+    ...freshDiverseQueue.filter(f => !readyToResumeJobs.some(r => r.jobId === f.jobId || r.jobUrl === f.jobUrl))
+  ];
+
+  console.log(`[NAUKRI EASY APPLY] Total active queue size: ${combinedQueue.length} jobs (${readyToResumeJobs.length} resuming, ${freshDiverseQueue.length} newly discovered).`);
+  saveNaukriQueue(userKey, combinedQueue);
 
   const appliedResults = [];
-  const jobsToProcess = diverseQueue.slice(0, targetCount);
+  const jobsToProcess = combinedQueue.slice(0, targetCount);
 
   activeApplyJobState.running = true;
   activeApplyJobState.progress = {
