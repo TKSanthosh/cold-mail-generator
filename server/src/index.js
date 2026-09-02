@@ -25,6 +25,7 @@ const {
   ensureUserSandbox,
   getUserProfile,
   getUserResume,
+  getUserResumeAsync,
   saveUserResume,
   getUserApplications,
   saveUserApplications,
@@ -55,7 +56,13 @@ const {
   resolvePendingQuestion,
   getNaukriAppliedJobs,
   getTodayAppliedStats,
-  runNaukriAutoApplyJob,
+  getFilterConfig,
+  saveFilterConfig,
+  getNaukriQueue,
+  saveNaukriQueue,
+  updateQueueItemState,
+  clearNaukriQueue,
+  runStandaloneNaukriApply,
   getAutoApplyStatus
 } = require('./services/naukri_apply.service');
 
@@ -242,10 +249,10 @@ app.post('/api/auth/logout', (req, res) => {
 });
 
 // --- RESUME TEMPLATE ROUTING (Per-User Sandbox) ---
-app.get('/api/resume', (req, res) => {
+app.get('/api/resume', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
-    const resumeData = getUserResume(userKey);
+    const resumeData = await getUserResumeAsync(userKey);
     res.json(resumeData);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -976,11 +983,45 @@ app.post('/api/naukri/qa/answer-pending', (req, res) => {
   res.json({ ...result, pending: getPendingQuestions(userKey), qaItems: getQaDatabase(userKey) });
 });
 
+// Job Discovery & Filter Configurations (Configurable diversity limits, keywords, roles)
+app.get('/api/naukri/filters', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({ filters: getFilterConfig(userKey) });
+});
+
+app.post('/api/naukri/filters', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const updated = saveFilterConfig(userKey, req.body || {});
+  res.json({ success: true, filters: updated });
+});
+
+// Application State Machine Queue
+app.get('/api/naukri/queue', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({
+    queue: getNaukriQueue(userKey),
+    stats: getTodayAppliedStats(userKey)
+  });
+});
+
+app.delete('/api/naukri/queue', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({ success: true, queue: clearNaukriQueue(userKey) });
+});
+
+app.post('/api/naukri/queue/update', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { jobId, updates } = req.body;
+  const updated = updateQueueItemState(userKey, jobId, updates || {});
+  res.json({ success: true, item: updated, queue: getNaukriQueue(userKey) });
+});
+
+// Live Easy Apply Execution (with database resume resolution & zero hallucination)
 app.post('/api/naukri/apply/start', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const options = req.body || {};
   try {
-    const result = await runNaukriAutoApplyJob(userKey, options);
+    const result = await runStandaloneNaukriApply(userKey, options);
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -991,7 +1032,9 @@ app.get('/api/naukri/apply/history', (req, res) => {
   const userKey = resolveUserKey(req, res);
   res.json({
     applications: getNaukriAppliedJobs(userKey),
-    todayStats: getTodayAppliedStats(userKey)
+    todayStats: getTodayAppliedStats(userKey),
+    queue: getNaukriQueue(userKey),
+    pending: getPendingQuestions(userKey)
   });
 });
 

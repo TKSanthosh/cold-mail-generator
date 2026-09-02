@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3 } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3517,12 +3517,40 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [otpError, setOtpError] = useState('');
   const [verifyingOtp, setVerifyingOtp] = useState(false);
 
-  // Naukri Easy Apply & Smart Q&A Memory State
+  // Naukri Easy Apply, Filter Config, Application Queue, & Smart Q&A Memory State
   const [qaItems, setQaItems] = useState([]);
   const [pendingQuestions, setPendingQuestions] = useState([]);
   const [appliedJobs, setAppliedJobs] = useState([]);
+  const [applicationQueue, setApplicationQueue] = useState([]);
+  const [todayStats, setTodayStats] = useState({
+    todayCount: 0,
+    dailyTarget: 50,
+    remainingTarget: 50,
+    percentComplete: 0,
+    discoveredCount: 0,
+    waitingForInputCount: 0,
+    failedCount: 0,
+    skippedCount: 0
+  });
+  const [filterConfig, setFilterConfig] = useState({
+    jobTitles: ['Full Stack Developer', 'Backend Developer', 'Frontend Developer', 'Node.js Developer', 'React Developer', 'Software Development Engineer', 'MERN Stack Engineer'],
+    skills: ['React.js', 'Node.js', 'JavaScript', 'TypeScript', 'Express.js', 'MongoDB', 'MySQL'],
+    experienceMin: 3,
+    experienceMax: 6,
+    locations: ['Bangalore', 'Bengaluru', 'Remote'],
+    remotePreference: 'any',
+    maxJobsPerCompanyPerRun: 2,
+    maxJobsPerRun: 12,
+    dailyTarget: 50,
+    easyApplyOnly: true,
+    excludedCompanies: [],
+    excludedJobTitles: [],
+    minRelevanceScore: 40
+  });
+  const [showFilterSettings, setShowFilterSettings] = useState(false);
+  const [savingFilters, setSavingFilters] = useState(false);
   const [applyKeywords, setApplyKeywords] = useState('Full Stack Developer MERN React Node.js');
-  const [applyTargetCount, setApplyTargetCount] = useState(10);
+  const [applyTargetCount, setApplyTargetCount] = useState(12);
   const [isAutoApplying, setIsAutoApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(null);
   const [showNewQaModal, setShowNewQaModal] = useState(false);
@@ -3530,6 +3558,9 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
   const [editingQaId, setEditingQaId] = useState(null);
   const [editingQaValues, setEditingQaValues] = useState({ question: '', answer: '', category: 'General' });
+  const [newTitleInput, setNewTitleInput] = useState('');
+  const [newSkillInput, setNewSkillInput] = useState('');
+  const [newExcludedCompInput, setNewExcludedCompInput] = useState('');
 
   const handleStartEditQa = (qa) => {
     setEditingQaId(qa.id);
@@ -3571,19 +3602,55 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const fetchQaAndAppliedJobs = async () => {
     if (!currentUser) return;
     try {
-      const [qaRes, pendRes, appRes] = await Promise.all([
+      const [qaRes, pendRes, appRes, filterRes, queueRes] = await Promise.all([
         apiFetch('/api/naukri/qa'),
         apiFetch('/api/naukri/qa/pending'),
-        apiFetch('/api/naukri/apply/history')
+        apiFetch('/api/naukri/apply/history'),
+        apiFetch('/api/naukri/filters'),
+        apiFetch('/api/naukri/queue')
       ]);
       const qaData = await qaRes.json();
       const pendData = await pendRes.json();
       const appData = await appRes.json();
+      const filterData = await filterRes.json();
+      const queueData = await queueRes.json();
 
       if (Array.isArray(qaData.qaItems)) setQaItems(qaData.qaItems);
       if (Array.isArray(pendData.pending)) setPendingQuestions(pendData.pending);
       if (Array.isArray(appData.applications)) setAppliedJobs(appData.applications);
+      if (appData.todayStats) setTodayStats(appData.todayStats);
+      if (filterData.filters) setFilterConfig(filterData.filters);
+      if (Array.isArray(queueData.queue)) setApplicationQueue(queueData.queue);
     } catch (e) {}
+  };
+
+  const handleSaveFilterConfig = async (e) => {
+    e?.preventDefault();
+    setSavingFilters(true);
+    try {
+      const res = await apiFetch('/api/naukri/filters', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(filterConfig)
+      });
+      const data = await res.json();
+      if (data.filters) setFilterConfig(data.filters);
+      showToast('🎯 Job discovery & company diversity filters saved to DB!', 'success');
+    } catch (err) {
+      showToast(err.message || 'Failed to save filters', 'error');
+    } finally {
+      setSavingFilters(false);
+    }
+  };
+
+  const handleClearQueue = async () => {
+    try {
+      await apiFetch('/api/naukri/queue', { method: 'DELETE' });
+      setApplicationQueue([]);
+      showToast('Application queue cleared', 'info');
+    } catch (e) {
+      showToast('Failed to clear queue', 'error');
+    }
   };
 
   const handleSaveNewQa = async (e) => {
@@ -3619,8 +3686,8 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     }
   };
 
-  const handleResolvePendingQuestion = async (pendingId) => {
-    const answer = (pendingAnswerInputs[pendingId] || '').trim();
+  const handleResolvePendingQuestion = async (pendingId, directAnswer = null) => {
+    const answer = (directAnswer || pendingAnswerInputs[pendingId] || '').trim();
     if (!answer) return showToast('Please type your answer first.', 'error');
 
     try {
@@ -3633,7 +3700,8 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (data.error) throw new Error(data.error);
       setPendingQuestions(data.pending || []);
       setQaItems(data.qaItems || []);
-      showToast('Saved answer into database and resumed application!', 'success');
+      showToast(`💾 Saved answer into DB & resumed application!`, 'success');
+      fetchQaAndAppliedJobs();
     } catch (err) {
       showToast(err.message || 'Failed to submit answer', 'error');
     }
@@ -3642,13 +3710,17 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const handleStartAutoApply = async () => {
     setIsAutoApplying(true);
     setApplyProgress({ current: 1, total: applyTargetCount, status: 'Scanning matching Easy Apply jobs on Naukri...' });
-    showToast(`🚀 Starting Naukri Easy Apply Bot for: ${applyKeywords}...`, 'info');
+    showToast(`🚀 Starting Naukri Easy Apply Bot with Company Diversity Interleaving...`, 'info');
 
     try {
       const res = await apiFetch('/api/naukri/apply/start', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ keywords: applyKeywords, targetCount: applyTargetCount })
+        body: JSON.stringify({
+          keywords: applyKeywords,
+          maxJobsPerRun: applyTargetCount,
+          maxJobsPerCompanyPerRun: filterConfig.maxJobsPerCompanyPerRun || 2
+        })
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
@@ -4047,21 +4119,26 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       <div className="bg-gradient-to-r from-emerald-500/10 via-indigo-500/10 to-sky-500/10 dark:from-emerald-950/40 dark:via-indigo-950/40 dark:to-sky-950/40 p-4 sm:p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col gap-3">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>🎯 Daily Target: 50 Jobs Applied / EOD</span>
+                <span>🎯 Daily Target: {filterConfig.dailyTarget || 50} Jobs Applied / EOD</span>
                 <span className="text-xs bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
-                  {appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length} / 50 Applied Today
+                  {todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length} / {filterConfig.dailyTarget || 50} Completed Today
                 </span>
+                {todayStats.waitingForInputCount > 0 && (
+                  <span className="text-xs bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-bold px-2.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 animate-pulse">
+                    ⚠️ {todayStats.waitingForInputCount} Action Required
+                  </span>
+                )}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Automated 4 Quarter-Day Runs × 12 Jobs / Slot = <strong>48–50 Easy Apply Jobs completed daily</strong> with resume uploads and automated screening question answering.
+              4 Scheduled Quarter-Day Runs × 12 Jobs / Slot = <strong>48–50 Easy Apply Jobs completed daily</strong> with dynamic DB resume uploads, zero-hallucination screening, and company diversity interleaving.
             </p>
           </div>
 
           <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400">
-            <span>Next Run: <strong>{config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</strong></span>
+            <span>Next Boost & Apply Slot: <strong>{config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</strong></span>
           </div>
         </div>
 
@@ -4069,7 +4146,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
           <div
             className="bg-gradient-to-r from-emerald-500 to-indigo-600 h-2.5 transition-all duration-500 rounded-full"
-            style={{ width: `${Math.min(100, Math.round((appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length / 50) * 100))}%` }}
+            style={{ width: `${Math.min(100, Math.round(((todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0])).length) / (filterConfig.dailyTarget || 50)) * 100))}%` }}
           ></div>
         </div>
 
@@ -4109,14 +4186,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Automatically generates your latest ATS-tailored 1-page resume and uploads it to Naukri.com every quarter of the day (<strong>10:00 AM</strong>, <strong>04:00 PM</strong>, <strong>10:00 PM</strong>, <strong>04:00 AM</strong>) to keep your profile marked as <strong>"Active Just Now"</strong> at the top of recruiter searches.
+              Automatically retrieves your latest ATS-tailored resume from the database and uploads it to Naukri.com every quarter of the day (<strong>10:00 AM</strong>, <strong>04:00 PM</strong>, <strong>10:00 PM</strong>, <strong>04:00 AM</strong>) and applies to matching Easy Apply jobs.
             </p>
           </div>
 
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={handleToggleAutoUploader}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs border ${
+              className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all shadow-xs border cursor-pointer ${
                 config.enabled
                   ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white border-transparent'
@@ -4140,7 +4217,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <button
               onClick={handleTriggerUpload}
               disabled={uploading || connectingSso}
-              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
               title="Upload resume immediately right now"
             >
               {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
@@ -4155,10 +4232,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <Loader2 className="w-5 h-5 animate-spin text-emerald-600 dark:text-emerald-400 shrink-0" />
             <div className="text-xs">
               <span className="font-bold text-emerald-900 dark:text-emerald-200 block">
-                Launching Chrome & uploading tailored 1-page PDF to Naukri.com...
+                Launching Chrome & uploading dynamically resolved resume to Naukri.com...
               </span>
               <span className="text-emerald-700 dark:text-emerald-400 text-[11px]">
-                Authenticating session via Google SSO cookies, attaching resume PDF to #attachCV, and confirming 'Active Just Now' timestamp.
+                Authenticating session, attaching resume from DB to #attachCV, and executing scheduled Easy Apply queue.
               </span>
             </div>
           </div>
@@ -4188,7 +4265,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 <span>Naukri Account Authorization</span>
               </span>
               <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                📄 {currentUser?.name ? `${currentUser.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_resume.pdf` : 'candidate_resume.pdf'}
+                📄 Dynamic DB Resume Resolution Active
               </span>
             </div>
 
@@ -4293,7 +4370,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
                 >
                   <Eye className="w-3.5 h-3.5" />
                 </button>
@@ -4314,7 +4391,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <button
                 type="submit"
                 disabled={savingCreds}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 cursor-pointer"
               >
                 {savingCreds ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
                 <span>Save Credentials</span>
@@ -4371,7 +4448,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       <button
                         type="button"
                         onClick={() => handleRemoveCustomSlot(slot)}
-                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs ml-0.5"
+                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs ml-0.5 cursor-pointer"
                         title={`Remove ${slot}`}
                       >
                         ✕
@@ -4453,128 +4530,76 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       </div>
 
-      {/* 2. Upload History Feed Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex justify-between items-center">
-          <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-            <History className="w-4 h-4 text-emerald-500" />
-            <span>Naukri Upload & Profile Boost History ({history.length})</span>
-          </h3>
-          <div className="flex items-center gap-2">
-            {history.length > 0 && (
-              <button
-                onClick={handleClearHistory}
-                className="text-xs text-rose-500 hover:text-rose-700 dark:hover:text-rose-400 flex items-center gap-1 font-semibold transition-colors"
-                title="Clear upload history"
-              >
-                <Trash2 className="w-3 h-3" /> Clear
-              </button>
-            )}
-            <button
-              onClick={fetchConfigAndHistory}
-              className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
-            >
-              <RefreshCw className="w-3 h-3" /> Refresh
-            </button>
-          </div>
-        </div>
-
-        {history.length === 0 ? (
-          <div className="py-12 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            No upload history recorded yet. Click "Boost Profile Now" above or save your credentials to begin automatic quarter-day updates!
-          </div>
-        ) : (
-          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
-            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
-              <thead>
-                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
-                  <th className="p-3">Upload Timestamp</th>
-                  <th className="p-3">Status</th>
-                  <th className="p-3">Profile Status Message</th>
-                  <th className="p-3">Duration</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {history.map((item) => (
-                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                      {new Date(item.timestamp).toLocaleString()}
-                    </td>
-                    <td className="p-3">
-                      {(() => {
-                        const s = (item.status || '').toLowerCase();
-                        const isSuccess = s === 'success' || s.includes('active') || s.includes('link') || s.includes('connect') || s.includes('updated') || s.includes('refreshed');
-                        return (
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${
-                            isSuccess
-                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
-                              : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800'
-                          }`}>
-                            {isSuccess ? '🟢 Active Just Now' : '🔴 Failed'}
-                          </span>
-                        );
-                      })()}
-                    </td>
-                    <td className="p-3 text-slate-800 dark:text-slate-200">
-                      {item.profileStatus || item.message || item.error || 'Resume Refreshed'}
-                    </td>
-                    <td className="p-3 font-mono text-slate-500 dark:text-slate-400">
-                      {item.duration || '8s'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* 3. Interactive Pending Screening Questions Alert Banner */}
+      {/* 2. Interactive Pending Screening Questions Alert Banner (Zero-Hallucination Policy) */}
       {pendingQuestions.length > 0 && (
-        <div className="bg-amber-50 dark:bg-amber-950/40 rounded-xl border border-amber-300 dark:border-amber-800 p-4 sm:p-5 shadow-sm flex flex-col gap-3 animate-pulse">
+        <div className="bg-amber-50 dark:bg-amber-950/40 rounded-xl border-2 border-amber-400 dark:border-amber-700 p-4 sm:p-5 shadow-md flex flex-col gap-3 animate-pulse">
           <div className="flex items-center gap-2">
             <div className="p-2 bg-amber-200 dark:bg-amber-900/60 text-amber-800 dark:text-amber-200 rounded-lg">
-              <Sparkles className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              <AlertCircle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
             </div>
             <div>
               <h3 className="text-sm font-bold text-amber-950 dark:text-amber-200 flex items-center gap-2">
-                <span>Naukri Recruiter Screening Questions ({pendingQuestions.length} Pending)</span>
-                <span className="text-[10px] bg-amber-200 dark:bg-amber-800 text-amber-900 dark:text-amber-100 font-bold px-2 py-0.5 rounded-full">
-                  Action Required
+                <span>Action Required: {pendingQuestions.length} Application Screening Question(s) Paused</span>
+                <span className="text-[10px] bg-amber-300 dark:bg-amber-800 text-amber-950 dark:text-amber-100 font-bold px-2.5 py-0.5 rounded-full">
+                  Zero Hallucination Guard
                 </span>
               </h3>
-              <p className="text-xs text-amber-800 dark:text-amber-300">
-                Answer once below — Cold Reach AI will permanently store your answer in the DB and use it for all future job applications automatically!
+              <p className="text-xs text-amber-900 dark:text-amber-300">
+                To prevent incorrect data submission, we never guess mandatory questions. Please answer below — we will save your answer to your permanent DB and resume the application immediately!
               </p>
             </div>
           </div>
 
           <div className="flex flex-col gap-3 mt-1">
             {pendingQuestions.map((q) => (
-              <div key={q.id} className="bg-white dark:bg-slate-900 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 text-[10px] text-slate-400">
-                    <span>{q.company}</span>
-                    <span>•</span>
-                    <span>{q.jobTitle}</span>
+              <div key={q.id} className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-amber-300 dark:border-amber-900 flex flex-col gap-2.5 shadow-xs">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <div className="flex items-center gap-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      <span className="text-indigo-600 dark:text-indigo-400 font-bold">{q.company}</span>
+                      <span>•</span>
+                      <span>{q.jobTitle}</span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-900 dark:text-slate-100 block mt-1">
+                      ❓ {q.question}
+                    </span>
                   </div>
-                  <span className="text-xs font-bold text-slate-800 dark:text-slate-100 block mt-0.5">
-                    ❓ {q.question}
+                  <span className="text-[10px] bg-rose-100 dark:bg-rose-950/50 text-rose-700 dark:text-rose-300 font-bold px-2 py-0.5 rounded">
+                    Mandatory
                   </span>
                 </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
+
+                {/* Option chips if options detected */}
+                {Array.isArray(q.options) && q.options.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    <span className="text-[10px] text-slate-400 font-bold uppercase">Quick Options:</span>
+                    {q.options.map((opt, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleResolvePendingQuestion(q.id, opt)}
+                        className="text-[10px] bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 font-bold px-2.5 py-1 rounded border border-indigo-200 dark:border-indigo-800 transition-colors cursor-pointer"
+                      >
+                        ✓ {opt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex items-center gap-2 pt-1">
                   <input
                     type="text"
                     value={pendingAnswerInputs[q.id] || ''}
                     onChange={(e) => setPendingAnswerInputs({ ...pendingAnswerInputs, [q.id]: e.target.value })}
-                    placeholder="Type your answer here..."
-                    className="flex-1 sm:w-48 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    placeholder="Type your answer here (e.g. 3.5 Yrs / 10 LPA / 15 Days / Bangalore)..."
+                    className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    onKeyDown={(e) => { if (e.key === 'Enter') handleResolvePendingQuestion(q.id); }}
                   />
                   <button
                     onClick={() => handleResolvePendingQuestion(q.id)}
-                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-3.5 py-1.5 rounded-lg transition-all shadow-xs shrink-0 cursor-pointer"
+                    className="bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg transition-all shadow-xs shrink-0 cursor-pointer"
                   >
-                    Save & Auto-Apply
+                    Save & Resume Application
                   </button>
                 </div>
               </div>
@@ -4583,6 +4608,251 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       )}
 
+      {/* 3. Job Discovery & Company Diversity Settings Card */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                Job Discovery & Company Diversity Settings
+              </h3>
+              <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                Max {filterConfig.maxJobsPerCompanyPerRun || 2} Per Company
+              </span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              Prevents monopolization by single companies (like Swiggy, Zepto, Blinkit). Round-robin company interleaving ensures a diverse portfolio of applications across tech startups and enterprises.
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFilterSettings(!showFilterSettings)}
+            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+          >
+            {showFilterSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            <span>{showFilterSettings ? 'Collapse Filter Config' : 'Customize Discovery Filters'}</span>
+          </button>
+        </div>
+
+        {/* Filter Configuration Form (Expandable) */}
+        {showFilterSettings && (
+          <form onSubmit={handleSaveFilterConfig} className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {/* Max Jobs per company & Daily Target */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Max Jobs Per Company Per Run:
+                </label>
+                <select
+                  value={filterConfig.maxJobsPerCompanyPerRun || 2}
+                  onChange={(e) => setFilterConfig({ ...filterConfig, maxJobsPerCompanyPerRun: parseInt(e.target.value, 10) || 2 })}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                >
+                  <option value="1">1 Job Per Company (Maximum Diversity)</option>
+                  <option value="2">2 Jobs Per Company (Balanced Interleaving)</option>
+                  <option value="3">3 Jobs Per Company</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Daily Application Target (EOD):
+                </label>
+                <input
+                  type="number"
+                  value={filterConfig.dailyTarget || 50}
+                  onChange={(e) => setFilterConfig({ ...filterConfig, dailyTarget: parseInt(e.target.value, 10) || 50 })}
+                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Experience Range (Min - Max Yrs):
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={filterConfig.experienceMin || 3}
+                    onChange={(e) => setFilterConfig({ ...filterConfig, experienceMin: parseInt(e.target.value, 10) || 0 })}
+                    placeholder="Min"
+                    className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  />
+                  <span className="text-xs text-slate-400">to</span>
+                  <input
+                    type="number"
+                    value={filterConfig.experienceMax || 6}
+                    onChange={(e) => setFilterConfig({ ...filterConfig, experienceMax: parseInt(e.target.value, 10) || 10 })}
+                    placeholder="Max"
+                    className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Target Job Titles Chips */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Target Job Titles ({filterConfig.jobTitles?.length || 0}):
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(filterConfig.jobTitles || []).map((title, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                    <span>{title}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterConfig({ ...filterConfig, jobTitles: filterConfig.jobTitles.filter((_, idx) => idx !== i) })}
+                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newTitleInput}
+                  onChange={(e) => setNewTitleInput(e.target.value)}
+                  placeholder="Add target job title (e.g. Senior Frontend Engineer)..."
+                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newTitleInput.trim()) {
+                      e.preventDefault();
+                      setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
+                      setNewTitleInput('');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newTitleInput.trim()) {
+                      setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
+                      setNewTitleInput('');
+                    }
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                >
+                  + Add Title
+                </button>
+              </div>
+            </div>
+
+            {/* Target Skills Chips */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Target Skills & Tech Stack ({filterConfig.skills?.length || 0}):
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(filterConfig.skills || []).map((skill, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                    <span>{skill}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterConfig({ ...filterConfig, skills: filterConfig.skills.filter((_, idx) => idx !== i) })}
+                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newSkillInput}
+                  onChange={(e) => setNewSkillInput(e.target.value)}
+                  placeholder="Add skill (e.g. Next.js, Redux, PostgreSQL)..."
+                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newSkillInput.trim()) {
+                      e.preventDefault();
+                      setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
+                      setNewSkillInput('');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newSkillInput.trim()) {
+                      setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
+                      setNewSkillInput('');
+                    }
+                  }}
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                >
+                  + Add Skill
+                </button>
+              </div>
+            </div>
+
+            {/* Excluded Companies Filter */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                Excluded Companies (Will Never Apply):
+              </label>
+              <div className="flex flex-wrap gap-1.5 mb-2">
+                {(filterConfig.excludedCompanies || []).map((comp, i) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                    <span>{comp}</span>
+                    <button
+                      type="button"
+                      onClick={() => setFilterConfig({ ...filterConfig, excludedCompanies: filterConfig.excludedCompanies.filter((_, idx) => idx !== i) })}
+                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newExcludedCompInput}
+                  onChange={(e) => setNewExcludedCompInput(e.target.value)}
+                  placeholder="Add company to block..."
+                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newExcludedCompInput.trim()) {
+                      e.preventDefault();
+                      setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
+                      setNewExcludedCompInput('');
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (newExcludedCompInput.trim()) {
+                      setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
+                      setNewExcludedCompInput('');
+                    }
+                  }}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                >
+                  + Block Company
+                </button>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+              <button
+                type="submit"
+                disabled={savingFilters}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+              >
+                {savingFilters ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                <span>Save Discovery & Diversity Filters</span>
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
       {/* 4. Naukri 1-Click Easy Apply & Auto-Screening Bot Card */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
@@ -4590,24 +4860,24 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             <div className="flex items-center gap-2">
               <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
-                Naukri 1-Click Easy Apply & Auto-Screening Bot
+                Naukri 1-Click Easy Apply Bot (Diverse Company Queue)
               </h3>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Automatically discovers Easy Apply jobs on Naukri matching your skills, fills recruiter screening questions from your Q&A memory DB, and submits applications with 0 human effort.
+              Searches Naukri for active roles matching your preferences, enforces max 2 jobs per company, resolves resume from DB, and fills recruiter screening questions with zero hallucination.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <select
               value={applyTargetCount}
-              onChange={(e) => setApplyTargetCount(parseInt(e.target.value, 10) || 10)}
+              onChange={(e) => setApplyTargetCount(parseInt(e.target.value, 10) || 12)}
               className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
-              <option value="5">Apply 5 Jobs</option>
-              <option value="10">Apply 10 Jobs</option>
-              <option value="15">Apply 15 Jobs</option>
-              <option value="25">Apply 25 Jobs</option>
+              <option value="6">Apply 6 Jobs</option>
+              <option value="12">Apply 12 Jobs (Quarter Slot Target)</option>
+              <option value="20">Apply 20 Jobs</option>
+              <option value="30">Apply 30 Jobs</option>
             </select>
 
             <button
@@ -4677,7 +4947,78 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         )}
       </div>
 
-      {/* 5. Smart Q&A Memory Database Manager Card */}
+      {/* 5. Live Application Queue & State Machine Visualizer */}
+      {applicationQueue.length > 0 && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-3 transition-colors">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-2">
+              <ListChecks className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                Live Diverse Application Queue ({applicationQueue.length} Jobs)
+              </h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleClearQueue}
+                className="text-xs text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+              >
+                Clear Queue
+              </button>
+              <button
+                type="button"
+                onClick={fetchQaAndAppliedJobs}
+                className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 font-semibold cursor-pointer"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto max-h-60">
+            <table className="w-full text-left text-xs border-collapse min-w-[600px]">
+              <thead className="sticky top-0 bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                <tr>
+                  <th className="p-2.5">Company & Role</th>
+                  <th className="p-2.5">Location & Exp</th>
+                  <th className="p-2.5">Relevance</th>
+                  <th className="p-2.5">Application State</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {applicationQueue.map((item) => (
+                  <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
+                    <td className="p-2.5">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 block">{item.jobTitle}</span>
+                      <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">{item.company}</span>
+                    </td>
+                    <td className="p-2.5 text-slate-600 dark:text-slate-300">
+                      <div>{item.location}</div>
+                      <div className="text-[10px] text-slate-400">{item.experience}</div>
+                    </td>
+                    <td className="p-2.5 font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                      {item.score || 85}%
+                    </td>
+                    <td className="p-2.5">
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                        item.state === 'SUBMITTED' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                        item.state === 'WAITING_FOR_USER_ANSWER' ? 'bg-amber-100 text-amber-900 border border-amber-300 animate-pulse' :
+                        item.state === 'STARTED' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' :
+                        item.state === 'SKIPPED' ? 'bg-slate-100 text-slate-600 border border-slate-200' :
+                        'bg-sky-50 text-sky-700 border border-sky-200'
+                      }`}>
+                        {item.state || 'ELIGIBLE'}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* 6. Smart Q&A Memory Database Manager Card */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
@@ -4819,16 +5160,16 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       </div>
 
-      {/* 6. Applied Jobs History Table */}
+      {/* 7. Detailed Applied Jobs History Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex justify-between items-center">
           <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-500" />
-            <span>Naukri Easy Apply Jobs Log ({appliedJobs.length})</span>
+            <span>Naukri Easy Apply Detailed Jobs Log ({appliedJobs.length})</span>
           </h3>
           <button
             onClick={fetchQaAndAppliedJobs}
-            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold"
+            className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" /> Refresh
           </button>
@@ -4840,36 +5181,59 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
-            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+            <table className="w-full text-left text-xs border-collapse min-w-[700px]">
               <thead>
                 <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
                   <th className="p-3">Job Title & Company</th>
                   <th className="p-3">Location & Exp</th>
                   <th className="p-3">Applied Timestamp</th>
+                  <th className="p-3">Resume Used</th>
+                  <th className="p-3">Screening Qs</th>
                   <th className="p-3">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {appliedJobs.map((app) => (
-                  <tr key={app.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                    <td className="p-3">
-                      <span className="font-bold text-slate-900 dark:text-slate-100 block">{app.jobTitle}</span>
-                      <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">{app.company}</span>
-                    </td>
-                    <td className="p-3 text-slate-600 dark:text-slate-300">
-                      <div>{app.location}</div>
-                      <div className="text-[10px] text-slate-400">{app.experience}</div>
-                    </td>
-                    <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
-                      {new Date(app.appliedAt).toLocaleString()}
-                    </td>
-                    <td className="p-3">
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
-                        <CheckCircle className="w-2.5 h-2.5" /> Applied (Easy Apply)
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                {appliedJobs.map((app) => {
+                  const s = (app.status || '').toLowerCase();
+                  const isFailed = s.includes('failed');
+                  const isSkipped = s.includes('skipped');
+                  return (
+                    <tr key={app.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                      <td className="p-3">
+                        <span className="font-bold text-slate-900 dark:text-slate-100 block">{app.jobTitle}</span>
+                        <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">{app.company}</span>
+                      </td>
+                      <td className="p-3 text-slate-600 dark:text-slate-300">
+                        <div>{app.location}</div>
+                        <div className="text-[10px] text-slate-400">{app.experience}</div>
+                      </td>
+                      <td className="p-3 font-mono text-slate-600 dark:text-slate-300">
+                        {new Date(app.appliedAt).toLocaleString()}
+                      </td>
+                      <td className="p-3 font-mono text-[11px] text-slate-500 dark:text-slate-400">
+                        📄 {app.resumeUsed || 'candidate_resume.pdf'}
+                      </td>
+                      <td className="p-3 font-mono text-center font-bold text-indigo-600 dark:text-indigo-400">
+                        {app.questionsAnsweredCount || 0}
+                      </td>
+                      <td className="p-3">
+                        {isFailed ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                            🔴 Failed ({app.failureStage || 'Error'})
+                          </span>
+                        ) : isSkipped ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700">
+                            ⚪ Skipped
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                            <CheckCircle className="w-2.5 h-2.5" /> Applied (Easy Apply)
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

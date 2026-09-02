@@ -7,7 +7,8 @@ try {
 const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
-const { getUserResume, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys, hydrateUserSandboxFromDatabase } = require('./user.service');
+const { resolveUserResumeFile } = require('./resume.service');
+const { getUserResume, getUserResumeAsync, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys, hydrateUserSandboxFromDatabase } = require('./user.service');
 const {
   isSupabaseConfigured,
   supabaseSaveNaukriConfig,
@@ -1086,23 +1087,22 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   const startTime = Date.now();
   console.log(`[NAUKRI UPLOADER] Starting resume upload workflow for user ${userKey}...`);
 
-  // 1. Generate Fresh 1-Page PDF Resume (santhosh_t_k_resume.pdf)
-  let userResume = getUserResume(userKey);
-  if (!userResume && fs.existsSync(MASTER_RESUME_PATH)) {
-    userResume = getUserResume('tksanthosh494_gmail_com') || JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8'));
-  }
-  if (!userResume) {
-    throw new Error('Master resume data not found. Please upload or save your resume first.');
-  }
+  // 1. Dynamically Retrieve and Resolve Resume from Database (Zero hardcoded names or paths)
+  console.log(`[NAUKRI UPLOADER] 📥 Fetching & resolving resume from database for user "${userKey}"...`);
+  const resolvedResume = await resolveUserResumeFile(userKey);
+  const uploadPdfPath = resolvedResume.filePath;
+  const resumeFileName = resolvedResume.fileName;
+  const candidateName = resolvedResume.candidateName;
 
-  ensureUserSandbox(userKey);
-  const userPaths = getUserPaths(userKey);
-  const candidateName = userResume?.personalInfo?.name || 'Santhosh T K';
-  const cleanName = candidateName.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
-  const isSanthosh = cleanName.includes('santhosh') || userKey.includes('santhosh') || userKey === 'default_user';
-  const resumeFileName = isSanthosh ? 'santhosh_t_k_resume.pdf' : `${cleanName}_resume.pdf`;
-  const uploadPdfPath = path.join(userPaths.uploadsDir, resumeFileName);
-  await generateResumePdf(userResume, uploadPdfPath);
+  console.log(
+    `[NAUKRI UPLOADER] 📄 Resume resolved successfully:\n` +
+    `  • User: ${userKey}\n` +
+    `  • Candidate: ${candidateName}\n` +
+    `  • File Name: ${resumeFileName}\n` +
+    `  • File Path: ${uploadPdfPath}\n` +
+    `  • File Size: ${(resolvedResume.fileSize / 1024).toFixed(1)} KB (${resolvedResume.fileSize} bytes)\n` +
+    `  • Source: ${resolvedResume.source}`
+  );
 
   // 2. Discover Browser Executable (Windows Chrome or Render Bundled Chromium)
   let browserPath = await ensureBrowserInstalled();
@@ -1459,22 +1459,36 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
   } catch (err) {
     console.error(`[NAUKRI UPLOADER ERROR for ${userKey}]`, err.message);
     const durationSec = Math.round((Date.now() - startTime) / 1000);
+    const isAuthError = err.message.toLowerCase().includes('unauthenticated') ||
+                        err.message.toLowerCase().includes('session has expired') ||
+                        err.message.toLowerCase().includes('access denied') ||
+                        err.message.toLowerCase().includes('login');
 
     uploadResult = {
       status: 'error',
       error: err.message,
+      failureStage: isAuthError ? 'Authentication Required' : 'Execution Error',
       duration: `${durationSec}s`,
       timestamp: new Date().toISOString()
     };
 
-    config.lastStatus = 'Failed';
-    config.lastError = err.message;
-    config.nextUploadAt = new Date(Date.now() + 15 * 60 * 1000).toISOString(); // Retry in 15m
+    if (isAuthError) {
+      config.hasSession = false;
+      config.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie or Enter Credentials)';
+      config.lastError = err.message;
+      // Normal schedule rather than 15-min spam loop
+      config.nextUploadAt = calculateNextUploadTime(config).toISOString();
+    } else {
+      config.lastStatus = 'Failed';
+      config.lastError = err.message;
+      config.nextUploadAt = new Date(Date.now() + 30 * 60 * 1000).toISOString(); // Retry in 30m for transient network errors
+    }
     saveNaukriConfig(userKey, config);
 
     appendNaukriHistory(userKey, {
       status: 'failed',
       error: err.message,
+      profileStatus: isAuthError ? 'Session Expired - Re-authentication Required' : 'Upload Failed',
       duration: `${durationSec}s`
     });
 
@@ -1490,41 +1504,18 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 }
 
 /**
- * Quarter-Day / Interval Automation Scheduler exclusively for Santhosh T K (tksanthosh494_gmail_com)
+ * 24/7 Automation Scheduler across all active candidate accounts
  */
 let naukriSchedulerTimer = null;
 
 function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
 
-  console.log('[NAUKRI SCHEDULER] Initialized Quarter-Day (10 AM, 4 PM, 10 PM, 4 AM) automated uploader ticker for Santhosh T K (tksanthosh494_gmail_com).');
+  console.log('[NAUKRI SCHEDULER] ⏰ Initialized 24/7 automated uploader ticker across all active user accounts in database.');
 
   naukriSchedulerTimer = setInterval(async () => {
-    const targetUser = 'tksanthosh494_gmail_com';
     try {
-      if (isSupabaseConfigured()) {
-        try { await hydrateUserSandboxFromDatabase(targetUser); } catch (e) {}
-      }
-
-      const config = getNaukriConfig(targetUser);
-      if (!config.enabled) return;
-
-      const paths = getUserPaths(targetUser);
-      const hasSession = fs.existsSync(paths.naukriSessionPath) || Boolean(config.username) || Boolean(config.hasSession);
-      if (!hasSession) return;
-
-      const now = new Date();
-      const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
-
-      if (now >= nextRun) {
-        console.log(`[NAUKRI SCHEDULER] Quarter-Day schedule reached for ${targetUser}! Uploading santhosh_t_k_resume.pdf...`);
-        try {
-          await uploadResumeToNaukri(targetUser);
-          console.log(`[NAUKRI SCHEDULER] Profile refreshed & santhosh_t_k_resume.pdf uploaded successfully for ${targetUser}.`);
-        } catch (e) {
-          console.error(`[NAUKRI SCHEDULER ERROR for ${targetUser}] Scheduled run failed:`, e.message);
-        }
-      }
+      await triggerNaukriUploadForActiveUsers({ force: false });
     } catch (err) {
       console.warn('[NAUKRI SCHEDULER TICKER WARN]', err.message);
     }
@@ -1702,26 +1693,64 @@ async function verifyNaukriOtp(userKey, otpCode) {
 }
 
 /**
- * Triggers resume upload specifically for Santhosh T K (tksanthosh494_gmail_com)
+ * Triggers resume upload dynamically for active candidate users in the database
  */
 async function triggerNaukriUploadForActiveUsers(options = {}) {
   const { force = false, targetUserKey = null } = options;
   const results = [];
+  const cronStartTime = Date.now();
 
-  // Exclusively target Santhosh T K
-  const targetUsers = [
-    (targetUserKey && targetUserKey !== 'all') ? targetUserKey : 'tksanthosh494_gmail_com'
-  ];
+  console.log(`[NAUKRI CRON TRIGGER] 🚀 Starting 24/7 Naukri Cron Execution (force: ${force}, targetUserKey: ${targetUserKey || 'ALL'})...`);
+
+  // 1. Discover all candidate users dynamically from Supabase database and local sandboxes
+  let targetUsers = [];
+
+  if (targetUserKey && targetUserKey !== 'all') {
+    targetUsers = [targetUserKey];
+  } else {
+    const userKeySet = new Set();
+
+    if (isSupabaseConfigured()) {
+      try {
+        const dbUsers = await supabaseGetAllUsers();
+        if (Array.isArray(dbUsers)) {
+          dbUsers.forEach(u => {
+            if (u && u.userKey) userKeySet.add(u.userKey);
+          });
+        }
+      } catch (e) {
+        console.warn('[NAUKRI CRON TRIGGER WARNING] Error discovering users from Supabase:', e.message);
+      }
+    }
+
+    getAllUserKeys().forEach(k => {
+      if (k) userKeySet.add(k);
+    });
+
+    if (userKeySet.size === 0) {
+      userKeySet.add('default_user');
+    }
+
+    targetUsers = Array.from(userKeySet);
+  }
+
+  console.log(`[NAUKRI CRON TRIGGER] 📋 Identified ${targetUsers.length} user account(s) to evaluate: [${targetUsers.join(', ')}]`);
 
   for (const userKey of targetUsers) {
+    console.log(`[NAUKRI CRON TRIGGER] ⚙️ Evaluating user account: "${userKey}"...`);
     try {
       // Ensure user sandbox is hydrated from database if available
       if (isSupabaseConfigured()) {
-        try { await hydrateUserSandboxFromDatabase(userKey); } catch (e) {}
+        try {
+          await hydrateUserSandboxFromDatabase(userKey);
+        } catch (e) {
+          console.warn(`[NAUKRI CRON TRIGGER] Hydration notice for ${userKey}:`, e.message);
+        }
       }
 
       const config = getNaukriConfig(userKey);
       if (!config.enabled && !force) {
+        console.log(`[NAUKRI CRON TRIGGER] ⏭️ Skipped "${userKey}": Scheduler disabled in config.`);
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
         continue;
       }
@@ -1729,6 +1758,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       const paths = getUserPaths(userKey);
       const hasSession = fs.existsSync(paths.naukriSessionPath) || Boolean(config.username) || Boolean(config.hasSession);
       if (!hasSession && !force) {
+        console.log(`[NAUKRI CRON TRIGGER] ⏭️ Skipped "${userKey}": No active session or credentials found.`);
         results.push({ userKey, skipped: true, reason: 'No active session or credentials found' });
         continue;
       }
@@ -1740,17 +1770,21 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 15 * 60 * 1000);
 
       if (force || isDue) {
-        console.log(`[NAUKRI CRON TRIGGER] Executing upload of santhosh_t_k_resume.pdf for user ${userKey} (force: ${force})...`);
+        console.log(`[NAUKRI CRON TRIGGER] ▶️ Executing auto-upload workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
         const uploadResult = await uploadResumeToNaukri(userKey);
         const updatedConfig = getNaukriConfig(userKey);
+        const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
+
+        console.log(`[NAUKRI CRON TRIGGER] ✅ Auto-upload completed successfully for user "${userKey}" (File: ${uploadedFileName})!`);
         results.push({
           userKey,
           status: 'success',
-          fileName: 'santhosh_t_k_resume.pdf',
+          fileName: uploadedFileName,
           uploadResult,
           nextUploadAt: updatedConfig.nextUploadAt
         });
       } else {
+        console.log(`[NAUKRI CRON TRIGGER] ⏳ Skipped "${userKey}": Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`);
         results.push({
           userKey,
           skipped: true,
@@ -1759,7 +1793,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
         });
       }
     } catch (err) {
-      console.error(`[NAUKRI CRON TRIGGER ERROR for ${userKey}]`, err.message);
+      console.error(`[NAUKRI CRON TRIGGER ERROR for user "${userKey}"]`, err.message);
       results.push({
         userKey,
         status: 'error',
@@ -1767,6 +1801,13 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       });
     }
   }
+
+  console.log(
+    `[NAUKRI CRON TRIGGER] 🏁 Cron run finished in ${Date.now() - cronStartTime}ms. ` +
+    `Summary: ${results.filter(r => r.status === 'success').length} succeeded, ` +
+    `${results.filter(r => r.skipped).length} skipped, ` +
+    `${results.filter(r => r.status === 'error').length} failed.`
+  );
 
   return results;
 }

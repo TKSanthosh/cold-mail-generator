@@ -84,20 +84,40 @@ async function supabaseGetUser(userKey) {
  * RESUMES TABLE
  */
 async function supabaseSaveResume(userKey, resumeData) {
-  if (!isSupabaseConfigured()) return false;
+  if (!isSupabaseConfigured() || !userKey) return false;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/resumes`, {
+    const payload = {
+      user_key: userKey,
+      resume_data: resumeData,
+      updated_at: new Date().toISOString()
+    };
+
+    let res = await fetch(`${SUPABASE_URL}/rest/v1/resumes`, {
       method: 'POST',
       headers: {
         ...getHeaders(),
         'Prefer': 'resolution=merge-duplicates,return=minimal'
       },
-      body: JSON.stringify({
-        user_key: userKey,
-        resume_data: resumeData,
-        updated_at: new Date().toISOString()
-      })
+      body: JSON.stringify(payload)
     });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      // If user record doesn't exist yet, create user and retry
+      if (errText.includes('foreign key') || errText.includes('23503')) {
+        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : '' });
+        res = await fetch(`${SUPABASE_URL}/rest/v1/resumes`, {
+          method: 'POST',
+          headers: {
+            ...getHeaders(),
+            'Prefer': 'resolution=merge-duplicates,return=minimal'
+          },
+          body: JSON.stringify(payload)
+        });
+      } else {
+        console.warn('[SUPABASE] saveResume warning:', errText);
+      }
+    }
     return res.ok;
   } catch (e) {
     console.warn('[SUPABASE] saveResume error:', e.message);
@@ -106,14 +126,35 @@ async function supabaseSaveResume(userKey, resumeData) {
 }
 
 async function supabaseGetResume(userKey) {
-  if (!isSupabaseConfigured()) return null;
+  if (!isSupabaseConfigured() || !userKey) return null;
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/resumes?user_key=eq.${encodeURIComponent(userKey)}&select=resume_data`, {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/resumes?user_key=eq.${encodeURIComponent(userKey)}&select=*`, {
       headers: getHeaders()
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      // Fallback with select=resume_data
+      const res2 = await fetch(`${SUPABASE_URL}/rest/v1/resumes?user_key=eq.${encodeURIComponent(userKey)}&select=resume_data`, {
+        headers: getHeaders()
+      });
+      if (!res2.ok) return null;
+      const data2 = await res2.json();
+      if (!data2 || data2.length === 0) return null;
+      return data2[0].resume_data || data2[0];
+    }
     const data = await res.json();
-    return data && data[0] ? data[0].resume_data : null;
+    if (!data || data.length === 0) return null;
+    const row = data[0];
+    if (row.resume_data !== undefined) {
+      if (typeof row.resume_data === 'string') {
+        try {
+          return JSON.parse(row.resume_data);
+        } catch (e) {
+          return row.resume_data;
+        }
+      }
+      return row.resume_data;
+    }
+    return row;
   } catch (e) {
     console.warn('[SUPABASE] getResume error:', e.message);
     return null;
@@ -399,7 +440,7 @@ async function supabaseAppendNaukriHistory(userKey, record) {
       id: record.id || `naukri_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
       user_key: userKey,
       status: record.status || 'success',
-      file_name: record.fileName || 'santhosh_t_k_resume.pdf',
+      file_name: record.fileName || record.file_name || 'resume.pdf',
       message: record.message || '',
       profile_status: record.profileStatus || '',
       duration: record.duration || '',

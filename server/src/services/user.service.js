@@ -148,6 +148,21 @@ function getUserResume(userKey) {
   return null;
 }
 
+async function getUserResumeAsync(userKey) {
+  if (isSupabaseConfigured() && userKey) {
+    try {
+      const dbResume = await supabaseGetResume(userKey);
+      if (dbResume && typeof dbResume === 'object' && Object.keys(dbResume).length > 0) {
+        const paths = getUserPaths(userKey);
+        ensureUserSandbox(userKey);
+        try { fs.writeFileSync(paths.resumePath, JSON.stringify(dbResume, null, 2), 'utf8'); } catch (e) {}
+        return dbResume;
+      }
+    } catch (e) {}
+  }
+  return getUserResume(userKey);
+}
+
 function saveUserResume(userKey, data) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
@@ -421,6 +436,7 @@ module.exports = {
   ensureUserSandbox,
   getUserProfile,
   getUserResume,
+  getUserResumeAsync,
   saveUserResume,
   getUserApplications,
   saveUserApplications,
