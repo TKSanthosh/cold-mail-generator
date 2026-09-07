@@ -1118,20 +1118,39 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
 
   // 1. Build Title + Location queries from user config
   for (const title of titles) {
+    const cleanTitle = title.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
     for (const loc of locations.slice(0, 2)) {
-      searchQueries.push({ query: `${title} ${loc}`, locParam: loc });
+      const cleanLoc = loc.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+      const slug = (cleanLoc && cleanLoc !== 'remote') ? `${cleanTitle}-jobs-in-${cleanLoc}` : `${cleanTitle}-jobs`;
+      searchQueries.push({ 
+        query: `${title} in ${loc}`, 
+        searchUrl: `https://www.naukri.com/${slug}?k=${encodeURIComponent(title)}&l=${encodeURIComponent(loc)}`,
+        locParam: loc 
+      });
     }
   }
 
   // 2. Skill + Location queries
   if (Array.isArray(config.skills) && config.skills.length > 0) {
-    const topSkills = config.skills.slice(0, 3).join(' ');
-    searchQueries.push({ query: `${topSkills} Developer ${locations[0] || ''}`.trim(), locParam: locations[0] || '' });
+    const topSkill = config.skills[0];
+    const cleanSkill = topSkill.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+    const loc = locations[0] || 'bangalore';
+    const cleanLoc = loc.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+    searchQueries.push({ 
+      query: `${topSkill} Developer in ${loc}`, 
+      searchUrl: `https://www.naukri.com/${cleanSkill}-developer-jobs-in-${cleanLoc}?k=${encodeURIComponent(topSkill + ' Developer')}&l=${encodeURIComponent(loc)}`,
+      locParam: loc 
+    });
   }
 
   // 3. Remote role query if remote preference is enabled
   if (config.remotePreference === 'remote' || locations.some(l => l.toLowerCase().includes('remote'))) {
-    searchQueries.push({ query: `${titles[0] || 'Software Engineer'} Remote`, locParam: 'remote' });
+    const cleanTitle = (titles[0] || 'software-engineer').toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
+    searchQueries.push({ 
+      query: `${titles[0] || 'Software Engineer'} Remote`, 
+      searchUrl: `https://www.naukri.com/${cleanTitle}-jobs?k=${encodeURIComponent(titles[0] || 'Software Engineer')}&q=remote`,
+      locParam: 'remote' 
+    });
   }
 
   console.log(`[SEARCH] Starting dynamic multi-query discovery across ${searchQueries.length} search variations: [${searchQueries.map(s => s.query).join(', ')}]...`);
@@ -1139,10 +1158,8 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
   const seenUrls = new Set();
   const seenJobIds = new Set();
 
-  for (const { query, locParam } of searchQueries) {
+  for (const { query, searchUrl } of searchQueries) {
     if (allDiscovered.length >= (config.maxJobsPerRun ? config.maxJobsPerRun * 4 : 50)) break;
-    const cleanSlug = query.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim().replace(/\s+/g, '-');
-    const searchUrl = `https://www.naukri.com/${cleanSlug}-jobs?k=${encodeURIComponent(query)}${locParam ? `&l=${encodeURIComponent(locParam)}` : ''}`;
 
     try {
       console.log(`[SEARCH] Querying: "${query}" -> ${searchUrl}...`);
@@ -1277,12 +1294,14 @@ async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
       }
 
       // 3. Apply Button State Transformation
-      const applyBtn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i]');
-      if (applyBtn) {
-        const btnText = (applyBtn.innerText || applyBtn.textContent || '').trim().toLowerCase();
-        const isDisabled = applyBtn.disabled || applyBtn.getAttribute('aria-disabled') === 'true' || applyBtn.classList.contains('applied');
+      const applyContainers = document.querySelectorAll(
+        '[class*="apply-button"], [class*="applyButton"], [class*="jhc__apply-button"], button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .already-applied'
+      );
+      for (const applyEl of applyContainers) {
+        const btnText = (applyEl.innerText || applyEl.textContent || '').trim().toLowerCase();
+        const isDisabled = applyEl.disabled || applyEl.getAttribute('aria-disabled') === 'true' || applyEl.classList.contains('applied');
         if (btnText.includes('applied') || (isDisabled && btnText.includes('already'))) {
-          return { verified: true, source: 'NAUKRI_BUTTON_TRANSFORMATION', details: `Apply button changed to disabled "${btnText}"` };
+          return { verified: true, source: 'NAUKRI_BUTTON_TRANSFORMATION', details: `Apply button changed to "${btnText}"` };
         }
       }
 
@@ -1609,20 +1628,49 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
       // Locate Apply Button & Positively Verify Easy Apply vs External ATS Site
       const applyBtnData = await page.evaluate(() => {
-        const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
+        const btn = document.querySelector(
+          'button#apply-button, button.apply-button, [class*="apply-button"] button, [class*="applyButton"] button, [class*="jhc__apply-button"] button, [class*="jhc__apply-button-container"] button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect, [class*="apply-button"], [class*="applyButton"], [class*="jhc__apply-button-container"], a[id*="apply" i]'
+        );
         if (!btn) return { exists: false };
-        const text = (btn.textContent || '').trim().toLowerCase();
-        const isExternal = text.includes('company site') || text.includes('already') || text.includes('external') || text.includes('visit employer');
+        const text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
+        const isExternal = text.includes('company site') || text.includes('external') || text.includes('visit employer');
+        const isAlreadyApplied = text.includes('already applied') || text === 'applied';
         return {
           exists: true,
-          text: btn.textContent?.trim(),
-          isExternal
+          text: (btn.textContent || btn.innerText || '').trim(),
+          isExternal,
+          isAlreadyApplied
         };
       });
 
       if (!applyBtnData.exists) {
         console.log(`[APPLY] [SKIP] No apply button detected on page for ${jobItem.company}.`);
         updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'No Apply Button Found' });
+        continue;
+      }
+
+      if (applyBtnData.isAlreadyApplied) {
+        console.log(`[APPLY] [ALREADY_APPLIED] Already applied to "${jobItem.jobTitle}" at "${jobItem.company}". Confirming verified submission.`);
+        confirmNaukriApplicationSubmission(
+          userKey,
+          {
+            jobId: jobItem.jobId,
+            jobTitle: jobItem.jobTitle,
+            company: jobItem.company,
+            location: jobItem.location,
+            experience: jobItem.experience,
+            jobUrl: jobItem.jobUrl,
+            resumeUsed: resolvedResume.fileName,
+            questionsAnsweredCount: 0,
+            duration: '0s'
+          },
+          {
+            status: VerificationStatus.VERIFIED,
+            source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+            details: 'Job page shows "Applied" status on Naukri',
+            verifiedAt: new Date().toISOString()
+          }
+        );
         continue;
       }
 
@@ -1636,7 +1684,9 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       console.log(`[EASY_APPLY] [FORM] Opening Easy Apply modal ("${applyBtnData.text}")...`);
       try {
         await page.evaluate(() => {
-          const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
+          const btn = document.querySelector(
+            'button#apply-button, button.apply-button, [class*="apply-button"] button, [class*="applyButton"] button, [class*="jhc__apply-button"] button, [class*="jhc__apply-button-container"] button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect, [class*="jhc__apply-button-container"]'
+          );
           if (btn) btn.click();
         });
       } catch (e) {

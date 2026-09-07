@@ -488,6 +488,7 @@ Santhosh T K
 
     const testUser = 'tksanthosh494_gmail_com';
     saveQaItem(testUser, { id: 'qa_ctc_current', question: 'What is your current CTC (in LPA)?', answer: '8', category: 'Compensation' });
+    saveQaItem(testUser, { id: 'qa_notice_period', question: 'What is your notice period (in days)?', answer: '15', category: 'Availability' });
     const qaList = getQaDatabase(testUser);
     assert(Array.isArray(qaList) && qaList.length >= 10, `Loaded ${qaList.length} Q&A items from memory DB`);
 

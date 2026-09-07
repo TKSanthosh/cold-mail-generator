@@ -5332,6 +5332,15 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <RefreshCw className={`w-3 h-3 ${isReconciling ? 'animate-spin' : ''}`} />
               {isReconciling ? 'Reconciling...' : 'Reconcile with Naukri'}
             </button>
+            <a
+              href="https://www.naukri.com/mnjuser/appliedjobs"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-semibold"
+              title="Open your official Naukri Applied Jobs tracker"
+            >
+              <ExternalLink className="w-3 h-3" /> View on Naukri
+            </a>
             <button
               onClick={fetchQaAndAppliedJobs}
               className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold cursor-pointer"
@@ -5372,8 +5381,21 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   return (
                     <tr key={app.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                       <td className="p-3">
-                        <span className="font-bold text-slate-900 dark:text-slate-100 block">{app.jobTitle}</span>
-                        <span className="text-[11px] text-indigo-600 dark:text-indigo-400 font-semibold">{app.company}</span>
+                        {app.jobUrl ? (
+                          <a
+                            href={app.jobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 inline-flex items-center gap-1 group transition-colors"
+                            title="Open direct job posting on Naukri"
+                          >
+                            <span>{app.jobTitle}</span>
+                            <ExternalLink className="w-3.5 h-3.5 opacity-70 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
+                          </a>
+                        ) : (
+                          <span className="font-bold text-slate-900 dark:text-slate-100 block">{app.jobTitle}</span>
+                        )}
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold block">{app.company}</span>
                       </td>
                       <td className="p-3 text-slate-600 dark:text-slate-300">
                         <div>{app.location}</div>
