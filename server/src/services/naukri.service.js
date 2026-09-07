@@ -756,17 +756,20 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
     } catch (e) {}
   }
 
-  if (!cookies || !Array.isArray(cookies) || cookies.length === 0) {
-    logStructured('AUTH', `No persisted session cookies found in Supabase DB or cache for user "${userKey}"`);
+  // Filter out any sanitized/redacted cookies that lack a valid string value
+  const realCookies = (cookies || []).filter(c => c && c.name && c.value && typeof c.value === 'string' && c.value !== 'Stored Securely' && c.value !== '••••••••');
+
+  if (realCookies.length === 0) {
+    logStructured('AUTH', `No persisted session cookies with valid values found for user "${userKey}"`);
     return { hasSession: false, count: 0, restored: false, source: 'none', status: 'NOT_CONFIGURED' };
   }
 
-  logStructured('AUTH', `Session found (${cookies.length} cookies from ${source})`);
+  logStructured('AUTH', `Session found (${realCookies.length} valid cookies from ${source})`);
   logStructured('AUTH', `Restoring browser authentication...`);
 
   let injectedCount = 0;
   try {
-    for (const c of cookies) {
+    for (const c of realCookies) {
       if (!c || !c.name || !c.value) continue;
       const dom = c.domain ? (c.domain.startsWith('.') ? c.domain : `.${c.domain}`) : '.naukri.com';
       const cookieObj = {
@@ -817,26 +820,26 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
 
     const effectiveCount = (browserCookies && browserCookies.length > 0) ? browserCookies.length : injectedCount;
     if (effectiveCount === 0) {
-      logStructured('AUTH', `Session restore warning for user "${userKey}": No cookies were accepted by browser`);
+      logStructured('AUTH', `Session restore notice for user "${userKey}": No cookies were accepted by browser context`);
       return {
         hasSession: false,
         count: 0,
         restored: false,
-        failureType: 'AUTH_RESTORE_FAILED',
+        failureType: 'NOT_CONFIGURED',
         error: 'No valid cookies accepted by browser context',
         source
       };
     }
 
     logStructured('AUTH', `Browser authentication restored (${effectiveCount} cookies active)`);
-    return { hasSession: true, count: effectiveCount, injectedCount, restored: true, cookies, source };
+    return { hasSession: true, count: effectiveCount, injectedCount, restored: true, cookies: realCookies, source };
   } catch (injectErr) {
-    logStructured('AUTH', `Session restore error for user "${userKey}": ${injectErr.message}`);
+    logStructured('AUTH', `Session restore notice for user "${userKey}": ${injectErr.message}`);
     return {
       hasSession: false,
       count: 0,
       restored: false,
-      failureType: 'AUTH_RESTORE_FAILED',
+      failureType: 'NOT_CONFIGURED',
       error: injectErr.message,
       source
     };
@@ -1249,13 +1252,21 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
   const current = getNaukriConfig(userKey);
   const existingCookies = getNaukriSessionCookies(userKey);
 
-  const cookiesToKeep = (config.sessionCookies && Array.isArray(config.sessionCookies))
-    ? config.sessionCookies
-    : (existingCookies.length > 0 ? existingCookies : (current.sessionCookies || []));
+  let cookiesToKeep = existingCookies.length > 0 ? existingCookies : (current.sessionCookies || []);
+
+  if (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) {
+    const hasRealValues = config.sessionCookies.some(c => c && c.value && typeof c.value === 'string' && c.value !== 'Stored Securely' && c.value !== '••••••••');
+    if (hasRealValues) {
+      cookiesToKeep = config.sessionCookies.filter(c => c && c.value && typeof c.value === 'string' && c.value !== 'Stored Securely' && c.value !== '••••••••');
+    }
+  } else if (config.sessionCookies === null || (Array.isArray(config.sessionCookies) && config.sessionCookies.length === 0)) {
+    cookiesToKeep = [];
+  }
 
   const updated = {
     ...current,
     ...config,
+    password: (config.password && config.password !== '••••••••') ? config.password : (current.password || ''),
     sessionCookies: cookiesToKeep,
     lastUpdatedAt: new Date().toISOString()
   };
@@ -1903,13 +1914,9 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       // 3. Restore and Inject Saved Session State BEFORE navigating to Naukri
       const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
       if (!restoreResult.hasSession) {
-        if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
-          logStructured('AUTH', `Session restore failed for user "${userKey}"`);
-          throw new Error(`[AUTH_RESTORE_FAILED] Application failed to restore saved session into browser context: ${restoreResult.error}`);
-        }
         if (!username || !password) {
-          logStructured('AUTH', `No session found for user "${userKey}"`);
-          throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie".');
+          logStructured('AUTH', `No active session or credentials found for user "${userKey}"`);
+          throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie" or enter your login password.');
         }
       }
 
