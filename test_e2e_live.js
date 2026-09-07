@@ -211,14 +211,14 @@ async function runApiTests() {
 
   // --- 6. Inline Q&A Edit & Save Verification ---
   try {
-    const testAnswer = `Auto-Test CTC ${Date.now().toString().slice(-4)} LPA`;
+    const testAnswer = `Auto-Test Answer ${Date.now().toString().slice(-4)}`;
     const res = await fetchJson(`${TARGET_URL}/api/naukri/qa`, {
       method: 'POST',
       body: {
-        id: 'qa_ctc_current',
-        question: 'What is your current CTC (in LPA)?',
+        id: 'qa_test_custom_live',
+        question: 'What is your preferred development workflow?',
         answer: testAnswer,
-        category: 'Compensation'
+        category: 'Work Style'
       }
     });
     if (res.status === 200 && Array.isArray(res.data.qaItems)) {

@@ -560,7 +560,18 @@ async function saveNaukriSessionCookiesAsync(userKey = 'default_user', cookieInp
       }
     }
 
-    const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
+    const hasNaukSession = cookiesToSave.some(c => 
+      c.name === 'nauk_session' || 
+      c.name.startsWith('nauk_') || 
+      c.name.includes('nauk_at') ||
+      c.name.includes('nauk_ps') ||
+      c.name.includes('nauk_cs') ||
+      c.name.includes('MYNAUKRI') || 
+      c.name.includes('NKWAP') || 
+      c.name.includes('ubt_user') || 
+      c.name.toLowerCase().includes('auth') || 
+      c.name.toLowerCase().includes('session')
+    );
 
     appendNaukriHistory(userKey, {
       status: newStatus === 'ACTIVE' ? 'Session Refreshed' : 'Session Configured',
@@ -575,7 +586,7 @@ async function saveNaukriSessionCookiesAsync(userKey = 'default_user', cookieInp
       count: cookiesToSave.length,
       cookieCount: cookiesToSave.length,
       hasSession: true,
-      hasAuthToken: hasNaukSession,
+      hasAuthToken: hasNaukSession || cookiesToSave.length >= 3,
       status: newStatus,
       lastVerifiedAt: config.lastVerifiedAt || null,
       lastUpdatedAt: config.lastUpdatedAt,
@@ -619,7 +630,18 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput, options
       }).catch(() => {});
     }
 
-    const hasNaukSession = cookiesToSave.some(c => c.name === 'nauk_session');
+    const hasNaukSession = cookiesToSave.some(c => 
+      c.name === 'nauk_session' || 
+      c.name.startsWith('nauk_') || 
+      c.name.includes('nauk_at') ||
+      c.name.includes('nauk_ps') ||
+      c.name.includes('nauk_cs') ||
+      c.name.includes('MYNAUKRI') || 
+      c.name.includes('NKWAP') || 
+      c.name.includes('ubt_user') || 
+      c.name.toLowerCase().includes('auth') || 
+      c.name.toLowerCase().includes('session')
+    );
 
     appendNaukriHistory(userKey, {
       status: newStatus === 'ACTIVE' ? 'Session Refreshed' : 'Session Configured',
@@ -632,7 +654,8 @@ function saveNaukriSessionCookies(userKey = 'default_user', cookieInput, options
     return {
       success: true,
       count: cookiesToSave.length,
-      hasAuthToken: hasNaukSession,
+      cookieCount: cookiesToSave.length,
+      hasAuthToken: hasNaukSession || cookiesToSave.length >= 3,
       status: newStatus,
       lastVerifiedAt: config.lastVerifiedAt || null,
       lastUpdatedAt: config.lastUpdatedAt,

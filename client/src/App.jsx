@@ -4049,8 +4049,8 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
       setShowCookieModal(false);
       setCookieInput('');
-      if (data.hasAuthToken === false) {
-        showToast('⚠️ Cookies saved, but "nauk_session" was not detected. If boosts fail, copy the "cookie:" request header from the Network tab.', 'warning');
+      if (data.hasAuthToken === false && (!data.cookieCount || data.cookieCount < 3)) {
+        showToast('⚠️ Cookies saved, but no session authentication tokens were detected. If boosts fail, copy the "cookie:" request header from the Network tab.', 'warning');
       } else {
         showToast(data.message || '🎉 Naukri session linked successfully! Auto-boosts are now active in Cloud DB.', 'success');
       }

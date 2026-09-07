@@ -1634,11 +1634,25 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
       // Click the Easy Apply button
       console.log(`[EASY_APPLY] [FORM] Opening Easy Apply modal ("${applyBtnData.text}")...`);
-      await page.evaluate(() => {
-        const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
-        if (btn) btn.click();
-      });
-      await new Promise(r => setTimeout(r, 2500));
+      try {
+        await page.evaluate(() => {
+          const btn = document.querySelector('button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .apply-message button, button.waves-effect');
+          if (btn) btn.click();
+        });
+      } catch (e) {
+        console.warn(`[EASY_APPLY] Click evaluate warning: ${e.message}`);
+      }
+
+      await Promise.race([
+        page.waitForNavigation({ timeout: 2000, waitUntil: 'domcontentloaded' }).catch(() => null),
+        new Promise(r => setTimeout(r, 2500))
+      ]);
+
+      if (page.isClosed()) {
+        console.warn(`[EASY_APPLY] Page closed unexpectedly for ${jobItem.company}`);
+        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'Page Closed Unexpectedly' });
+        continue;
+      }
 
       updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FORM_OPENED, stage: 'Form/Modal Opened' });
       updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FILLING, stage: 'Filling Form Fields' });
@@ -1647,11 +1661,13 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       let hasUnansweredMandatory = false;
 
       // Container-Scoped Form Element Detection
-      const formFields = await page.evaluate(() => {
-        const fields = [];
-        const questionContainers = Array.from(document.querySelectorAll(
-          '.chatbot-container .bot-msg, .chatbot-container .chat-bubble, .apply-dialog .form-group, .custom-question, .question-wrapper, .chatbot-wrapper div[class*="msg"], div[class*="question"]'
-        ));
+      let formFields = [];
+      try {
+        formFields = await page.evaluate(() => {
+          const fields = [];
+          const questionContainers = Array.from(document.querySelectorAll(
+            '.chatbot-container .bot-msg, .chatbot-container .chat-bubble, .apply-dialog .form-group, .custom-question, .question-wrapper, .chatbot-wrapper div[class*="msg"], div[class*="question"]'
+          ));
 
         questionContainers.forEach((container, idx) => {
           const qText = (container.innerText || container.textContent || '').trim();
@@ -1693,6 +1709,9 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
         return fields;
       });
+    } catch (err) {
+      console.warn(`[EASY_APPLY] Form fields inspection warning for ${jobItem.company}:`, err.message);
+    }
 
       if (formFields.length > 0) {
         console.log(`[FORM] Detected ${formFields.length} interactive screening field(s).`);

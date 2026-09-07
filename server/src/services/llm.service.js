@@ -11,8 +11,8 @@ const llmResponseCache = new Map();
 const CANDIDATE_MODELS = [
   MODEL_NAME,
   'meta/llama-3.2-11b-vision-instruct',
-  'meta/llama-3.1-8b-instruct',
-  'meta/llama-3.1-70b-instruct'
+  'meta/llama-3.3-70b-instruct',
+  'meta/llama-3.1-8b-instruct'
 ];
 
 /**

@@ -487,6 +487,7 @@ Santhosh T K
     assert(typeof findBestAnswer === 'function', 'naukri_apply.service exports findBestAnswer');
 
     const testUser = 'tksanthosh494_gmail_com';
+    saveQaItem(testUser, { id: 'qa_ctc_current', question: 'What is your current CTC (in LPA)?', answer: '8', category: 'Compensation' });
     const qaList = getQaDatabase(testUser);
     assert(Array.isArray(qaList) && qaList.length >= 10, `Loaded ${qaList.length} Q&A items from memory DB`);
 
