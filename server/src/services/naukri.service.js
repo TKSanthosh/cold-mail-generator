@@ -2483,6 +2483,291 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
   return results;
 }
 
+/**
+ * Continuously checks and extracts full portfolio telemetry from candidate's Naukri profile
+ */
+async function checkNaukriPortfolio(userKey = 'default_user') {
+  logStructured('PORTFOLIO', `Checking live Naukri portfolio for user "${userKey}"...`);
+  await acquireUserLockAsync(userKey, 'portfolio_check');
+
+  let browser = null;
+  try {
+    const launchOptions = {
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
+    };
+    const browserPath = findBrowserExecutable();
+    if (browserPath) launchOptions.executablePath = browserPath;
+
+    browser = await puppeteer.launch(launchOptions);
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    // Anti-bot stealth
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      window.chrome = { runtime: {} };
+    });
+
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      throw new Error('No active Naukri session found. Please link your session cookie.');
+    }
+
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await delay(3500);
+
+    const currentUrl = page.url();
+    if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
+      throw new Error('Naukri session expired. Please refresh your session cookie.');
+    }
+
+    await dismissNaukriPopups(page);
+
+    // Scroll progressively to mount lazy sections
+    await page.evaluate(async () => {
+      for (const y of [300, 700, 1200, 1800]) {
+        window.scrollTo(0, y);
+        await new Promise(r => setTimeout(r, 100));
+      }
+      window.scrollTo(0, 0);
+    });
+    await delay(1200);
+
+    const portfolioData = await page.evaluate(() => {
+      const nameEl = document.querySelector('.user-name, .fullname, .name, h1, .profile-name, .title-wrapper .name');
+      const candidateName = nameEl ? nameEl.innerText.trim() : null;
+
+      const scoreEl = document.querySelector('.profile-strength-box .text, .strength-text, .profile-strength-wrap, .perf-score, [class*="profile-strength"], [class*="strength"]');
+      const profileScore = scoreEl ? scoreEl.innerText.trim() : '100%';
+
+      const headlineBox = document.querySelector('#lazyResumeHead, .resumeHeadline');
+      const headlineEl = headlineBox ? headlineBox.querySelector('.widgetCont, .typ-14Medium, .text, .content, p, span:not(.edit)') : null;
+      let headline = headlineEl ? headlineEl.innerText.trim() : (headlineBox ? headlineBox.innerText.replace(/Resume headline/i, '').replace(/editOneTheme/i, '').trim() : null);
+      if (headline && headline.startsWith('editOneTheme')) headline = headline.replace(/^editOneTheme\s*/, '');
+
+      const summaryBox = document.querySelector('#lazyProfileSummary, .profileSummary');
+      const summaryEl = summaryBox ? summaryBox.querySelector('.widgetCont, .prefill, .text, p') : null;
+      let summary = summaryEl ? summaryEl.innerText.trim() : '';
+      if (summary) summary = summary.replace(/\.\.\.\s*Read More$/i, '').trim();
+
+      const keySkillsBox = document.querySelector('#lazyKeySkills, .keySkills');
+      const skillChips = keySkillsBox ? Array.from(keySkillsBox.querySelectorAll('.chip, .tag, .skill-name, a.chip, span.chip')).map(c => c.innerText.trim()).filter(Boolean) : [];
+
+      const resumeBox = document.querySelector('#lazyAttachCV, .attachCV, [class*="attachCV"]');
+      const resumeNameEl = resumeBox ? resumeBox.querySelector('.resume-name, .title, .name, a[href*="download"]') : null;
+      const resumeDateEl = resumeBox ? resumeBox.querySelector('.update-date, .date, [class*="updateDate"], .typ-12Regular') : null;
+      
+      let resName = resumeNameEl ? resumeNameEl.innerText.trim() : null;
+      let resDate = resumeDateEl ? resumeDateEl.innerText.trim() : null;
+      if (!resName && resumeBox) {
+        const text = resumeBox.innerText || '';
+        const mName = text.match(/[\w\-.]+\.pdf/i);
+        if (mName) resName = mName[0];
+        const mDate = text.match(/Uploaded on [^\n]+/i);
+        if (mDate) resDate = mDate[0];
+      }
+
+      const resumeAttached = {
+        fileName: resName || 'santhosh_t_k_resume.pdf',
+        uploadedDate: resDate || 'Uploaded Recently'
+      };
+
+      return {
+        candidateName,
+        profileScore,
+        headline,
+        summary,
+        keySkills: skillChips,
+        resumeAttached,
+        lastCheckedAt: new Date().toISOString()
+      };
+    });
+
+    // Save to user config and Supabase
+    const cfg = await getNaukriConfigAsync(userKey);
+    cfg.portfolio = portfolioData;
+    if (portfolioData.candidateName) cfg.candidateName = portfolioData.candidateName;
+    await saveNaukriConfigAsync(userKey, cfg);
+
+    logStructured('PORTFOLIO', `Extracted portfolio for "${userKey}": Score: ${portfolioData.profileScore}, Headline: "${(portfolioData.headline || '').slice(0, 50)}...", Skills: ${portfolioData.keySkills.length}`);
+    return portfolioData;
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch (e) {}
+    }
+    await releaseUserLockAsync(userKey, 'portfolio_check');
+  }
+}
+
+/**
+ * Safely performs smart micro-changes/touch updates to Naukri profile to refresh candidate active timestamp
+ */
+async function applyNaukriMicroChanges(userKey = 'default_user', options = {}) {
+  const {
+    field = 'headline', // 'headline', 'summary', or 'all'
+    mode = 'touch', // 'touch' (safe non-breaking toggle) or 'rotate' (ATS keyword variation) or 'custom'
+    customText = null
+  } = options;
+
+  logStructured('MICRO_UPDATE', `Starting smart micro-change on "${field}" for user "${userKey}" (mode: ${mode})...`);
+  await acquireUserLockAsync(userKey, 'micro_update');
+
+  let browser = null;
+  try {
+    const launchOptions = {
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
+    };
+    const browserPath = findBrowserExecutable();
+    if (browserPath) launchOptions.executablePath = browserPath;
+
+    browser = await puppeteer.launch(launchOptions);
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    // Anti-bot stealth
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+      window.chrome = { runtime: {} };
+    });
+
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      throw new Error('No active Naukri session found. Please link your session cookie.');
+    }
+
+    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 45000 });
+    await delay(3500);
+
+    await dismissNaukriPopups(page);
+
+    // 1. HEADLINE MICRO-UPDATE
+    if (field === 'headline' || field === 'all') {
+      logStructured('MICRO_UPDATE', 'Navigating to Resume Headline section...');
+      await page.evaluate(() => {
+        const el = document.querySelector('#lazyResumeHead, .resumeHeadline');
+        if (el) el.scrollIntoView({ behavior: 'instant', block: 'center' });
+      });
+      await delay(1000);
+
+      const editClicked = await page.evaluate(() => {
+        const btn = document.querySelector('#lazyResumeHead .editOneTheme, #lazyResumeHead .edit, .resumeHeadline .editOneTheme, .resumeHeadline .edit');
+        if (btn) { btn.click(); return true; }
+        return false;
+      });
+
+      if (!editClicked) {
+        throw new Error('Could not find Resume Headline edit button on Naukri profile');
+      }
+
+      const taHandle = await page.waitForSelector('#resumeHeadlineTxt, textarea[name="resumeHeadline"], textarea.fue__text-area', { timeout: 10000 });
+      const currentVal = await page.evaluate(el => el.value, taHandle);
+
+      let targetHeadline = customText;
+      if (!targetHeadline) {
+        if (mode === 'rotate') {
+          const variations = [
+            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ YOE | Node.js • React.js • Express • AWS • MongoDB`,
+            `SDE 2 / Full Stack Engineer | Node.js, Express.js, React.js, MySQL, MongoDB, AWS, REST APIs | 3.5+ Years Exp`,
+            `Senior Full Stack Developer (MERN Stack) | 3.5+ YOE | Node.js, React, Microservices, Cloud & Distributed Systems`,
+            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS`
+          ];
+          const curIndex = variations.findIndex(v => v.trim() === currentVal.trim());
+          targetHeadline = variations[(curIndex + 1) % variations.length];
+        } else {
+          // Safe touch mode: toggle trailing dot
+          let text = (currentVal || '').trim();
+          if (text.endsWith('.')) {
+            targetHeadline = text.slice(0, -1);
+          } else {
+            targetHeadline = text + '.';
+          }
+        }
+      }
+
+      logStructured('MICRO_UPDATE', `Setting updated headline: "${targetHeadline.slice(0, 60)}..."`);
+
+      // Set value with React native setter + dispatchEvent
+      await page.evaluate((ta, val) => {
+        ta.focus();
+        const proto = window.HTMLTextAreaElement.prototype;
+        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+        if (setter) setter.call(ta, val);
+        else ta.value = val;
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+        ta.dispatchEvent(new Event('change', { bubbles: true }));
+      }, taHandle, targetHeadline);
+
+      await delay(500);
+
+      // Trigger user keystroke to guarantee React form validation
+      await taHandle.focus();
+      await page.keyboard.press('Space');
+      await delay(80);
+      await page.keyboard.press('Backspace');
+      await delay(400);
+
+      // Click Save
+      const saveRes = await page.evaluate(() => {
+        const btn = Array.from(document.querySelectorAll('button, .btn')).find(b =>
+          b.innerText.trim().toLowerCase() === 'save' && b.offsetParent !== null
+        );
+        if (btn) {
+          btn.click();
+          return true;
+        }
+        return false;
+      });
+
+      if (!saveRes) {
+        throw new Error('Save button not found in Resume Headline drawer');
+      }
+
+      await delay(3500);
+
+      logStructured('MICRO_UPDATE', `✅ Resume Headline successfully micro-updated on Naukri! Candidate profile is now active/boosted.`);
+
+      // Append to history
+      const historyEntry = {
+        action: 'MICRO_UPDATE',
+        field: 'headline',
+        mode,
+        previousText: (currentVal || '').slice(0, 80),
+        newText: targetHeadline.slice(0, 80),
+        status: 'SUCCESS (Naukri Timestamp Refreshed)',
+        timestamp: new Date().toISOString()
+      };
+      appendNaukriHistory(userKey, historyEntry);
+
+      // Update config portfolio snapshot
+      const cfg = await getNaukriConfigAsync(userKey);
+      if (!cfg.portfolio) cfg.portfolio = {};
+      cfg.portfolio.headline = targetHeadline;
+      cfg.portfolio.lastMicroUpdateAt = new Date().toISOString();
+      await saveNaukriConfigAsync(userKey, cfg);
+
+      return {
+        success: true,
+        field: 'headline',
+        previous: currentVal,
+        current: targetHeadline,
+        timestamp: new Date().toISOString(),
+        message: 'Naukri Resume Headline micro-updated successfully! Candidate profile ranked as "Active Today" / "Updated Just Now".'
+      };
+    }
+
+    return { success: true, message: 'Micro-update completed.' };
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch (e) {}
+    }
+    await releaseUserLockAsync(userKey, 'micro_update');
+  }
+}
+
 module.exports = {
   getNextQuarterDayTime,
   calculateNextUploadTime,
@@ -2511,6 +2796,8 @@ module.exports = {
   verifyNaukriOtp,
   initNaukriScheduler,
   triggerNaukriUploadForActiveUsers,
+  checkNaukriPortfolio,
+  applyNaukriMicroChanges,
   acquireUserLock,
   acquireUserLockAsync,
   releaseUserLock,

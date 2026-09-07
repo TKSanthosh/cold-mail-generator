@@ -35,7 +35,9 @@ const {
   triggerNaukriUploadForActiveUsers,
   validateNaukriSession,
   getNaukriSessionStatus,
-  getNaukriSessionStatusAsync
+  getNaukriSessionStatusAsync,
+  checkNaukriPortfolio,
+  applyNaukriMicroChanges
 } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
 const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
@@ -1028,6 +1030,69 @@ app.post('/api/naukri/qa/answer-pending', async (req, res) => {
   } catch (e) {
     const result = resolvePendingQuestion(userKey, id, answer);
     res.json({ ...result, pending: getPendingQuestions(userKey), qaItems: getQaDatabase(userKey) });
+  }
+});
+
+// --- NAUKRI CONTINUOUS PORTFOLIO CHECKER & SMART MICRO-UPDATER ENDPOINTS ---
+app.get('/api/naukri/portfolio', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const config = await getNaukriConfigAsync(userKey);
+    let portfolio = config.portfolio;
+    // If not yet fetched, fetch live portfolio
+    if (!portfolio || !portfolio.headline) {
+      portfolio = await checkNaukriPortfolio(userKey);
+    }
+    res.json({ success: true, portfolio, config: {
+      continuousPortfolioEnabled: config.continuousPortfolioEnabled !== false,
+      autoMicroUpdateEnabled: Boolean(config.autoMicroUpdateEnabled),
+      autoMicroUpdateIntervalMinutes: config.autoMicroUpdateIntervalMinutes || 60,
+      applyAllAtOnce: Boolean(config.applyAllAtOnce)
+    }});
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/portfolio/check', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const portfolio = await checkNaukriPortfolio(userKey);
+    res.json({ success: true, portfolio, message: 'Portfolio inspected and updated successfully.' });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/portfolio/micro-update', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const result = await applyNaukriMicroChanges(userKey, req.body || {});
+    const config = await getNaukriConfigAsync(userKey);
+    res.json({ success: true, ...result, portfolio: config.portfolio });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/portfolio/config', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const config = await getNaukriConfigAsync(userKey);
+    const { continuousPortfolioEnabled, autoMicroUpdateEnabled, autoMicroUpdateIntervalMinutes, applyAllAtOnce } = req.body || {};
+    if (typeof continuousPortfolioEnabled !== 'undefined') config.continuousPortfolioEnabled = continuousPortfolioEnabled;
+    if (typeof autoMicroUpdateEnabled !== 'undefined') config.autoMicroUpdateEnabled = autoMicroUpdateEnabled;
+    if (typeof autoMicroUpdateIntervalMinutes !== 'undefined') config.autoMicroUpdateIntervalMinutes = autoMicroUpdateIntervalMinutes;
+    if (typeof applyAllAtOnce !== 'undefined') config.applyAllAtOnce = applyAllAtOnce;
+    await saveNaukriConfigAsync(userKey, config);
+    res.json({ success: true, config: {
+      continuousPortfolioEnabled: config.continuousPortfolioEnabled,
+      autoMicroUpdateEnabled: config.autoMicroUpdateEnabled,
+      autoMicroUpdateIntervalMinutes: config.autoMicroUpdateIntervalMinutes,
+      applyAllAtOnce: config.applyAllAtOnce
+    }});
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
   }
 });
 

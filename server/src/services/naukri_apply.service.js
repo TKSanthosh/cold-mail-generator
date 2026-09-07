@@ -168,7 +168,8 @@ function saveFilterConfig(userKey, config) {
 async function getQaDatabaseAsync(userKey) {
   console.log(`[NAUKRI Q&A DB] 🔍 Fetching Q&A items from database for user "${userKey}"...`);
 
-  // 1. Fetch directly from Supabase Cloud Database
+  let dbError = false;
+  // 1. Fetch directly from Supabase Cloud Database (Single Source of Truth)
   if (isSupabaseConfigured()) {
     try {
       const dbItems = await supabaseGetQaDatabase(userKey);
@@ -181,19 +182,29 @@ async function getQaDatabaseAsync(userKey) {
         return dbItems;
       }
     } catch (dbErr) {
+      dbError = true;
       console.warn(`[NAUKRI Q&A DB WARNING] Failed fetching from Supabase: ${dbErr.message}`);
     }
   }
 
-  // 2. Fallback to local sandbox if DB offline or empty
-  const localItems = getQaDatabase(userKey);
-
-  // If local items exist, seed them to Supabase DB
-  if (isSupabaseConfigured() && Array.isArray(localItems) && localItems.length > 0) {
-    supabaseSaveQaDatabase(userKey, localItems).catch(() => {});
+  // 2. Check local disk sandbox cache
+  const filePath = getQaFilePath(userKey);
+  if (fs.existsSync(filePath)) {
+    try {
+      const localItems = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+      if (Array.isArray(localItems) && localItems.length > 0) {
+        // If DB had no error and is configured, seed local items to DB
+        if (isSupabaseConfigured() && !dbError) {
+          supabaseSaveQaDatabase(userKey, localItems).catch(() => {});
+        }
+        return localItems;
+      }
+    } catch (e) {}
   }
 
-  return localItems;
+  // 3. Fallback: If and only if user has never saved any items, return DEFAULT_QA_ITEMS in-memory
+  // NEVER write DEFAULT_QA_ITEMS to Supabase on a transient fetch or container startup!
+  return DEFAULT_QA_ITEMS;
 }
 
 function getQaDatabase(userKey) {
@@ -204,7 +215,7 @@ function getQaDatabase(userKey) {
       if (Array.isArray(items) && items.length > 0) return items;
     } catch (e) {}
   }
-  saveQaDatabase(userKey, DEFAULT_QA_ITEMS);
+  // Return in-memory defaults ONLY - do NOT trigger side-effect writes to disk or Supabase!
   return DEFAULT_QA_ITEMS;
 }
 
@@ -1483,9 +1494,10 @@ async function reconcileNaukriAppliedJobs(page, userKey) {
  */
 async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {}) {
   const filterConfig = { ...getFilterConfig(userKey), ...customOptions };
-  const targetCount = filterConfig.maxJobsPerRun || 12;
+  const applyAllAtOnce = customOptions.applyAllAtOnce || filterConfig.applyAllAtOnce || false;
+  const configuredTarget = parseInt(filterConfig.maxJobsPerRun, 10) || 12;
 
-  console.log(`[NAUKRI EASY APPLY] Initiating automation for user "${userKey}" (Target: ${targetCount} jobs)...`);
+  console.log(`[NAUKRI EASY APPLY] Initiating automation for user "${userKey}" (Apply All At Once: ${applyAllAtOnce}, Target: ${applyAllAtOnce ? 'ALL' : configuredTarget})...`);
 
   // 1. Resolve Latest Candidate Resume from Database
   console.log(`[RESUME] Loading from DB for user "${userKey}"...`);
@@ -1544,14 +1556,14 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   await saveNaukriQueueAsync(userKey, combinedQueue);
 
   const appliedResults = [];
-  const jobsToProcess = combinedQueue.slice(0, targetCount);
+  const jobsToProcess = applyAllAtOnce ? combinedQueue : combinedQueue.slice(0, configuredTarget);
 
   activeApplyJobState.running = true;
   activeApplyJobState.progress = {
     current: 0,
     total: jobsToProcess.length,
     currentJob: '',
-    status: `Processing ${jobsToProcess.length} diverse Easy Apply jobs...`
+    status: `Processing ${jobsToProcess.length} Easy Apply jobs at once...`
   };
 
   for (let i = 0; i < jobsToProcess.length; i++) {

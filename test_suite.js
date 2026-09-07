@@ -485,8 +485,7 @@ Santhosh T K
     assert(typeof getQaDatabase === 'function', 'naukri_apply.service exports getQaDatabase');
     assert(typeof saveQaItem === 'function', 'naukri_apply.service exports saveQaItem');
     assert(typeof findBestAnswer === 'function', 'naukri_apply.service exports findBestAnswer');
-
-    const testUser = 'tksanthosh494_gmail_com';
+    const testUser = 'test_qa_suite_runner';
     saveQaItem(testUser, { id: 'qa_ctc_current', question: 'What is your current CTC (in LPA)?', answer: '8', category: 'Compensation' });
     saveQaItem(testUser, { id: 'qa_notice_period', question: 'What is your notice period (in days)?', answer: '15', category: 'Availability' });
     const qaList = getQaDatabase(testUser);
@@ -520,7 +519,7 @@ Santhosh T K
   // TEST 20: Pending Questions Resolution & Applied Jobs Logger
   try {
     const { getPendingQuestions, addPendingQuestion, resolvePendingQuestion, getNaukriAppliedJobs, logNaukriAppliedJob } = require('./server/src/services/naukri_apply.service');
-    const testUser = 'tksanthosh494_gmail_com';
+    const testUser = 'test_qa_suite_runner';
 
     // Add pending question
     const pendingQ = addPendingQuestion(testUser, {
@@ -552,7 +551,7 @@ Santhosh T K
   // TEST 21: LinkedIn Infinite Fresh Lead Harvester Fallback
   try {
     const { harvestRecruiterPosts } = require('./server/src/services/linkedin.service');
-    const testUser = 'tksanthosh494_gmail_com';
+    const testUser = 'test_qa_suite_runner';
 
     // Harvest leads with simulated heavy previous outreach
     const leads = await harvestRecruiterPosts('Full Stack Developer MERN', 10, testUser, '3d');
@@ -628,11 +627,11 @@ Santhosh T K
     const { findBestAnswer, resolveAnswerWithOptionMapping } = require('./server/src/services/naukri_apply.service');
 
     // Known question -> high confidence
-    const knownMatch = findBestAnswer('tksanthosh494_gmail_com', 'What is your total years of work experience?');
+    const knownMatch = findBestAnswer('test_qa_suite_runner', 'What is your total years of work experience?');
     assert(knownMatch && knownMatch.confidence >= 80, 'Known experience question matched with confidence >= 80%');
 
     // Completely unknown question -> returns null (strict zero hallucination)
-    const unknownMatch = findBestAnswer('tksanthosh494_gmail_com', 'What is your security clearance level for government aerospace projects in Germany?');
+    const unknownMatch = findBestAnswer('test_qa_suite_runner', 'What is your security clearance level for government aerospace projects in Germany?');
     assert(unknownMatch === null, 'Unknown screening question returns null without fabricating answers');
 
     // Option mapping test
@@ -650,7 +649,7 @@ Santhosh T K
     assert(ApplicationState.READY_TO_SUBMIT === 'READY_TO_SUBMIT', 'ApplicationState contains READY_TO_SUBMIT');
     assert(ApplicationState.SUBMITTED === 'SUBMITTED', 'ApplicationState contains SUBMITTED');
 
-    const stats = getTodayAppliedStats('tksanthosh494_gmail_com');
+    const stats = getTodayAppliedStats('test_qa_suite_runner');
     assert(typeof stats.todayCount === 'number', 'todayStats returns numeric todayCount');
     assert(typeof stats.remainingTarget === 'number', 'todayStats calculates remaining target');
     assert(typeof stats.percentComplete === 'number', 'todayStats calculates percentComplete');
