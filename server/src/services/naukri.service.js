@@ -1529,29 +1529,18 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
 
   // 3. Progressive Smooth Scrolling to Mount React Lazy-Loaded Sections
   console.log('[NAUKRI UPLOADER] Progressively scrolling to trigger lazy-loaded sections...');
-  await page.evaluate(async () => {
-    // Try clicking Quick Links 'Resume' if present to jump directly to section
-    const allLinks = Array.from(document.querySelectorAll('a, button, span, li, div'));
-    const resumeLink = allLinks.find(el => {
-      const txt = (el.innerText || el.textContent || '').trim().toLowerCase();
-      const href = (el.getAttribute('href') || '').toLowerCase();
-      const dt = (el.getAttribute('data-target') || '').toLowerCase();
-      return (txt === 'resume' || txt === 'update resume' || href.includes('resume') || href.includes('attachcv') || dt.includes('resume')) && el.offsetParent !== null;
+  try {
+    await page.evaluate(async () => {
+      // Incremental scroll down to ensure all lazy cards (including #lazyResume) mount
+      for (const scrollY of [300, 600, 900, 1200, 1600, 2000, 2500]) {
+        window.scrollTo({ top: scrollY, behavior: 'instant' });
+        await new Promise(r => setTimeout(r, 150));
+      }
+      window.scrollTo({ top: 0, behavior: 'instant' });
     });
-    if (resumeLink) {
-      try {
-        resumeLink.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        resumeLink.click();
-      } catch (e) {}
-    }
-
-    // Incremental scroll down to ensure all lazy cards (including #lazyResume) mount
-    for (let scrollY of [300, 600, 900, 1200, 1600, 2000]) {
-      window.scrollTo({ top: scrollY, behavior: 'instant' });
-      await new Promise(r => setTimeout(r, 200));
-    }
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  });
+  } catch (e) {
+    console.warn('[NAUKRI UPLOADER] Scroll notice:', e.message);
+  }
 
   await delay(2000);
   await dismissNaukriPopups(page);
