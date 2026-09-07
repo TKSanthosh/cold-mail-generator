@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X, Zap, RotateCw } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -5251,58 +5251,63 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       </div>
 
-      {/* 4. Naukri 1-Click Easy Apply & Auto-Screening Bot Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+      {/* 4. Autonomous 24/7 Naukri Easy Apply Engine (100% Automatic - No Manual Buttons Required) */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-emerald-800/80 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
-            <div className="flex items-center gap-2">
-              <Send className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center gap-2 flex-wrap">
+              <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
-                Naukri 1-Click Easy Apply Bot (Diverse Company Queue)
+                Autonomous 24/7 Naukri Easy Apply Engine (100% Automatic)
               </h3>
+              <span className="text-[11px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5 shadow-2xs">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                <span>AUTOMATIC 24/7 BACKGROUND APPLY ACTIVE</span>
+              </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Searches Naukri for active roles matching your preferences, enforces max 2 jobs per company, resolves resume from DB, and fills recruiter screening questions with zero hallucination.
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+              <strong>Zero manual buttons required.</strong> The server automatically searches matching jobs on Naukri, checks recruiter screening questions against your Supabase DB memory, and submits applications in the background 24/7.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-bold cursor-pointer bg-slate-50 dark:bg-slate-800 px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700">
-              <input
-                type="checkbox"
-                checked={applyAllAtOnce}
-                onChange={(e) => {
-                  setApplyAllAtOnce(e.target.checked);
-                  handleSavePortfolioConfig({ ...portfolioConfig, applyAllAtOnce: e.target.checked });
-                }}
-                className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              />
-              <span>⚡ Apply ALL at once (No slot waiting)</span>
-            </label>
-
-            {!applyAllAtOnce && (
-              <select
-                value={applyTargetCount}
-                onChange={(e) => setApplyTargetCount(parseInt(e.target.value, 10) || 12)}
-                className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
-              >
-                <option value="6">Apply 6 Jobs</option>
-                <option value="12">Apply 12 Jobs (Quarter Slot Target)</option>
-                <option value="20">Apply 20 Jobs</option>
-                <option value="30">Apply 30 Jobs</option>
-                <option value="50">Apply 50 Jobs (Full Day Target)</option>
-              </select>
-            )}
-
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
             <button
               onClick={handleStartAutoApply}
               disabled={isAutoApplying || (!config.hasSession && !formData.username)}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-4 rounded-lg text-xs transition-all shadow-md flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer w-full sm:w-auto"
-              title="Search and apply to matching Naukri Easy Apply jobs automatically"
+              className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 underline font-semibold cursor-pointer disabled:opacity-50"
+              title="Force an immediate automated background cycle now"
             >
-              {isAutoApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-              <span>{isAutoApplying ? 'Applying Jobs...' : (applyAllAtOnce ? '🚀 Apply ALL Matching Jobs At Once' : '🚀 Start Naukri Easy Apply')}</span>
+              {isAutoApplying ? '🔄 Auto-Cycle in progress...' : '⚡ Trigger immediate background cycle'}
             </button>
+          </div>
+        </div>
+
+        {/* Autonomous Engine Live Status Banner */}
+        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-indigo-950/30 p-3 sm:p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-xl">
+              <Check className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>Autonomous Background Worker is Running</span>
+                <span className="text-[10px] font-mono bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold">
+                  Target: {filterConfig.dailyTarget || 50} Jobs / Day
+                </span>
+              </h4>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Automatically scans keywords, answers screening questions, applies to all matching jobs, and refreshes candidate activity timestamp.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end text-xs font-mono font-bold">
+            <div className="text-right">
+              <span className="text-[10px] text-slate-400 uppercase block">Today's Verified Applications</span>
+              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-bold">
+                {todayStats.verifiedCount || todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50} Submitted
+              </span>
+            </div>
           </div>
         </div>
 
@@ -5611,7 +5616,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
         {appliedJobs.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            No jobs applied via Easy Apply yet. Click "Start Naukri Easy Apply" above to begin automated applications!
+            No jobs applied via Easy Apply yet. The autonomous 24/7 background worker is actively scanning and applying automatically.
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">

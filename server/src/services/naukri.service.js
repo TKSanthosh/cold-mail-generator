@@ -2205,19 +2205,112 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
  * 24/7 Automation Scheduler across all active candidate accounts
  */
 let naukriSchedulerTimer = null;
+let autonomousApplyTimer = null;
+let isAutonomousApplyRunning = false;
+
+/**
+ * Autonomous 24/7 Easy Apply & Continuous Profile Booster Worker
+ * Automatically discovers, matches, and applies to jobs continuously in background without requiring manual button clicks.
+ */
+async function triggerAutonomousNaukriApply(options = {}) {
+  if (isAutonomousApplyRunning) {
+    return { skipped: true, reason: 'Autonomous worker is already processing an active cycle.' };
+  }
+  isAutonomousApplyRunning = true;
+
+  try {
+    const userKeySet = new Set();
+    if (isSupabaseConfigured()) {
+      try {
+        const dbUsers = await supabaseGetAllUsers();
+        if (Array.isArray(dbUsers)) {
+          dbUsers.forEach(u => {
+            if (u && u.userKey && !u.userKey.startsWith('test_') && !u.userKey.startsWith('temp_')) {
+              userKeySet.add(u.userKey);
+            }
+          });
+        }
+      } catch (e) {}
+    }
+    getAllUserKeys().forEach(k => {
+      if (k && !k.startsWith('test_') && !k.startsWith('temp_')) userKeySet.add(k);
+    });
+    if (userKeySet.size === 0) userKeySet.add('tksanthosh494_gmail_com');
+
+    const targetUsers = Array.from(userKeySet);
+
+    for (const userKey of targetUsers) {
+      try {
+        if (await isUserLockedAsync(userKey)) continue;
+
+        const config = await getNaukriConfigAsync(userKey);
+        const paths = getUserPaths(userKey);
+        const hasSession = (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) || fs.existsSync(paths.naukriSessionPath) || Boolean(config.username);
+        if (!hasSession) continue;
+
+        // Auto-enable so user never needs to toggle manually
+        if (!config.enabled) {
+          config.enabled = true;
+          await saveNaukriConfigAsync(userKey, config);
+        }
+
+        const { getTodayAppliedStats, runStandaloneNaukriApply, getFilterConfig } = require('./naukri_apply.service');
+        const filterCfg = getFilterConfig(userKey);
+        const targetDaily = filterCfg.dailyTarget || 50;
+        const stats = getTodayAppliedStats(userKey);
+
+        if (stats.todayCount < targetDaily) {
+          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Automatically applying to matching jobs for "${userKey}" (${stats.todayCount}/${targetDaily} submitted today)...`);
+          
+          await runStandaloneNaukriApply(userKey, {
+            applyAllAtOnce: true,
+            maxJobsPerRun: Math.min(25, targetDaily - stats.todayCount)
+          });
+        }
+
+        // Also perform non-destructive micro-touch on headline to keep active timestamp fresh
+        if (config.continuousPortfolioEnabled !== false) {
+          try {
+            await applyNaukriMicroChanges(userKey, { mode: 'touch' });
+          } catch (microErr) {}
+        }
+      } catch (userErr) {
+        console.warn(`[AUTONOMOUS APPLY WARN for ${userKey}]`, userErr.message);
+      }
+    }
+  } finally {
+    isAutonomousApplyRunning = false;
+  }
+}
 
 function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
+  if (autonomousApplyTimer) clearInterval(autonomousApplyTimer);
 
-  logStructured('SCHEDULER', 'Initialized 24/7 automated uploader ticker across all active user accounts in database.');
+  logStructured('SCHEDULER', 'Initialized 24/7 automated uploader & autonomous Easy Apply worker across all active candidate accounts.');
 
+  // 1. Scheduled Slot Uploader Ticker (every 30s)
   naukriSchedulerTimer = setInterval(async () => {
     try {
       await triggerNaukriUploadForActiveUsers({ force: false });
     } catch (err) {
       console.warn('[NAUKRI SCHEDULER TICKER WARN]', err.message);
     }
-  }, 30000); // Check every 30s
+  }, 30000);
+
+  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs automatically every 5 minutes)
+  autonomousApplyTimer = setInterval(async () => {
+    try {
+      await triggerAutonomousNaukriApply();
+    } catch (err) {
+      console.warn('[NAUKRI AUTONOMOUS WORKER TICKER WARN]', err.message);
+    }
+  }, 5 * 60 * 1000);
+
+  // 3. Initial autonomous check after boot (15 seconds)
+  setTimeout(() => {
+    triggerAutonomousNaukriApply().catch(() => {});
+  }, 15000);
 }
 
 /**
@@ -2796,6 +2889,7 @@ module.exports = {
   verifyNaukriOtp,
   initNaukriScheduler,
   triggerNaukriUploadForActiveUsers,
+  triggerAutonomousNaukriApply,
   checkNaukriPortfolio,
   applyNaukriMicroChanges,
   acquireUserLock,
