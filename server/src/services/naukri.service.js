@@ -764,14 +764,15 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
   logStructured('AUTH', `Session found (${cookies.length} cookies from ${source})`);
   logStructured('AUTH', `Restoring browser authentication...`);
 
+  let injectedCount = 0;
   try {
     for (const c of cookies) {
       if (!c || !c.name || !c.value) continue;
-      const dom = c.domain || '.naukri.com';
+      const dom = c.domain ? (c.domain.startsWith('.') ? c.domain : `.${c.domain}`) : '.naukri.com';
       const cookieObj = {
         name: String(c.name).trim(),
         value: String(c.value).trim(),
-        domain: dom.startsWith('.') ? dom : `.${dom}`,
+        domain: dom,
         path: c.path || '/'
       };
       if (c.expires !== undefined && c.expires !== null && !isNaN(Number(c.expires))) {
@@ -789,48 +790,48 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
 
       try {
         await page.setCookie(cookieObj);
+        injectedCount++;
       } catch (err) {
         try {
           await page.setCookie({
-            ...cookieObj,
-            domain: 'www.naukri.com'
+            name: String(c.name).trim(),
+            value: String(c.value).trim(),
+            url: 'https://www.naukri.com',
+            path: c.path || '/'
           });
-        } catch (e2) {
-          try {
-            await page.setCookie({
-              ...cookieObj,
-              domain: 'naukri.com'
-            });
-          } catch (e3) {}
-        }
+          injectedCount++;
+        } catch (e2) {}
       }
     }
 
-    const browserCookies = await page.cookies().catch(() => []);
-    if (!browserCookies || browserCookies.length === 0) {
-      logStructured('AUTH', `Session restore failed for user "${userKey}": Browser context failed to accept cookies`);
-      const config = getNaukriConfig(userKey);
-      config.sessionStatus = 'AUTH_RESTORE_FAILED';
-      config.lastError = 'Browser context failed to accept injected cookies (AUTH_RESTORE_FAILED)';
-      saveNaukriConfig(userKey, config);
+    // Verify injected cookies against naukri domains or browser context
+    let browserCookies = [];
+    try {
+      browserCookies = await page.cookies('https://www.naukri.com', 'https://naukri.com');
+    } catch (e) {
+      try {
+        const ctx = page.browserContext ? page.browserContext() : page.browser().defaultBrowserContext();
+        browserCookies = await ctx.cookies();
+      } catch (e2) {}
+    }
+
+    const effectiveCount = (browserCookies && browserCookies.length > 0) ? browserCookies.length : injectedCount;
+    if (effectiveCount === 0) {
+      logStructured('AUTH', `Session restore warning for user "${userKey}": No cookies were accepted by browser`);
       return {
         hasSession: false,
         count: 0,
         restored: false,
         failureType: 'AUTH_RESTORE_FAILED',
-        error: 'Browser context rejected cookie injection',
+        error: 'No valid cookies accepted by browser context',
         source
       };
     }
 
-    logStructured('AUTH', `Browser authentication restored (${browserCookies.length} cookies active)`);
-    return { hasSession: true, count: browserCookies.length, injectedCount: browserCookies.length, restored: true, cookies, source };
+    logStructured('AUTH', `Browser authentication restored (${effectiveCount} cookies active)`);
+    return { hasSession: true, count: effectiveCount, injectedCount, restored: true, cookies, source };
   } catch (injectErr) {
-    logStructured('AUTH', `Session restore failed for user "${userKey}": ${injectErr.message}`);
-    const config = getNaukriConfig(userKey);
-    config.sessionStatus = 'AUTH_RESTORE_FAILED';
-    config.lastError = `Cookie injection error: ${injectErr.message}`;
-    saveNaukriConfig(userKey, config);
+    logStructured('AUTH', `Session restore error for user "${userKey}": ${injectErr.message}`);
     return {
       hasSession: false,
       count: 0,
