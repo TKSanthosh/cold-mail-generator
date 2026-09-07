@@ -673,6 +673,21 @@ function updateQueueItemState(userKey, jobId, updates = {}) {
   return null;
 }
 
+async function updateQueueItemStateAsync(userKey, jobId, updates = {}) {
+  const queue = await getNaukriQueueAsync(userKey);
+  const idx = queue.findIndex(q => q.jobId === jobId || q.id === jobId);
+  if (idx >= 0) {
+    queue[idx] = {
+      ...queue[idx],
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    await saveNaukriQueueAsync(userKey, queue);
+    return queue[idx];
+  }
+  return null;
+}
+
 function clearNaukriQueue(userKey) {
   saveNaukriQueue(userKey, []);
   return [];
@@ -2008,6 +2023,7 @@ module.exports = {
   saveNaukriQueue,
   saveNaukriQueueAsync,
   updateQueueItemState,
+  updateQueueItemStateAsync,
   clearNaukriQueue,
   getNaukriAppliedJobs,
   getNaukriAppliedJobsAsync,

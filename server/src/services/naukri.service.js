@@ -573,10 +573,13 @@ async function saveNaukriSessionCookiesAsync(userKey = 'default_user', cookieInp
     return {
       success: true,
       count: cookiesToSave.length,
+      cookieCount: cookiesToSave.length,
+      hasSession: true,
       hasAuthToken: hasNaukSession,
       status: newStatus,
       lastVerifiedAt: config.lastVerifiedAt || null,
       lastUpdatedAt: config.lastUpdatedAt,
+      storedInDb: isSupabaseConfigured(),
       message: `Successfully linked Naukri session (${cookiesToSave.length} cookies)! Supabase database is now configured.`
     };
   }
@@ -821,7 +824,7 @@ async function restoreAndInjectNaukriSession(page, userKey = 'default_user') {
     }
 
     logStructured('AUTH', `Browser authentication restored (${browserCookies.length} cookies active)`);
-    return { hasSession: true, count: browserCookies.length, restored: true, cookies, source };
+    return { hasSession: true, count: browserCookies.length, injectedCount: browserCookies.length, restored: true, cookies, source };
   } catch (injectErr) {
     logStructured('AUTH', `Session restore failed for user "${userKey}": ${injectErr.message}`);
     const config = getNaukriConfig(userKey);
@@ -891,14 +894,16 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
       saveNaukriConfig(userKey, config);
 
       if (isSupabaseConfigured()) {
-        supabaseSaveNaukriConfig(userKey, {
-          hasSession: false,
-          sessionStatus: 'EXPIRED',
-          lastStatus: config.lastStatus,
-          lastError: config.lastError,
-          lastVerifiedAt: config.lastVerifiedAt,
-          lastUpdatedAt: config.lastUpdatedAt
-        }).catch(() => {});
+        try {
+          await supabaseSaveNaukriConfig(userKey, {
+            hasSession: false,
+            sessionStatus: 'EXPIRED',
+            lastStatus: config.lastStatus,
+            lastError: config.lastError,
+            lastVerifiedAt: config.lastVerifiedAt,
+            lastUpdatedAt: config.lastUpdatedAt
+          });
+        } catch (e) {}
       }
 
       appendNaukriHistory(userKey, {
@@ -984,14 +989,16 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
       saveNaukriConfig(userKey, config);
 
       if (isSupabaseConfigured()) {
-        supabaseSaveNaukriConfig(userKey, {
-          hasSession: false,
-          sessionStatus: 'EXPIRED',
-          lastStatus: config.lastStatus,
-          lastError: config.lastError,
-          lastVerifiedAt: config.lastVerifiedAt,
-          lastUpdatedAt: config.lastUpdatedAt
-        }).catch(() => {});
+        try {
+          await supabaseSaveNaukriConfig(userKey, {
+            hasSession: false,
+            sessionStatus: 'EXPIRED',
+            lastStatus: config.lastStatus,
+            lastError: config.lastError,
+            lastVerifiedAt: config.lastVerifiedAt,
+            lastUpdatedAt: config.lastUpdatedAt
+          });
+        } catch (e) {}
       }
 
       return {
@@ -1098,6 +1105,8 @@ async function getNaukriSessionStatusAsync(userKey = 'default_user') {
   return {
     status,
     authenticated: status === 'ACTIVE',
+    hasSession: hasCookies,
+    storedInDb: isSupabaseConfigured(),
     lastVerifiedAt,
     lastUpdatedAt,
     reason: status === 'EXPIRED' ? (lastError || 'NAUKRI_LOGIN_REDIRECT') : (status === 'AUTH_RESTORE_FAILED' ? (lastError || 'AUTH_RESTORE_FAILED') : null),
@@ -1119,6 +1128,8 @@ function getNaukriSessionStatus(userKey = 'default_user') {
   return {
     status,
     authenticated: status === 'ACTIVE',
+    hasSession: hasCookies,
+    storedInDb: isSupabaseConfigured(),
     lastVerifiedAt: localConf.lastVerifiedAt || null,
     lastUpdatedAt: localConf.lastUpdatedAt || null,
     reason: status === 'EXPIRED' ? (localConf.lastError || 'NAUKRI_LOGIN_REDIRECT') : (status === 'AUTH_RESTORE_FAILED' ? (localConf.lastError || 'AUTH_RESTORE_FAILED') : null),
@@ -1927,44 +1938,88 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
           await delay(2500);
         }
 
-        // Fill and submit login form
-        const loginAttemptResult = await page.evaluate((u, p) => {
-          const allInputs = Array.from(document.querySelectorAll('input'));
+        // Fill and submit login form with native typing and React state synchronization
+        const userSelector = '#usernameField, #login_email, input[placeholder*="Email" i], input[placeholder*="username" i], input[type="text"], input[type="email"]';
+        const passSelector = '#passwordField, input[type="password"]';
 
-          let userInp = allInputs.find(i => {
-            const type = (i.type || '').toLowerCase();
-            const ph = (i.placeholder || '').toLowerCase();
-            const id = (i.id || '').toLowerCase();
-            const name = (i.name || '').toLowerCase();
-            if (type === 'hidden' || type === 'password' || type === 'submit' || type === 'button' || type === 'checkbox') return false;
-            if (ph.includes('search') || id.includes('search') || name.includes('search')) return false;
-            return id === 'usernamefield' || id === 'login_email' || ph.includes('email') || ph.includes('username') || name.includes('email') || name.includes('username') || type === 'email';
-          }) || allInputs.find(i => (i.type === 'text' || !i.type) && i.type !== 'hidden' && i.type !== 'password' && i.offsetParent !== null);
+        try {
+          await page.waitForSelector(userSelector, { timeout: 8000 });
+        } catch (e) {}
 
-          let passInp = allInputs.find(i => (i.type || '').toLowerCase() === 'password');
+        // 1. Enter Username with React value setter + Puppeteer keyboard fallback
+        await page.evaluate((u) => {
+          const userInp = document.querySelector('#usernameField') ||
+            document.querySelector('#login_email') ||
+            Array.from(document.querySelectorAll('input')).find(i => {
+              const type = (i.type || '').toLowerCase();
+              const ph = (i.placeholder || '').toLowerCase();
+              const id = (i.id || '').toLowerCase();
+              const name = (i.name || '').toLowerCase();
+              if (type === 'hidden' || type === 'password' || type === 'submit' || type === 'button' || type === 'checkbox') return false;
+              if (ph.includes('search') || id.includes('search') || name.includes('search')) return false;
+              return id === 'usernamefield' || id === 'login_email' || ph.includes('email') || ph.includes('username') || name.includes('email') || name.includes('username') || type === 'email';
+            });
 
           if (userInp) {
             userInp.focus();
-            userInp.value = u;
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (nativeSetter) {
+              nativeSetter.call(userInp, u);
+            } else {
+              userInp.value = u;
+            }
             userInp.dispatchEvent(new Event('input', { bubbles: true }));
             userInp.dispatchEvent(new Event('change', { bubbles: true }));
+            userInp.dispatchEvent(new Event('blur', { bubbles: true }));
           }
+        }, username);
+
+        try {
+          const userEl = await page.$(userSelector);
+          if (userEl) {
+            await userEl.click({ clickCount: 3 });
+            await userEl.type(username, { delay: 20 });
+          }
+        } catch (e) {}
+
+        await delay(300);
+
+        // 2. Enter Password with React value setter + Puppeteer keyboard fallback
+        await page.evaluate((p) => {
+          const passInp = document.querySelector('#passwordField') ||
+            document.querySelector('input[type="password"]');
 
           if (passInp) {
             passInp.focus();
-            passInp.value = p;
+            const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+            if (nativeSetter) {
+              nativeSetter.call(passInp, p);
+            } else {
+              passInp.value = p;
+            }
             passInp.dispatchEvent(new Event('input', { bubbles: true }));
             passInp.dispatchEvent(new Event('change', { bubbles: true }));
+            passInp.dispatchEvent(new Event('blur', { bubbles: true }));
           }
+        }, password);
 
+        try {
+          const passEl = await page.$(passSelector);
+          if (passEl) {
+            await passEl.click({ clickCount: 3 });
+            await passEl.type(password, { delay: 20 });
+          }
+        } catch (e) {}
+
+        await delay(500);
+
+        // 3. Click Submit and trigger Enter
+        await page.evaluate(() => {
           const submitBtn = document.querySelector('button[type="submit"], button.btn-primary, button.loginButton, button.blueBtn, button.login-btn, form button, .login-layer-wrapper button, .drawer-wrapper button[type="submit"]');
-          if (submitBtn && userInp && passInp) {
+          if (submitBtn) {
             submitBtn.click();
-            return { filled: true, submitted: true };
           }
-
-          return { filled: !!userInp && !!passInp, submitted: false };
-        }, username, password);
+        });
 
         await delay(500);
         await page.keyboard.press('Enter');
@@ -2306,7 +2361,9 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
         const dbUsers = await supabaseGetAllUsers();
         if (Array.isArray(dbUsers)) {
           dbUsers.forEach(u => {
-            if (u && u.userKey) userKeySet.add(u.userKey);
+            if (u && u.userKey && !u.userKey.startsWith('test_') && !u.userKey.startsWith('temp_')) {
+              userKeySet.add(u.userKey);
+            }
           });
         }
       } catch (e) {
@@ -2315,7 +2372,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
     }
 
     getAllUserKeys().forEach(k => {
-      if (k) userKeySet.add(k);
+      if (k && !k.startsWith('test_') && !k.startsWith('temp_')) userKeySet.add(k);
     });
 
     if (userKeySet.size === 0) {
@@ -2343,7 +2400,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
       }
 
       const config = await getNaukriConfigAsync(userKey);
-      if (!config.enabled && !force) {
+      if (!config.enabled && !targetUserKey) {
         logStructured('CRON', `Skipped "${userKey}": Scheduler disabled in config.`);
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
         continue;
@@ -2351,7 +2408,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
 
       const paths = getUserPaths(userKey);
       const hasSession = (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) || fs.existsSync(paths.naukriSessionPath) || Boolean(config.username);
-      if (!hasSession && !force) {
+      if (!hasSession) {
         logStructured('CRON', `Skipped "${userKey}": No active session or credentials found.`);
         results.push({ userKey, skipped: true, reason: 'No active session or credentials found' });
         continue;

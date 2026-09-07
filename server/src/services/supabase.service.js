@@ -26,7 +26,7 @@ async function supabaseUpsertUser(userKey, profile, tokens = null) {
   try {
     const payload = {
       user_key: userKey,
-      email: profile.email || '',
+      email: profile.email || (userKey.includes('@') ? userKey : `${userKey}@app.local`),
       name: profile.name || 'Candidate',
       picture: profile.picture || '',
       last_active: new Date().toISOString()
@@ -105,7 +105,7 @@ async function supabaseSaveResume(userKey, resumeData) {
       const errText = await res.text();
       // If user record doesn't exist yet, create user and retry
       if (errText.includes('foreign key') || errText.includes('23503')) {
-        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : '' });
+        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : `${userKey}@app.local` });
         res = await fetch(`${SUPABASE_URL}/rest/v1/resumes`, {
           method: 'POST',
           headers: {
@@ -391,7 +391,7 @@ async function supabaseSaveNaukriConfig(userKey, config) {
       const errText = await res.text();
       // If user record doesn't exist yet, auto-provision user and retry
       if (errText.includes('foreign key') || errText.includes('23503')) {
-        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : '' });
+        await supabaseUpsertUser(userKey, { email: userKey.includes('@') ? userKey : `${userKey}@app.local` });
         res = await fetch(`${SUPABASE_URL}/rest/v1/naukri_config`, {
           method: 'POST',
           headers: {

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { resolveUserResumeFile, validatePdfFile } = require('./server/src/services/resume.service');
 const { triggerNaukriUploadForActiveUsers, getNaukriConfig } = require('./server/src/services/naukri.service');
-const { isSupabaseConfigured, supabaseGetResume, supabaseGetAllUsers } = require('./server/src/services/supabase.service');
+const { isSupabaseConfigured, supabaseGetResume, supabaseSaveResume, supabaseGetAllUsers } = require('./server/src/services/supabase.service');
 
 async function runEndToEndVerification() {
   console.log('===============================================================');
@@ -49,11 +49,24 @@ async function runEndToEndVerification() {
   // TEST 3: Dynamic Multi-Format Handling (Base64 payload)
   console.log('\n--- TEST GROUP 3: Multi-Format Resume Support (Base64 & Custom Filenames) ---');
   const samplePdfBuffer = Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[3 0 R]/Count 1>>endobj\n3 0 obj<</Type/Page/MediaBox[0 0 595 842]>>endobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000052 00000 n \n0000000101 00000 n \ntrailer<</Size 4/Root 1 0 R>>\nstartxref\n162\n%%EOF');
-  const b64 = samplePdfBuffer.toString('base64');
+  
+  if (dbConfigured) {
+    await supabaseSaveResume('test_b64_user', {
+      base64Pdf: samplePdfBuffer.toString('base64'),
+      fileName: 'alex_johnson_custom.pdf',
+      candidateName: 'Alex Johnson'
+    });
+  }
   
   const b64Resolved = await resolveUserResumeFile('test_b64_user');
   assert(Boolean(b64Resolved.filePath), 'Resolved Base64 encoded PDF payload');
   assert(b64Resolved.fileName === 'alex_johnson_custom.pdf', `Preserved custom filename from DB: ${b64Resolved.fileName}`);
+
+  if (dbConfigured) {
+    const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gnuezthgywjfbalrcnbh.supabase.co';
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_dDMl14z59IIbxq2utpKMmQ_HrISgSU9';
+    await fetch(`${SUPABASE_URL}/rest/v1/user_resumes?user_key=eq.test_b64_user`, { method: 'DELETE', headers: { apikey: SUPABASE_KEY, Authorization: `Bearer ${SUPABASE_KEY}` } }).catch(() => {});
+  }
 
   // TEST 4: Cron Multi-User Scheduling Discovery (Non-Forced Run)
   console.log('\n--- TEST GROUP 4: Cron Execution Flow & User Evaluation ---');

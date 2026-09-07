@@ -22,7 +22,7 @@ jobs:
           echo "Triggering Naukri automated profile boost..."
           curl -s -X POST "https://cold-mail-generator-7ytw.onrender.com/api/naukri/cron-trigger?force=true" \
             -H "Content-Type: application/json" \
-            --max-time 180 \
-            --retry 2 \
-            --retry-delay 15 \
+            --max-time 240 \
+            --retry 1 \
+            --retry-delay 10 \
             -w "\nHTTP Response Code: %{http_code}\n"

@@ -5831,6 +5831,8 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </div>
               </div>
             )}
+          </div>
+        </div>
       )}
     </div>
   );

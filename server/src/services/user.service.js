@@ -453,7 +453,7 @@ function getAllUserKeys() {
   if (!fs.existsSync(USERS_DIR)) return [];
   try {
     return fs.readdirSync(USERS_DIR, { withFileTypes: true })
-      .filter(entry => entry.isDirectory())
+      .filter(entry => entry.isDirectory() && !entry.name.startsWith('audit_') && !entry.name.startsWith('test_') && !entry.name.startsWith('temp_') && !entry.name.startsWith('non_existent_'))
       .map(entry => entry.name);
   } catch (e) {
     return [];
