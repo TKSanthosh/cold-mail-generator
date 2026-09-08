@@ -3559,6 +3559,8 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [applyProgress, setApplyProgress] = useState(null);
   const [appliedCompanies, setAppliedCompanies] = useState([]);
   const [externalJobs, setExternalJobs] = useState([]);
+  const [naukriSubTab, setNaukriSubTab] = useState('companies');
+  const [showAuthModal, setShowAuthModal] = useState(false);
   const [showNewQaModal, setShowNewQaModal] = useState(false);
   const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
   const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
@@ -4295,102 +4297,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
-      {/* 50 Jobs / Day EOD Pipeline Tracker Banner */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-indigo-500/10 to-sky-500/10 dark:from-emerald-950/40 dark:via-indigo-950/40 dark:to-sky-950/40 p-4 sm:p-5 rounded-2xl border border-emerald-200 dark:border-emerald-800/60 shadow-xs flex flex-col gap-3">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <span>🎯 Daily Target: {filterConfig.dailyTarget || 50} Jobs Applied / EOD</span>
-                <span className="text-xs bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
-                  {todayStats.todayCount || appliedJobs.filter(a => (a.appliedAt || '').startsWith(new Date().toISOString().split('T')[0]) && !a.status?.toLowerCase().includes('failed') && !a.status?.toLowerCase().includes('skipped')).length} / {filterConfig.dailyTarget || 50} Successfully Submitted
-                </span>
-                {todayStats.waitingForInputCount > 0 && (
-                  <span className="text-xs bg-amber-100 dark:bg-amber-900/60 text-amber-800 dark:text-amber-300 font-bold px-2.5 py-0.5 rounded-full border border-amber-300 dark:border-amber-700 animate-pulse">
-                    ⚠️ {todayStats.waitingForInputCount} Action Required
-                  </span>
-                )}
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              4 Scheduled Quarter-Day Runs × 12 Jobs / Slot = <strong>48–50 Easy Apply Jobs completed daily</strong> with dynamic DB resume uploads, zero-hallucination screening, and company diversity interleaving.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-1.5 text-xs font-mono font-bold text-emerald-700 dark:text-emerald-400">
-            <span>Next Boost & Apply Slot: <strong>{config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</strong></span>
-          </div>
-        </div>
-
-        {/* Live Counters Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs pt-0.5">
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Verified Submitted</span>
-            <strong className="text-sm font-mono font-bold text-emerald-600 dark:text-emerald-400">
-              {todayStats.verifiedCount || todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase">Remaining</span>
-            <strong className="text-sm font-mono font-bold text-indigo-600 dark:text-indigo-400">
-              {Math.max(0, (filterConfig.dailyTarget || 50) - (todayStats.verifiedCount || todayStats.todayCount || 0))}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-sky-200 dark:border-sky-800/60 flex flex-col">
-            <span className="text-[10px] text-sky-700 dark:text-sky-400 font-bold uppercase">In Progress</span>
-            <strong className="text-sm font-mono font-bold text-sky-600 dark:text-sky-400">
-              {todayStats.inProgressCount || 0}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 flex flex-col">
-            <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase">Waiting for You</span>
-            <strong className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
-              {todayStats.waitingForInputCount || pendingQuestions.length}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-amber-200 dark:border-amber-800/60 flex flex-col">
-            <span className="text-[10px] text-amber-700 dark:text-amber-400 font-bold uppercase">Unconfirmed</span>
-            <strong className="text-sm font-mono font-bold text-amber-600 dark:text-amber-400">
-              {todayStats.unconfirmedCount || 0}
-            </strong>
-          </div>
-          <div className="bg-white/90 dark:bg-slate-900/90 p-2.5 rounded-xl border border-rose-200 dark:border-rose-800/60 flex flex-col">
-            <span className="text-[10px] text-rose-700 dark:text-rose-400 font-bold uppercase">Failed</span>
-            <strong className="text-sm font-mono font-bold text-rose-600 dark:text-rose-400">
-              {todayStats.failedCount || 0}
-            </strong>
-          </div>
-        </div>
-
-        {/* EOD Progress Bar */}
-        <div className="w-full bg-slate-200 dark:bg-slate-800 h-2.5 rounded-full overflow-hidden">
-          <div
-            className="bg-gradient-to-r from-emerald-500 to-indigo-600 h-2.5 transition-all duration-500 rounded-full"
-            style={{ width: `${Math.min(100, Math.round(((todayStats.todayCount || 0) / (filterConfig.dailyTarget || 50)) * 100))}%` }}
-          ></div>
-        </div>
-
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] pt-1">
-          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-slate-500 font-semibold">🌅 Slot 1 (10 AM):</span>
-            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
-          </div>
-          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-slate-500 font-semibold">☀️ Slot 2 (4 PM):</span>
-            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
-          </div>
-          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-slate-500 font-semibold">🌙 Slot 3 (10 PM):</span>
-            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
-          </div>
-          <div className="bg-white/80 dark:bg-slate-900/80 p-2 rounded-lg border border-slate-200 dark:border-slate-800 flex items-center justify-between">
-            <span className="text-slate-500 font-semibold">🌌 Slot 4 (4 AM):</span>
-            <strong className="text-emerald-600 dark:text-emerald-400 font-mono">12 Jobs + Upload</strong>
-          </div>
-        </div>
-      </div>
-
-      {/* 1. Control Center Card */}
+      {/* 1. Executive Control Center */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
@@ -4497,318 +4404,232 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
 
-        {/* Config & Info Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Credentials Card (Primary) */}
-          <form onSubmit={handleSaveCredentials} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col justify-between gap-3">
-            <div className="flex justify-between items-center">
-              <span className="text-xs font-bold text-slate-800 dark:text-slate-200 uppercase tracking-wider flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Naukri Account Authorization</span>
-              </span>
-              <span className="text-[11px] font-mono text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800">
-                📄 Dynamic DB Resume Resolution Active
-              </span>
+        {/* Streamlined Executive Header */}
+        <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-colors">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-base border border-emerald-500/20 shrink-0">
+              <TrendingUp className="w-5 h-5" />
             </div>
-
-            {/* Quick Connection Options (Google SSO & Session Cookie) */}
-            <div className="bg-white dark:bg-slate-900 p-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 flex flex-col gap-2 shadow-xs">
-              <div className="flex justify-between items-center flex-wrap gap-1">
-                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
-                  <Globe className="w-3.5 h-3.5 text-indigo-500" />
-                  <span>Session Status:</span>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
+                  {portfolioData?.candidateName || config.candidateName || 'Santhosh T K'}
+                </h2>
+                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>{config.sessionStatus === 'ACTIVE' ? 'Naukri Session Active' : 'Session Linked'}</span>
                 </span>
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                    config.sessionStatus === 'ACTIVE'
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800'
-                      : config.sessionStatus === 'VERIFYING'
-                      ? 'bg-blue-50 text-blue-700 dark:bg-blue-950/50 dark:text-blue-300 border border-blue-200 dark:border-blue-800'
-                      : config.sessionStatus === 'CONFIGURED'
-                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                      : config.sessionStatus === 'EXPIRED' || config.sessionStatus === 'INVALID' || config.sessionStatus === 'AUTHENTICATION_REQUIRED'
-                      ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/50 dark:text-rose-300 border border-rose-200 dark:border-rose-800'
-                      : config.sessionStatus === 'AUTH_RESTORE_FAILED'
-                      ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/50 dark:text-amber-300 border border-amber-200 dark:border-amber-800'
-                      : config.hasSession
-                      ? 'bg-sky-50 text-sky-700 dark:bg-sky-950/50 dark:text-sky-300 border border-sky-200 dark:border-sky-800'
-                      : 'bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border border-slate-200 dark:border-slate-700'
-                  }`}>
-                    {config.sessionStatus === 'ACTIVE'
-                      ? `🟢 Active ${config.lastVerifiedAt ? `(Verified ${new Date(config.lastVerifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})` : ''}`
-                      : config.sessionStatus === 'VERIFYING'
-                      ? '🔵 Verifying...'
-                      : config.sessionStatus === 'CONFIGURED'
-                      ? '🌐 Configured (Stored in DB)'
-                      : config.sessionStatus === 'EXPIRED'
-                      ? '🔴 Expired (Re-link Required)'
-                      : config.sessionStatus === 'INVALID'
-                      ? '❌ Invalid Cookie'
-                      : config.sessionStatus === 'AUTH_RESTORE_FAILED'
-                      ? '⚠️ Restore Failed'
-                      : config.sessionStatus === 'AUTHENTICATION_REQUIRED'
-                      ? '🔴 Auth Required'
-                      : config.hasSession
-                      ? '🌐 Configured in DB'
-                      : '⚪ Not Linked'}
-                  </span>
-                  {config.hasSession && (
-                    <button
-                      type="button"
-                      onClick={handleValidateSession}
-                      disabled={validatingSession}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-900 dark:text-emerald-400 dark:hover:text-emerald-300 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/50 dark:hover:bg-emerald-900/60 px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs disabled:opacity-50"
-                      title="Validate session against live Naukri profile servers"
-                    >
-                      {validatingSession ? <Loader2 className="w-2.5 h-2.5 animate-spin" /> : <Check className="w-2.5 h-2.5" />}
-                      <span>Validate</span>
-                    </button>
-                  )}
-                  {config.hasSession && (
-                    <button
-                      type="button"
-                      onClick={handleOpenViewCookiesModal}
-                      className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 dark:hover:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/50 dark:hover:bg-indigo-900/60 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800 flex items-center gap-1 cursor-pointer transition-colors shadow-2xs"
-                      title="View session details and encryption status"
-                    >
-                      <Eye className="w-3 h-3" />
-                      <span>Session Details</span>
-                    </button>
-                  )}
-                  {config.hasSession && (
-                    <button
-                      type="button"
-                      onClick={handleDisconnectSession}
-                      className="text-[10px] text-rose-500 hover:text-rose-700 font-semibold underline cursor-pointer ml-0.5"
-                    >
-                      Disconnect
-                    </button>
-                  )}
-                </div>
+                <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
+                  24/7 Autonomous Background
+                </span>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => setShowCookieModal(true)}
-                  disabled={uploading}
-                  className="flex items-center justify-center gap-1.5 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg py-2 px-2 font-bold text-[11px] shadow-xs transition-all cursor-pointer"
-                  title="Paste session cookie from your browser - ideal for Google SSO accounts on cloud"
-                >
-                  <Key className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
-                  <span>Paste Session Cookie</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLaunchGoogleSso}
-                  disabled={connectingSso || uploading}
-                  className="flex items-center justify-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 rounded-lg py-2 px-2 font-bold text-[11px] shadow-xs transition-all disabled:opacity-50 cursor-pointer"
-                  title="Launch Google SSO in local Chrome browser (Desktop App)"
-                >
-                  {connectingSso ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-indigo-600 dark:text-indigo-400" />
-                  ) : (
-                    <Globe className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                  )}
-                  <span>1-Click Desktop SSO</span>
-                </button>
-              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                IQVIA • Software Development Engineer 2 • Automatic deduplicated applications & hourly profile touch
+              </p>
             </div>
+          </div>
 
-            <div className="flex items-center gap-2 my-0.5">
-              <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-              <span className="text-[10px] text-slate-400 font-semibold uppercase">Or Login with Password</span>
-              <div className="h-px bg-slate-200 dark:bg-slate-700 flex-1"></div>
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                Naukri Login Email / Username
-              </label>
-              <input
-                type="text"
-                value={formData.username}
-                onChange={(e) => setFormData({ ...formData, username: e.target.value })}
-                placeholder="e.g. your_email@gmail.com"
-                className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-[11px] font-bold text-slate-600 dark:text-slate-400 mb-1">
-                Naukri Password
-              </label>
-              <div className="relative">
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="••••••••••••"
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs pr-8 focus:outline-none focus:border-indigo-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer"
-                >
-                  <Eye className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-700">
-              <label className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={config.headless}
-                  onChange={handleHeadlessToggle}
-                  className="rounded text-indigo-600 focus:ring-indigo-500"
-                />
-                <span>Run Headless (Silent Background)</span>
-              </label>
-
-              <button
-                type="submit"
-                disabled={savingCreds}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 cursor-pointer"
-              >
-                {savingCreds ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                <span>Save Credentials</span>
-              </button>
-            </div>
-          </form>
-
-          {/* Schedule Strategy & Custom Timings Card */}
-          <div className="bg-emerald-50/60 dark:bg-emerald-950/20 p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col justify-between gap-3">
-            {config.scheduleMode === 'custom' ? (
-              <div className="flex flex-col gap-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5 mb-0.5">
-                      <Clock className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                      <span>Custom Daily Upload Timings ({(config.customSlots || []).length} Slots)</span>
-                    </span>
-                    <p className="text-[11px] text-emerald-800 dark:text-emerald-300/90">
-                      Add specific times of day for automated resume uploads on Naukri.
-                    </p>
-                  </div>
-                  <span className="text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/60 text-emerald-800 dark:text-emerald-200 px-2 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700">
-                    Custom Active
-                  </span>
-                </div>
-
-                {/* Add Custom Time Input Row */}
-                <div className="flex items-center gap-2 bg-white/90 dark:bg-slate-900/90 p-2 rounded-xl border border-emerald-200 dark:border-emerald-800/60">
-                  <input
-                    type="time"
-                    value={newCustomTime}
-                    onChange={(e) => setNewCustomTime(e.target.value)}
-                    className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-2.5 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-emerald-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => handleAddCustomSlot(newCustomTime)}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Time Slot</span>
-                  </button>
-                </div>
-
-                {/* Active Custom Slot Chips */}
-                <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
-                  {(config.customSlots || ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM']).map((slot, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex items-center gap-1.5 bg-white dark:bg-slate-900 border border-emerald-300 dark:border-emerald-700 text-emerald-900 dark:text-emerald-200 px-2.5 py-1 rounded-lg text-xs font-mono font-bold shadow-xs group"
-                    >
-                      <Clock className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                      <span>{slot}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveCustomSlot(slot)}
-                        className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 text-xs ml-0.5 cursor-pointer"
-                        title={`Remove ${slot}`}
-                      >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
-                </div>
-
-                {/* Quick Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-emerald-200 dark:border-emerald-800/40">
-                  <span className="text-[10px] text-emerald-700 dark:text-emerald-400 font-bold uppercase">Presets:</span>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetSlots(['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'], 'Target Timings (9:30, 1:30, 4:30, 6:30)')}
-                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-bold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer shadow-xs"
-                  >
-                    🎯 4 Target Slots (9:30, 1:30, 4:30, 6:30)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetSlots(['10:00 AM', '01:00 PM', '04:00 PM', '07:00 PM'], 'Workday')}
-                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
-                  >
-                    🏢 Workday
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleApplyPresetSlots(['08:30 AM', '11:30 AM', '02:30 PM', '05:30 PM', '08:30 PM', '11:30 PM'], '6 Daily Slots')}
-                    className="text-[10px] bg-emerald-100/70 hover:bg-emerald-200/80 dark:bg-emerald-900/40 dark:hover:bg-emerald-800/60 text-emerald-800 dark:text-emerald-200 font-semibold px-2 py-0.5 rounded border border-emerald-200 dark:border-emerald-700 transition-colors cursor-pointer"
-                  >
-                    ⚡ 6 Daily Slots
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300 uppercase tracking-wider flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>Quarter-Day Upload Schedule (Every 6 Hours)</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleScheduleModeChange('custom')}
-                    className="text-[10px] text-emerald-700 dark:text-emerald-300 font-bold underline hover:text-emerald-900 cursor-pointer"
-                  >
-                    ⚙️ Set Custom Times
-                  </button>
-                </div>
-                <p className="text-xs text-emerald-800 dark:text-emerald-300/90 leading-relaxed">
-                  Naukri ranks candidate profiles by <strong>Last Active / Updated timestamp</strong>. Your resume will be uploaded across 4 daily peak recruiter search windows:
-                </p>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌅 Slot 1: 10:00 AM</span>
-                    <span className="text-[10px] text-slate-500">Peak Morning Search</span>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">☀️ Slot 2: 04:00 PM</span>
-                    <span className="text-[10px] text-slate-500">Afternoon Hiring Review</span>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌙 Slot 3: 10:00 PM</span>
-                    <span className="text-[10px] text-slate-500">Late Evening Sourcing</span>
-                  </div>
-                  <div className="bg-white/80 dark:bg-slate-900/60 p-2 rounded border border-emerald-200 dark:border-emerald-800/60 text-xs">
-                    <span className="font-bold text-emerald-900 dark:text-emerald-200 block">🌌 Slot 4: 04:00 AM</span>
-                    <span className="text-[10px] text-slate-500">Early Index Freshness</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="pt-2 border-t border-emerald-200 dark:border-emerald-800/60 flex justify-between items-center text-[11px] text-emerald-700 dark:text-emerald-400 font-semibold">
-              <span>Last Upload: {config.lastUploadAt ? new Date(config.lastUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Not yet'}</span>
-              <span>Next Upload Slot: {config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '10:00 AM'}</span>
-            </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end flex-wrap">
+            <button
+              type="button"
+              onClick={() => handleMicroUpdate('touch')}
+              disabled={isMicroUpdating}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              title="Refresh Naukri profile timestamp immediately"
+            >
+              {isMicroUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+              <span>⚡ Touch Profile</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowAuthModal(true)}
+              className="bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold py-1.5 px-3 rounded-lg text-xs transition-all flex items-center gap-1.5 cursor-pointer border border-slate-200 dark:border-slate-700"
+              title="Naukri session connection settings & OTP"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>Session / OTP</span>
+            </button>
           </div>
         </div>
       </div>
+
+        {/* 4 Sleek Metric Overview Cards */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {/* Card 1: Today's Applications */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+              <span className="text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400">Applications Today</span>
+              <div className="p-1.5 bg-emerald-50 dark:bg-emerald-950/60 rounded-lg text-emerald-600 dark:text-emerald-400">
+                <Check className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-xl font-bold text-slate-900 dark:text-slate-100 font-mono">
+                {todayStats.verifiedCount || todayStats.todayCount || 0}
+              </span>
+              <span className="text-xs text-slate-400 ml-1">/ {filterConfig.dailyTarget || 50} goal</span>
+            </div>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>100% Autonomous</span>
+            </span>
+          </div>
+
+          {/* Card 2: Applied Companies (Deduplicated) */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+              <span className="text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400">Applied Companies</span>
+              <div className="p-1.5 bg-indigo-50 dark:bg-indigo-950/60 rounded-lg text-indigo-600 dark:text-indigo-400">
+                <Building2 className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-xl font-bold text-indigo-600 dark:text-indigo-400 font-mono">
+                {appliedCompanies.length}
+              </span>
+              <span className="text-xs text-slate-400 ml-1">companies</span>
+            </div>
+            <span className="text-[10px] text-indigo-600 dark:text-indigo-400 font-semibold mt-1">
+              🛡️ Never Applied Twice
+            </span>
+          </div>
+
+          {/* Card 3: External Jobs (Manual Review) */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+              <span className="text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400">Company Site Jobs</span>
+              <div className="p-1.5 bg-amber-50 dark:bg-amber-950/60 rounded-lg text-amber-600 dark:text-amber-400">
+                <Globe className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-xl font-bold text-amber-600 dark:text-amber-400 font-mono">
+                {externalJobs.length}
+              </span>
+              <span className="text-xs text-slate-400 ml-1">collected</span>
+            </div>
+            <span className="text-[10px] text-amber-600 dark:text-amber-400 font-semibold mt-1">
+              🌐 Apply on Company Site
+            </span>
+          </div>
+
+          {/* Card 4: Live Profile Score & Sync */}
+          <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col justify-between">
+            <div className="flex justify-between items-start">
+              <span className="text-[11px] uppercase font-bold text-slate-500 dark:text-slate-400">Profile Index</span>
+              <div className="p-1.5 bg-sky-50 dark:bg-sky-950/60 rounded-lg text-sky-600 dark:text-sky-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-2">
+              <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400 font-mono">
+                {portfolioData?.profileScore || '100%'}
+              </span>
+              <span className="text-xs text-slate-400 ml-1">recruiter score</span>
+            </div>
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 truncate mt-1">
+              📄 {portfolioData?.resumeAttached?.fileName || 'santhosh_t_k_resume.pdf'}
+            </span>
+          </div>
+        </div>
+
+        {/* Live Auto-Apply Progress Banner */}
+        {isAutoApplying && applyProgress && (
+          <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col gap-2">
+            <div className="flex justify-between items-center text-xs">
+              <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                <span>{applyProgress.status || 'Autonomous background cycle in progress...'}</span>
+              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
+                  {applyProgress.current || 1} / {applyProgress.total || 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setIsAutoApplying(false); setApplyProgress(null); }}
+                  className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer underline font-medium"
+                >
+                  Dismiss
+                </button>
+              </div>
+            </div>
+            <div className="w-full bg-indigo-200 dark:bg-indigo-900 h-2 rounded-full overflow-hidden">
+              <div
+                className="bg-indigo-600 dark:bg-indigo-400 h-2 transition-all duration-500 rounded-full"
+                style={{ width: `${Math.min(100, Math.round(((applyProgress.current || 1) / (applyProgress.total || 1)) * 100))}%` }}
+              ></div>
+            </div>
+          </div>
+        )}
+
+        {/* Streamlined Sub-Tab Navigation Bar */}
+        <div className="flex border-b border-slate-200 dark:border-slate-800 gap-1 sm:gap-2 overflow-x-auto no-scrollbar touch-scroll pt-2">
+          <button
+            type="button"
+            onClick={() => setNaukriSubTab('companies')}
+            className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              naukriSubTab === 'companies'
+                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-t-lg'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Applied Companies ({appliedCompanies.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setNaukriSubTab('external')}
+            className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              naukriSubTab === 'external'
+                ? 'border-amber-500 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/30 rounded-t-lg'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Globe className="w-4 h-4 text-amber-500" />
+            <span>External Jobs ({externalJobs.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setNaukriSubTab('history')}
+            className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              naukriSubTab === 'history'
+                ? 'border-emerald-600 dark:border-emerald-400 text-emerald-600 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/30 rounded-t-lg'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <CheckCircle className="w-4 h-4 text-emerald-500" />
+            <span>Application Logs ({appliedJobs.length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setNaukriSubTab('settings')}
+            className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              naukriSubTab === 'settings'
+                ? 'border-indigo-600 dark:border-indigo-400 text-indigo-600 dark:text-indigo-400 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-t-lg'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <SlidersHorizontal className="w-4 h-4 text-indigo-500" />
+            <span>Filters & Recruiter Q&A</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setNaukriSubTab('profile')}
+            className={`py-2.5 px-3 sm:px-4 text-xs sm:text-sm font-bold border-b-2 transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              naukriSubTab === 'profile'
+                ? 'border-sky-500 text-sky-600 dark:text-sky-400 bg-sky-50/50 dark:bg-sky-950/30 rounded-t-lg'
+                : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            <Sparkles className="w-4 h-4 text-sky-500" />
+            <span>Profile & Micro-Touch</span>
+          </button>
+        </div>
 
       {/* 2. Interactive Pending Screening Questions Alert Banner (Zero-Hallucination Policy) */}
       {pendingQuestions.length > 0 && (
@@ -4888,397 +4709,375 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       )}
 
-      {/* 3. Job Discovery & Company Diversity Settings Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div>
-            <div className="flex items-center gap-2">
-              <SlidersHorizontal className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
-                Job Discovery & Company Diversity Settings
-              </h3>
-              <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
-                Max {filterConfig.maxJobsPerCompanyPerRun || 2} Per Company
-              </span>
+      {/* Sub-Tab 4: Job Discovery & Company Diversity Settings Card */}
+      {naukriSubTab === 'settings' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+          <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <SlidersHorizontal className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                  Job Discovery & Company Diversity Settings
+                </h3>
+                <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 font-bold px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-800">
+                  Max {filterConfig.maxJobsPerCompanyPerRun || 2} Per Company
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Round-robin company interleaving ensures a diverse portfolio of applications across tech startups and enterprises.
+              </p>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Prevents monopolization by single companies (like Swiggy, Zepto, Blinkit). Round-robin company interleaving ensures a diverse portfolio of applications across tech startups and enterprises.
-            </p>
+
+            <button
+              type="button"
+              onClick={() => setShowFilterSettings(!showFilterSettings)}
+              className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
+            >
+              {showFilterSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              <span>{showFilterSettings ? 'Collapse Filter Config' : 'Customize Discovery Filters'}</span>
+            </button>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setShowFilterSettings(!showFilterSettings)}
-            className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 cursor-pointer"
-          >
-            {showFilterSettings ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-            <span>{showFilterSettings ? 'Collapse Filter Config' : 'Customize Discovery Filters'}</span>
-          </button>
-        </div>
+          {/* Filter Configuration Form */}
+          {showFilterSettings && (
+            <form onSubmit={handleSaveFilterConfig} className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Max Jobs per company & Daily Target */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Max Jobs Per Company Per Run:
+                  </label>
+                  <select
+                    value={filterConfig.maxJobsPerCompanyPerRun || 2}
+                    onChange={(e) => setFilterConfig({ ...filterConfig, maxJobsPerCompanyPerRun: parseInt(e.target.value, 10) || 2 })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="1">1 Job Per Company (Maximum Diversity)</option>
+                    <option value="2">2 Jobs Per Company (Balanced Interleaving)</option>
+                    <option value="3">3 Jobs Per Company</option>
+                  </select>
+                </div>
 
-        {/* Filter Configuration Form (Expandable) */}
-        {showFilterSettings && (
-          <form onSubmit={handleSaveFilterConfig} className="flex flex-col gap-4 bg-slate-50 dark:bg-slate-800/50 p-4 rounded-xl border border-slate-200 dark:border-slate-700">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Max Jobs per company & Daily Target */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Max Jobs Per Company Per Run:
-                </label>
-                <select
-                  value={filterConfig.maxJobsPerCompanyPerRun || 2}
-                  onChange={(e) => setFilterConfig({ ...filterConfig, maxJobsPerCompanyPerRun: parseInt(e.target.value, 10) || 2 })}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
-                >
-                  <option value="1">1 Job Per Company (Maximum Diversity)</option>
-                  <option value="2">2 Jobs Per Company (Balanced Interleaving)</option>
-                  <option value="3">3 Jobs Per Company</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Daily Application Target (EOD):
-                </label>
-                <input
-                  type="number"
-                  value={filterConfig.dailyTarget || 50}
-                  onChange={(e) => setFilterConfig({ ...filterConfig, dailyTarget: parseInt(e.target.value, 10) || 50 })}
-                  className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Experience Range (Min - Max Yrs):
-                </label>
-                <div className="flex items-center gap-2">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Daily Application Target (EOD):
+                  </label>
                   <input
                     type="number"
-                    value={filterConfig.experienceMin || 3}
-                    onChange={(e) => setFilterConfig({ ...filterConfig, experienceMin: parseInt(e.target.value, 10) || 0 })}
-                    placeholder="Min"
-                    className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
-                  />
-                  <span className="text-xs text-slate-400">to</span>
-                  <input
-                    type="number"
-                    value={filterConfig.experienceMax || 6}
-                    onChange={(e) => setFilterConfig({ ...filterConfig, experienceMax: parseInt(e.target.value, 10) || 10 })}
-                    placeholder="Max"
-                    className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                    value={filterConfig.dailyTarget || 50}
+                    onChange={(e) => setFilterConfig({ ...filterConfig, dailyTarget: parseInt(e.target.value, 10) || 50 })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
                   />
                 </div>
-              </div>
-            </div>
 
-            {/* Target Job Titles Chips */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Target Job Titles ({filterConfig.jobTitles?.length || 0}):
-              </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {(filterConfig.jobTitles || []).map((title, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
-                    <span>{title}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFilterConfig({ ...filterConfig, jobTitles: filterConfig.jobTitles.filter((_, idx) => idx !== i) })}
-                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Experience Range (Min - Max Yrs):
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      value={filterConfig.experienceMin || 3}
+                      onChange={(e) => setFilterConfig({ ...filterConfig, experienceMin: parseInt(e.target.value, 10) || 0 })}
+                      placeholder="Min"
+                      className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                    />
+                    <span className="text-xs text-slate-400">to</span>
+                    <input
+                      type="number"
+                      value={filterConfig.experienceMax || 6}
+                      onChange={(e) => setFilterConfig({ ...filterConfig, experienceMax: parseInt(e.target.value, 10) || 10 })}
+                      placeholder="Max"
+                      className="w-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newTitleInput}
-                  onChange={(e) => setNewTitleInput(e.target.value)}
-                  placeholder="Add target job title (e.g. Senior Frontend Engineer)..."
-                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newTitleInput.trim()) {
-                      e.preventDefault();
-                      setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
-                      setNewTitleInput('');
-                    }
-                  }}
-                />
+
+              {/* Target Job Titles Chips */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Target Job Titles ({filterConfig.jobTitles?.length || 0}):
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(filterConfig.jobTitles || []).map((title, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                      <span>{title}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFilterConfig({ ...filterConfig, jobTitles: filterConfig.jobTitles.filter((_, idx) => idx !== i) })}
+                        className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newTitleInput}
+                    onChange={(e) => setNewTitleInput(e.target.value)}
+                    placeholder="Add target job title (e.g. Senior Frontend Engineer)..."
+                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newTitleInput.trim()) {
+                        e.preventDefault();
+                        setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
+                        setNewTitleInput('');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newTitleInput.trim()) {
+                        setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
+                        setNewTitleInput('');
+                      }
+                    }}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                  >
+                    + Add Title
+                  </button>
+                </div>
+              </div>
+
+              {/* Target Skills Chips */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Target Skills & Tech Stack ({filterConfig.skills?.length || 0}):
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(filterConfig.skills || []).map((skill, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                      <span>{skill}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFilterConfig({ ...filterConfig, skills: filterConfig.skills.filter((_, idx) => idx !== i) })}
+                        className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newSkillInput}
+                    onChange={(e) => setNewSkillInput(e.target.value)}
+                    placeholder="Add skill (e.g. Next.js, Redux, PostgreSQL)..."
+                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newSkillInput.trim()) {
+                        e.preventDefault();
+                        setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
+                        setNewSkillInput('');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newSkillInput.trim()) {
+                        setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
+                        setNewSkillInput('');
+                      }
+                    }}
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                  >
+                    + Add Skill
+                  </button>
+                </div>
+              </div>
+
+              {/* Excluded Companies Filter */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Excluded Companies (Will Never Apply):
+                </label>
+                <div className="flex flex-wrap gap-1.5 mb-2">
+                  {(filterConfig.excludedCompanies || []).map((comp, i) => (
+                    <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
+                      <span>{comp}</span>
+                      <button
+                        type="button"
+                        onClick={() => setFilterConfig({ ...filterConfig, excludedCompanies: filterConfig.excludedCompanies.filter((_, idx) => idx !== i) })}
+                        className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={newExcludedCompInput}
+                    onChange={(e) => setNewExcludedCompInput(e.target.value)}
+                    placeholder="Add company to block..."
+                    className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && newExcludedCompInput.trim()) {
+                        e.preventDefault();
+                        setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
+                        setNewExcludedCompInput('');
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (newExcludedCompInput.trim()) {
+                        setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
+                        setNewExcludedCompInput('');
+                      }
+                    }}
+                    className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                  >
+                    + Block Company
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
                 <button
-                  type="button"
-                  onClick={() => {
-                    if (newTitleInput.trim()) {
-                      setFilterConfig({ ...filterConfig, jobTitles: [...(filterConfig.jobTitles || []), newTitleInput.trim()] });
-                      setNewTitleInput('');
-                    }
-                  }}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
+                  type="submit"
+                  disabled={savingFilters}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 cursor-pointer"
                 >
-                  + Add Title
+                  {savingFilters ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+                  <span>Save Discovery & Diversity Filters</span>
                 </button>
               </div>
-            </div>
+            </form>
+          )}
+        </div>
+      )}
 
-            {/* Target Skills Chips */}
+      {/* Sub-Tab 5: Live Portfolio Inspector & Auto Micro-Updater */}
+      {naukriSubTab === 'profile' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
             <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Target Skills & Tech Stack ({filterConfig.skills?.length || 0}):
-              </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {(filterConfig.skills || []).map((skill, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
-                    <span>{skill}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFilterConfig({ ...filterConfig, skills: filterConfig.skills.filter((_, idx) => idx !== i) })}
-                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
+              <div className="flex items-center gap-2 flex-wrap">
+                <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
+                  Naukri Portfolio Live Inspector & Auto Micro-Updater
+                </h3>
+                <span className="text-[11px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                  <span>Active Just Now</span>
+                </span>
               </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newSkillInput}
-                  onChange={(e) => setNewSkillInput(e.target.value)}
-                  placeholder="Add skill (e.g. Next.js, Redux, PostgreSQL)..."
-                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newSkillInput.trim()) {
-                      e.preventDefault();
-                      setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
-                      setNewSkillInput('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (newSkillInput.trim()) {
-                      setFilterConfig({ ...filterConfig, skills: [...(filterConfig.skills || []), newSkillInput.trim()] });
-                      setNewSkillInput('');
-                    }
-                  }}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
-                >
-                  + Add Skill
-                </button>
-              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                Continuously monitors your live Naukri portfolio and performs smart, non-destructive micro-touches on your headline and skills.
+              </p>
             </div>
 
-            {/* Excluded Companies Filter */}
-            <div>
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                Excluded Companies (Will Never Apply):
-              </label>
-              <div className="flex flex-wrap gap-1.5 mb-2">
-                {(filterConfig.excludedCompanies || []).map((comp, i) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-white dark:bg-slate-900 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 px-2.5 py-0.5 rounded-lg text-xs font-medium shadow-2xs">
-                    <span>{comp}</span>
-                    <button
-                      type="button"
-                      onClick={() => setFilterConfig({ ...filterConfig, excludedCompanies: filterConfig.excludedCompanies.filter((_, idx) => idx !== i) })}
-                      className="text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
-                    >
-                      ✕
-                    </button>
-                  </span>
-                ))}
-              </div>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={newExcludedCompInput}
-                  onChange={(e) => setNewExcludedCompInput(e.target.value)}
-                  placeholder="Add company to block..."
-                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 text-xs font-semibold focus:outline-none"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && newExcludedCompInput.trim()) {
-                      e.preventDefault();
-                      setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
-                      setNewExcludedCompInput('');
-                    }
-                  }}
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (newExcludedCompInput.trim()) {
-                      setFilterConfig({ ...filterConfig, excludedCompanies: [...(filterConfig.excludedCompanies || []), newExcludedCompInput.trim()] });
-                      setNewExcludedCompInput('');
-                    }
-                  }}
-                  className="bg-rose-600 hover:bg-rose-700 text-white font-bold px-3 py-1 rounded-lg text-xs cursor-pointer"
-                >
-                  + Block Company
-                </button>
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-200 dark:border-slate-700">
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
               <button
-                type="submit"
-                disabled={savingFilters}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-lg text-xs transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                onClick={handleCheckPortfolio}
+                disabled={isCheckingPortfolio}
+                className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold py-1.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
               >
-                {savingFilters ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-                <span>Save Discovery & Diversity Filters</span>
+                {isCheckingPortfolio ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                <span>Inspect Portfolio</span>
+              </button>
+
+              <button
+                onClick={() => handleMicroUpdate('touch')}
+                disabled={isMicroUpdating}
+                className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                {isMicroUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
+                <span>⚡ Touch Headline</span>
+              </button>
+
+              <button
+                onClick={() => handleMicroUpdate('rotate')}
+                disabled={isMicroUpdating}
+                className="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>Rotate Keywords</span>
               </button>
             </div>
-          </form>
-        )}
-      </div>
+          </div>
 
-      {/* NEW: NAUKRI LIVE PORTFOLIO INSPECTOR & AUTO MICRO-UPDATER CARD */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
-                Naukri Portfolio Live Inspector & Auto Micro-Updater
-              </h3>
-              <span className="text-[11px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold px-2 py-0.5 rounded-md border border-emerald-300 dark:border-emerald-700 flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>Active Just Now</span>
+          {/* Portfolio Live Snapshot Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Candidate Name</span>
+              <strong className="text-sm text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+                {portfolioData?.candidateName || config.candidateName || 'Santhosh T K'}
+              </strong>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">✓ Verified Profile</span>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Profile Score</span>
+              <strong className="text-sm text-emerald-600 dark:text-emerald-400 mt-0.5">
+                {portfolioData?.profileScore || '100%'}
+              </strong>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">High Recruiter Index</span>
+            </div>
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Attached Resume</span>
+              <strong className="text-xs text-slate-800 dark:text-slate-100 mt-0.5 truncate">
+                {portfolioData?.resumeAttached?.fileName || 'santhosh_t_k_resume.pdf'}
+              </strong>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 truncate">
+                {portfolioData?.resumeAttached?.uploadedDate || 'Uploaded Recently'}
               </span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-              Continuously monitors your live Naukri portfolio and performs smart, non-destructive micro-touches on your headline and skills to ensure your profile ranks at the top of recruiter searches 24/7.
+
+            <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
+              <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Auto Micro-Touch</span>
+              <strong className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                Every {portfolioConfig.autoMicroUpdateIntervalMinutes || 60} mins
+              </strong>
+              <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">24/7 Automated Refresh</span>
+            </div>
+          </div>
+
+          {/* Live Resume Headline Display */}
+          <div className="bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-800/50 dark:to-indigo-950/20 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-900/40 flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
+                <span>📄 Live Naukri Resume Headline:</span>
+                <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">Synced</span>
+              </span>
+            </div>
+            <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 select-all">
+              {portfolioData?.headline || "Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS."}
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
-            <button
-              onClick={handleCheckPortfolio}
-              disabled={isCheckingPortfolio || (!config.hasSession && !formData.username)}
-              className="flex-1 sm:flex-initial bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-200 font-semibold py-1.5 px-3 rounded-lg text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Inspect live Naukri portfolio"
-            >
-              {isCheckingPortfolio ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
-              <span>Inspect Portfolio</span>
-            </button>
-
-            <button
-              onClick={() => handleMicroUpdate('touch')}
-              disabled={isMicroUpdating || (!config.hasSession && !formData.username)}
-              className="flex-1 sm:flex-initial bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Refresh Naukri 'Last Updated' timestamp immediately by touching resume headline"
-            >
-              {isMicroUpdating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Zap className="w-3.5 h-3.5" />}
-              <span>⚡ Touch Headline</span>
-            </button>
-
-            <button
-              onClick={() => handleMicroUpdate('rotate')}
-              disabled={isMicroUpdating || (!config.hasSession && !formData.username)}
-              className="flex-1 sm:flex-initial bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1.5 px-3.5 rounded-lg text-xs transition-all shadow-xs flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-              title="Rotate between high-performing ATS keyword variations"
-            >
-              <RotateCw className="w-3.5 h-3.5" />
-              <span>Rotate Keywords</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Portfolio Live Snapshot Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 text-xs">
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Candidate Name</span>
-            <strong className="text-sm text-slate-800 dark:text-slate-100 mt-0.5 truncate">
-              {portfolioData?.candidateName || config.candidateName || 'Santhosh T K'}
-            </strong>
-            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-1">✓ Verified Profile</span>
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Profile Score</span>
-            <strong className="text-sm text-emerald-600 dark:text-emerald-400 mt-0.5">
-              {portfolioData?.profileScore || '100% (All Sections Active)'}
-            </strong>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">High Recruiter Index</span>
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Attached Resume</span>
-            <strong className="text-xs text-slate-800 dark:text-slate-100 mt-0.5 truncate" title={portfolioData?.resumeAttached?.fileName}>
-              {portfolioData?.resumeAttached?.fileName || 'santhosh_t_k_resume.pdf'}
-            </strong>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1 truncate">
-              {portfolioData?.resumeAttached?.uploadedDate || 'Uploaded Recently'}
-            </span>
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-800/60 p-3 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col">
-            <span className="text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400">Continuous Auto-Touch</span>
-            <strong className="text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
-              {portfolioConfig.continuousPortfolioEnabled ? `Every ${portfolioConfig.autoMicroUpdateIntervalMinutes || 60} mins` : 'Paused'}
-            </strong>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 mt-1">24/7 Automated Refresh</span>
-          </div>
-        </div>
-
-        {/* Live Resume Headline Display & Touch Box */}
-        <div className="bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-slate-800/50 dark:to-indigo-950/20 p-3.5 rounded-xl border border-indigo-100 dark:border-indigo-900/40 flex flex-col gap-2">
-          <div className="flex justify-between items-center">
-            <span className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-1.5">
-              <span>📄 Live Naukri Resume Headline:</span>
-              <span className="text-[10px] bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300 font-mono px-1.5 py-0.2 rounded font-bold">Synced</span>
-            </span>
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono">
-              Last checked: {portfolioData?.lastCheckedAt ? new Date(portfolioData.lastCheckedAt).toLocaleTimeString() : 'Just Now'}
-            </span>
-          </div>
-          <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 select-all">
-            {portfolioData?.headline || "Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS."}
-          </p>
-        </div>
-
-        {/* Live Key Skills Chips */}
-        {Array.isArray(portfolioData?.keySkills) && portfolioData.keySkills.length > 0 && (
-          <div className="flex flex-col gap-1.5">
-            <div className="flex justify-between items-center">
+          {/* Live Key Skills Chips */}
+          {Array.isArray(portfolioData?.keySkills) && portfolioData.keySkills.length > 0 && (
+            <div className="flex flex-col gap-1.5">
               <span className="text-xs font-bold text-slate-700 dark:text-slate-300">
                 Key Skills on Profile ({portfolioData.keySkills.length} skills indexed):
               </span>
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                {portfolioData.keySkills.map((skill, idx) => (
+                  <span
+                    key={idx}
+                    className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md text-[11px] font-medium"
+                  >
+                    {skill}
+                  </span>
+                ))}
+              </div>
             </div>
-            <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
-              {portfolioData.keySkills.map((skill, idx) => (
-                <span
-                  key={idx}
-                  className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-md text-[11px] font-medium"
-                >
-                  {skill}
-                </span>
-              ))}
-            </div>
-          </div>
-        )}
+          )}
 
-        {/* Continuous Portfolio Monitor Configuration Controls */}
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={portfolioConfig.continuousPortfolioEnabled}
-              onChange={(e) => {
-                const updated = { ...portfolioConfig, continuousPortfolioEnabled: e.target.checked };
-                setPortfolioConfig(updated);
-                handleSavePortfolioConfig(updated);
-              }}
-              className="rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-            />
-            <span className="font-bold text-slate-700 dark:text-slate-300">
-              Continuously check portfolio & make safe micro-touches (24/7 Background Daemon)
-            </span>
-          </label>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <span className="text-slate-500 dark:text-slate-400 font-medium">Check Frequency:</span>
+          {/* Auto-Touch Interval Config */}
+          <div className="flex justify-between items-center pt-2 border-t border-slate-100 dark:border-slate-800 text-xs">
+            <span className="font-bold text-slate-700 dark:text-slate-300">Auto-Touch Background Interval:</span>
             <select
               value={portfolioConfig.autoMicroUpdateIntervalMinutes || 60}
               onChange={(e) => {
@@ -5286,141 +5085,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 setPortfolioConfig(updated);
                 handleSavePortfolioConfig(updated);
               }}
-              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2 py-1 font-semibold focus:outline-none cursor-pointer"
+              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1 font-semibold focus:outline-none cursor-pointer"
             >
               <option value="15">Every 15 minutes</option>
               <option value="30">Every 30 minutes</option>
               <option value="60">Every 1 hour (Recommended)</option>
               <option value="120">Every 2 hours</option>
-              <option value="240">4x Daily Slots</option>
             </select>
           </div>
         </div>
-      </div>
+      )}
 
-      {/* 4. Autonomous 24/7 Naukri Easy Apply Engine (100% Automatic - No Manual Buttons Required) */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-emerald-200 dark:border-emerald-800/80 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Sparkles className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
-              <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100">
-                Autonomous 24/7 Naukri Easy Apply Engine (100% Automatic)
-              </h3>
-              <span className="text-[11px] bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 font-bold px-2.5 py-0.5 rounded-full border border-emerald-300 dark:border-emerald-700 flex items-center gap-1.5 shadow-2xs">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                <span>AUTOMATIC 24/7 BACKGROUND APPLY ACTIVE</span>
-              </span>
-            </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              <strong>Zero manual buttons required.</strong> The server automatically searches matching jobs on Naukri, checks recruiter screening questions against your Supabase DB memory, and submits applications in the background 24/7.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-              <span>Periodic Self-Trigger: 24/7 Cloud Background</span>
-            </span>
-          </div>
-        </div>
-
-        {/* Autonomous Engine Live Status Banner */}
-        <div className="bg-gradient-to-r from-emerald-50 via-teal-50 to-indigo-50 dark:from-emerald-950/30 dark:via-teal-950/20 dark:to-indigo-950/30 p-3 sm:p-4 rounded-xl border border-emerald-200 dark:border-emerald-800/60 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 rounded-xl">
-              <Check className="w-5 h-5" />
-            </div>
-            <div>
-              <h4 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
-                <span>Autonomous Background Worker is Running</span>
-                <span className="text-[10px] font-mono bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-300 font-bold">
-                  Target: {filterConfig.dailyTarget || 50} Jobs / Day
-                </span>
-              </h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                Automatically scans keywords, answers screening questions, applies to all matching jobs, and refreshes candidate activity timestamp.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end text-xs font-mono font-bold">
-            <div className="text-right">
-              <span className="text-[10px] text-slate-400 uppercase block">Today's Verified Applications</span>
-              <span className="text-sm text-emerald-600 dark:text-emerald-400 font-bold">
-                {todayStats.verifiedCount || todayStats.todayCount || 0} / {filterConfig.dailyTarget || 50} Submitted
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Search Keyword Bar & Presets */}
-        <div className="flex flex-col gap-2">
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={applyKeywords}
-              onChange={(e) => setApplyKeywords(e.target.value)}
-              placeholder="e.g. Full Stack Developer, MERN Stack, React.js, Node.js, Bangalore"
-              className="flex-1 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 py-2 text-xs font-semibold focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[10px] text-slate-400 uppercase font-bold">Role Presets:</span>
-            {[
-              'Full Stack Developer (React & Node.js)',
-              'MERN Stack Engineer (3+ YOE)',
-              'Backend Developer (Node.js/Express)',
-              'Frontend Developer (React.js/Next.js)',
-              'SDE-2 Full Stack (Bangalore / Remote)'
-            ].map((kw, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setApplyKeywords(kw)}
-                className="text-[10px] bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 transition-colors cursor-pointer"
-              >
-                + {kw}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Live Auto-Apply Progress Banner */}
-        {isAutoApplying && applyProgress && (
-          <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col gap-2">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
-                <span>{applyProgress.status || 'Autonomous background cycle in progress...'}</span>
-              </span>
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
-                  {applyProgress.current || 1} / {applyProgress.total || 1}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => { setIsAutoApplying(false); setApplyProgress(null); }}
-                  className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer underline font-medium"
-                  title="Dismiss this progress indicator"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </div>
-            <div className="w-full bg-indigo-200 dark:bg-indigo-900 h-2 rounded-full overflow-hidden">
-              <div
-                className="bg-indigo-600 dark:bg-indigo-400 h-2 transition-all duration-500 rounded-full"
-                style={{ width: `${Math.min(100, Math.round(((applyProgress.current || 1) / (applyProgress.total || 1)) * 100))}%` }}
-              ></div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      {/* 5. Live Application Queue & State Machine Visualizer */}
-      {applicationQueue.length > 0 && (
+      {/* Sub-Tab 3 (A): Live Application Queue & State Machine Visualizer */}
+      {naukriSubTab === 'history' && applicationQueue.length > 0 && (
         <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-3 transition-colors">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -5490,8 +5167,9 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       )}
 
-      {/* 6. Smart Q&A Memory Database Manager Card */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+      {/* Sub-Tab 4 (B): Smart Q&A Memory Database Manager Card */}
+      {naukriSubTab === 'settings' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex justify-between items-center flex-wrap gap-2 border-b border-slate-100 dark:border-slate-800 pb-3">
           <div>
             <div className="flex items-center gap-2">
@@ -5631,9 +5309,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           })}
         </div>
       </div>
+      )}
 
-      {/* 7. Applied Companies & Roles Directory (Strict Deduplication - Never Applied Twice) */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+      {/* Sub-Tab 1: Applied Companies & Roles Directory (Strict Deduplication - Never Applied Twice) */}
+      {naukriSubTab === 'companies' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
@@ -5715,9 +5395,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
 
-      {/* 7.5. External Career Site Jobs (Apply Manually Queue) */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+      {/* Sub-Tab 2: External Career Site Jobs (Apply Manually Queue) */}
+      {naukriSubTab === 'external' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <div className="flex items-center gap-2 flex-wrap">
             <Globe className="w-5 h-5 text-amber-500" />
@@ -5792,9 +5474,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
 
-      {/* 8. Detailed Applied Jobs History Table */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+      {/* Sub-Tab 3 (B): Detailed Applied Jobs History Table */}
+      {naukriSubTab === 'history' && (
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
             <CheckCircle className="w-4 h-4 text-emerald-500" />
@@ -5927,6 +5611,161 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Unified Naukri Session & Auth Modal */}
+      {showAuthModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <Key className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                    <span>Naukri Session & Authentication</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Manage your active candidate session & 2FA OTP
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 text-lg p-1 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Session Status Card */}
+            <div className="p-3.5 bg-slate-50 dark:bg-slate-800/60 rounded-xl border border-slate-200 dark:border-slate-700 flex flex-col gap-2">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-700 dark:text-slate-300">Connected Candidate</span>
+                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                  config.hasSession
+                    ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-800'
+                    : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-800'
+                }`}>
+                  {config.hasSession ? '● Active Session Stored' : '○ No Session Active'}
+                </span>
+              </div>
+              <div className="text-xs text-slate-600 dark:text-slate-400 font-mono">
+                {config.username || 'tksanthosh494@gmail.com'}
+              </div>
+              <div className="flex justify-between items-center pt-2 border-t border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleValidateSession}
+                    disabled={validatingSession}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer flex items-center gap-1"
+                  >
+                    {validatingSession ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                    <span>{validatingSession ? 'Checking...' : 'Check Live Session'}</span>
+                  </button>
+                  <span className="text-slate-300 dark:text-slate-600">•</span>
+                  <button
+                    type="button"
+                    onClick={() => { setShowAuthModal(false); setShowViewCookiesModal(true); }}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold cursor-pointer"
+                  >
+                    View Details →
+                  </button>
+                </div>
+                {config.hasSession && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectSession}
+                    className="text-xs text-rose-500 hover:text-rose-700 font-semibold cursor-pointer"
+                  >
+                    Disconnect
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Direct OTP Trigger & Verification */}
+            <div className="p-3.5 bg-indigo-50/50 dark:bg-indigo-950/30 rounded-xl border border-indigo-200 dark:border-indigo-800/60 flex flex-col gap-2.5">
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-800 dark:text-slate-200 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span>2FA OTP Authentication</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={handleTriggerUpload}
+                  disabled={uploading}
+                  className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1 rounded-lg transition-all flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  <span>{uploading ? 'Requesting...' : 'Request New OTP'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                If Naukri requests OTP verification, click "Request New OTP" and submit the 6-digit code below.
+              </p>
+              <form onSubmit={handleVerifyOtp} className="flex gap-2">
+                <input
+                  type="text"
+                  maxLength={6}
+                  value={otpInput}
+                  onChange={(e) => {
+                    setOtpInput(e.target.value.replace(/[^0-9]/g, ''));
+                    setOtpError('');
+                  }}
+                  placeholder="Enter 6-digit OTP"
+                  className="flex-1 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono font-bold text-slate-800 dark:text-slate-100 tracking-widest text-center focus:outline-none focus:border-indigo-500"
+                />
+                <button
+                  type="submit"
+                  disabled={verifyingOtp || otpInput.length < 4}
+                  className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-4 py-1.5 rounded-lg transition-all shadow-xs flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                >
+                  {verifyingOtp ? <Loader2 className="w-3 h-3 animate-spin" /> : null}
+                  <span>{verifyingOtp ? 'Verifying...' : 'Verify OTP'}</span>
+                </button>
+              </form>
+              {otpError && <p className="text-[11px] text-rose-500 font-semibold">{otpError}</p>}
+            </div>
+
+            {/* Paste Session Cookies Direct Option */}
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold text-slate-700 dark:text-slate-300">
+                Direct Cookie Import (Google SSO / Session Header):
+              </label>
+              <textarea
+                rows={3}
+                value={cookieInput}
+                onChange={(e) => setCookieInput(e.target.value)}
+                placeholder="Paste document.cookie or request cookie header (e.g. nauk_session=...; ubt_user=...)"
+                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded-xl p-2.5 text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={handleImportCookies}
+                disabled={savingCookie || !cookieInput.trim()}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {savingCookie && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>{savingCookie ? 'Importing...' : 'Save & Link Cookies to Supabase'}</span>
+              </button>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setShowAuthModal(false)}
+                className="bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 px-4 py-1.5 rounded-lg text-xs font-semibold cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Custom Q&A Dialog Modal */}
       {showNewQaModal && (
