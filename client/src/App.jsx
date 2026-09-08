@@ -3558,6 +3558,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [isAutoApplying, setIsAutoApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(null);
   const [appliedCompanies, setAppliedCompanies] = useState([]);
+  const [externalJobs, setExternalJobs] = useState([]);
   const [showNewQaModal, setShowNewQaModal] = useState(false);
   const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
   const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
@@ -3723,18 +3724,20 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const fetchQaAndAppliedJobs = async () => {
     if (!currentUser) return;
     try {
-      const [qaRes, pendRes, appRes, filterRes, queueRes] = await Promise.all([
+      const [qaRes, pendRes, appRes, filterRes, queueRes, extRes] = await Promise.all([
         apiFetch('/api/naukri/qa'),
         apiFetch('/api/naukri/qa/pending'),
         apiFetch('/api/naukri/apply/history'),
         apiFetch('/api/naukri/filters'),
-        apiFetch('/api/naukri/queue')
+        apiFetch('/api/naukri/queue'),
+        apiFetch('/api/naukri/external-jobs')
       ]);
       const qaData = await qaRes.json();
       const pendData = await pendRes.json();
       const appData = await appRes.json();
       const filterData = await filterRes.json();
       const queueData = await queueRes.json();
+      const extData = await extRes.json();
 
       if (Array.isArray(qaData.qaItems)) setQaItems(qaData.qaItems);
       if (Array.isArray(pendData.pending)) setPendingQuestions(pendData.pending);
@@ -3743,6 +3746,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (appData.todayStats) setTodayStats(appData.todayStats);
       if (filterData.filters) setFilterConfig(filterData.filters);
       if (Array.isArray(queueData.queue)) setApplicationQueue(queueData.queue);
+      if (Array.isArray(extData.externalJobs)) setExternalJobs(extData.externalJobs);
     } catch (e) {}
   };
 
@@ -5698,6 +5702,83 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                           title="Open verified job link on Naukri"
                         >
                           <span>View Job</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 7.5. External Career Site Jobs (Apply Manually Queue) */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Globe className="w-5 h-5 text-amber-500" />
+            <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <span>External Career Site Jobs ({externalJobs.length})</span>
+            </h3>
+            <span className="text-[10px] font-mono bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 px-2 py-0.5 rounded-full font-bold">
+              🌐 Apply on Company Site • Manual Review
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Jobs requiring external company portal application are collected here so you can apply manually.
+          </p>
+        </div>
+
+        {externalJobs.length === 0 ? (
+          <div className="py-6 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
+            No external company site jobs collected yet. As jobs with "Apply on company site" are encountered, they will be saved here automatically.
+          </div>
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                  <th className="p-3">Company</th>
+                  <th className="p-3">Role</th>
+                  <th className="p-3">Location & Exp</th>
+                  <th className="p-3">Discovered</th>
+                  <th className="p-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {externalJobs.map((item, idx) => (
+                  <tr key={item.jobId || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3 font-bold text-slate-900 dark:text-slate-100">
+                      <span className="flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>{item.company}</span>
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <span className="font-semibold text-slate-800 dark:text-slate-200">
+                        {item.jobTitle || item.title}
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-600 dark:text-slate-400">
+                      <span>{item.location || 'Bengaluru'} • {item.experience || 'Experienced'}</span>
+                    </td>
+                    <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                      {item.detectedAt ? new Date(item.detectedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'Recently'}
+                    </td>
+                    <td className="p-3 text-right">
+                      {item.jobUrl ? (
+                        <a
+                          href={item.jobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800 rounded font-semibold transition-all"
+                          title="Open job posting on Naukri to apply on company site"
+                        >
+                          <span>Apply on Company Site</span>
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       ) : (

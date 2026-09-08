@@ -135,6 +135,45 @@ function getFilterConfigFilePath(userKey) {
   return path.join(userPaths.userDir, 'naukri_filter_config.json');
 }
 
+function getExternalJobsFilePath(userKey) {
+  const userPaths = getUserPaths(userKey);
+  return path.join(userPaths.userDir, 'naukri_external_jobs.json');
+}
+
+function getNaukriExternalJobs(userKey) {
+  const filePath = getExternalJobsFilePath(userKey);
+  let localJobs = [];
+  if (fs.existsSync(filePath)) {
+    try {
+      localJobs = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (e) {}
+  }
+  return Array.isArray(localJobs) ? localJobs : [];
+}
+
+function recordExternalCompanyJob(userKey, jobItem) {
+  try {
+    const existing = getNaukriExternalJobs(userKey);
+    const alreadySaved = existing.some(j => j.jobId === jobItem.jobId || (j.jobUrl && j.jobUrl === jobItem.jobUrl));
+    if (!alreadySaved) {
+      existing.unshift({
+        jobId: jobItem.jobId || `ext_${Date.now()}`,
+        jobTitle: jobItem.jobTitle || jobItem.title,
+        company: jobItem.company,
+        location: jobItem.location || '',
+        experience: jobItem.experience || jobItem.exp || '',
+        jobUrl: jobItem.jobUrl || jobItem.url,
+        detectedAt: new Date().toISOString()
+      });
+      const filePath = getExternalJobsFilePath(userKey);
+      fs.writeFileSync(filePath, JSON.stringify(existing.slice(0, 300), null, 2), 'utf8');
+      supabaseSaveNaukriConfig(userKey, { externalJobs: existing.slice(0, 300) }).catch(() => {});
+    }
+  } catch (e) {
+    console.warn('[EXTERNAL_JOBS] Error saving external job:', e.message);
+  }
+}
+
 /**
  * Filter and Config Management
  */
@@ -1825,16 +1864,31 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 
       // Locate Apply Button & Positively Verify Easy Apply vs External ATS Site
       const applyBtnData = await page.evaluate(() => {
-        const btn = document.querySelector(
-          'button#apply-button, button.apply-button, [class*="apply-button"] button, [class*="applyButton"] button, [class*="jhc__apply-button"] button, [class*="jhc__apply-button-container"] button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect, [class*="apply-button"], [class*="applyButton"], [class*="jhc__apply-button-container"], a[id*="apply" i]'
-        );
-        if (!btn) return { exists: false };
-        const text = (btn.textContent || btn.innerText || '').trim().toLowerCase();
-        const isExternal = text.includes('company site') || text.includes('external') || text.includes('visit employer');
-        const isAlreadyApplied = text.includes('already applied') || text === 'applied';
+        const buttons = Array.from(document.querySelectorAll('button, a'));
+        
+        // Find button specifically for Apply, completely ignoring standalone "Save" buttons
+        let applyEl = buttons.find(el => {
+          const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+          const isSave = t.includes('save') && !t.includes('apply');
+          if (isSave) return false;
+          return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || t.includes('already applied') || t === 'applied' || t.includes('apply on');
+        });
+
+        // Fallback: check elements with class containing apply-button
+        if (!applyEl) {
+          applyEl = document.querySelector('button#apply-button, button.apply-button, [class*="apply-button"]:not(div), [class*="applyButton"]:not(div), [class*="jhc__apply-button"]:not(div)');
+        }
+
+        if (!applyEl) return { exists: false };
+
+        const text = (applyEl.textContent || applyEl.innerText || '').trim();
+        const textLower = text.toLowerCase();
+        const isExternal = textLower.includes('company site') || textLower.includes('external') || textLower.includes('visit employer');
+        const isAlreadyApplied = textLower.includes('already applied') || textLower === 'applied';
+
         return {
           exists: true,
-          text: (btn.textContent || btn.innerText || '').trim(),
+          text,
           isExternal,
           isAlreadyApplied
         };
@@ -1872,19 +1926,29 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       }
 
       if (applyBtnData.isExternal) {
-        console.log(`[EASY_APPLY] [SKIP] External ATS redirect detected ("${applyBtnData.text}"). Skipping external application.`);
-        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'External Career Site Redirect' });
+        console.log(`[EXTERNAL_CAREER_SITE] Collected "Apply on company site" job for manual review: "${jobItem.jobTitle}" at "${jobItem.company}".`);
+        recordExternalCompanyJob(userKey, jobItem);
+        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'Collected for Manual Application (Company Site)' });
         continue;
       }
 
-      // Click the Easy Apply button
+      // Click the Easy Apply button (strictly ignore Save button)
       console.log(`[EASY_APPLY] [FORM] Opening Easy Apply modal ("${applyBtnData.text}")...`);
       try {
         await page.evaluate(() => {
-          const btn = document.querySelector(
-            'button#apply-button, button.apply-button, [class*="apply-button"] button, [class*="applyButton"] button, [class*="jhc__apply-button"] button, [class*="jhc__apply-button-container"] button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect, [class*="jhc__apply-button-container"]'
-          );
-          if (btn) btn.click();
+          const buttons = Array.from(document.querySelectorAll('button, a'));
+          const btn = buttons.find(el => {
+            const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+            if (t.includes('save') && !t.includes('apply')) return false;
+            if (t.includes('company site')) return false;
+            return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button') || (el.className && el.className.includes && el.className.includes('jhc__apply-button'));
+          });
+          if (btn) {
+            btn.click();
+          } else {
+            const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect');
+            if (fallback) fallback.click();
+          }
         });
       } catch (e) {
         console.warn(`[EASY_APPLY] Click evaluate warning: ${e.message}`);
@@ -2319,5 +2383,7 @@ module.exports = {
   normalizeCompanyName,
   getPastAppliedCompanySets,
   getNaukriCompanyApplicationSummary,
-  getNaukriCompanyApplicationSummaryAsync
+  getNaukriCompanyApplicationSummaryAsync,
+  getNaukriExternalJobs,
+  recordExternalCompanyJob
 };

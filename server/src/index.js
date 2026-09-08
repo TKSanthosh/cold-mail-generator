@@ -91,7 +91,8 @@ const {
   runStandaloneNaukriApply,
   reconcileNaukriAppliedJobs,
   getAutoApplyStatus,
-  getNaukriCompanyApplicationSummary
+  getNaukriCompanyApplicationSummary,
+  getNaukriExternalJobs
 } = require('./services/naukri_apply.service');
 
 const app = express();
@@ -1174,6 +1175,14 @@ app.get('/api/naukri/applied-companies', (req, res) => {
   const userKey = resolveUserKey(req, res);
   res.json({
     companies: getNaukriCompanyApplicationSummary(userKey)
+  });
+});
+
+app.get('/api/naukri/external-jobs', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({
+    success: true,
+    externalJobs: getNaukriExternalJobs(userKey)
   });
 });
 
