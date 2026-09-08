@@ -57,6 +57,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch(() => sendResponse({ online: false }));
     return true;
   }
+
+  if (request.action === 'GET_QA_ITEMS') {
+    handleGetQaItems(request)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (request.action === 'SAVE_QA_ITEM') {
+    handleSaveQaItem(request)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
 });
 
 async function getStoredSettings() {
@@ -169,4 +183,40 @@ async function checkServerHealth(serverUrl) {
   const liveUrl = await resolveLiveServerUrl(serverUrl);
   const isOnline = await checkUrlOnline(liveUrl);
   return { online: isOnline, detectedUrl: liveUrl };
+}
+
+async function handleGetQaItems(data = {}) {
+  const settings = await getStoredSettings();
+  const rawUrl = data.serverUrl || settings.serverUrl || 'http://localhost:5001';
+  const serverUrl = await resolveLiveServerUrl(rawUrl);
+  const userKey = data.userKey || settings.userKey || 'tksanthosh494_gmail_com';
+
+  const res = await fetch(`${serverUrl}/api/naukri/qa?userKey=${encodeURIComponent(userKey)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const result = await res.json();
+  return { success: true, qaItems: result.qaItems || [] };
+}
+
+async function handleSaveQaItem(data = {}) {
+  const settings = await getStoredSettings();
+  const rawUrl = data.serverUrl || settings.serverUrl || 'http://localhost:5001';
+  const serverUrl = await resolveLiveServerUrl(rawUrl);
+  const userKey = data.userKey || settings.userKey || 'tksanthosh494_gmail_com';
+
+  const res = await fetch(`${serverUrl}/api/naukri/qa`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-key': userKey
+    },
+    body: JSON.stringify({
+      id: data.id,
+      question: data.question,
+      answer: String(data.answer).trim(),
+      category: data.category || 'Recruiter Screening'
+    })
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const result = await res.json();
+  return { success: true, item: result.item, qaItems: result.qaItems };
 }

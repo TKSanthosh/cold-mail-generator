@@ -1151,8 +1151,248 @@
 
   // Run on page load
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initDetector);
+    document.addEventListener('DOMContentLoaded', () => {
+      initDetector();
+      initQaTracker();
+    });
   } else {
     initDetector();
+    initQaTracker();
+  }
+
+  // --- SMART Q&A FORM TRACKER & MEMORY TOAST SYSTEM ---
+  let localQaMemory = [];
+  let activeQaToast = null;
+  let activeQaInput = null;
+
+  function syncQaMemory() {
+    chrome.runtime.sendMessage({ action: 'GET_QA_ITEMS' }, (resp) => {
+      if (resp && resp.success && Array.isArray(resp.qaItems)) {
+        localQaMemory = resp.qaItems;
+      }
+    });
+  }
+
+  function normalizeText(str) {
+    if (!str) return '';
+    return str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function getQuestionTextForInput(inputEl) {
+    if (!inputEl) return '';
+
+    // 1. Label for ID
+    if (inputEl.id) {
+      try {
+        const labelEl = document.querySelector(`label[for="${CSS.escape(inputEl.id)}"]`);
+        if (labelEl && cleanText(labelEl.innerText)) return cleanText(labelEl.innerText);
+      } catch (_) {}
+    }
+
+    // 2. Parent label
+    const parentLabel = inputEl.closest('label');
+    if (parentLabel && cleanText(parentLabel.innerText)) return cleanText(parentLabel.innerText);
+
+    // 3. Preceding question element
+    const container = inputEl.closest('.form-group, .input-group, fieldset, section, div');
+    if (container) {
+      const heading = container.querySelector('label, legend, h1, h2, h3, h4, h5, h6, .question, [class*="label"], [class*="question"]');
+      if (heading && cleanText(heading.innerText)) return cleanText(heading.innerText);
+    }
+
+    // 4. Attributes
+    const ariaLabel = inputEl.getAttribute('aria-label');
+    if (ariaLabel) return cleanText(ariaLabel);
+
+    const placeholder = inputEl.getAttribute('placeholder');
+    if (placeholder && placeholder.length > 3) return cleanText(placeholder);
+
+    const name = inputEl.getAttribute('name');
+    if (name) return cleanText(name.replace(/[-_]/g, ' '));
+
+    return '';
+  }
+
+  function matchQaItem(questionText) {
+    if (!questionText || localQaMemory.length === 0) return null;
+    const normQ = normalizeText(questionText);
+    if (normQ.length < 3) return null;
+
+    let found = localQaMemory.find(q => normalizeText(q.question) === normQ);
+    if (found) return found;
+
+    for (const item of localQaMemory) {
+      if (Array.isArray(item.keywords)) {
+        const hasKw = item.keywords.some(kw => normQ.includes(normalizeText(kw)));
+        if (hasKw) return item;
+      }
+    }
+
+    found = localQaMemory.find(q => {
+      const qNorm = normalizeText(q.question);
+      return (normQ.length > 4 && qNorm.includes(normQ)) || (qNorm.length > 4 && normQ.includes(qNorm));
+    });
+
+    return found || null;
+  }
+
+  function showQaMemoryToast(inputEl, qaItem) {
+    if (!inputEl || !qaItem || !qaItem.answer) return;
+
+    const currentVal = (inputEl.value || '').trim();
+    const prevAnswer = String(qaItem.answer).trim();
+
+    if (!activeQaToast) {
+      activeQaToast = document.createElement('div');
+      activeQaToast.id = 'air-qa-popover';
+      activeQaToast.className = 'air-qa-popover';
+      document.body.appendChild(activeQaToast);
+    }
+
+    activeQaInput = inputEl;
+
+    const rect = inputEl.getBoundingClientRect();
+    const top = rect.bottom + window.scrollY + 6;
+    const left = Math.max(12, rect.left + window.scrollX);
+
+    activeQaToast.style.top = `${top}px`;
+    activeQaToast.style.left = `${left}px`;
+
+    const isDifferent = currentVal && currentVal.toLowerCase() !== prevAnswer.toLowerCase();
+
+    activeQaToast.innerHTML = `
+      <div class="air-qa-content">
+        <div class="air-qa-header">
+          <span class="air-qa-badge">💡 Q&A Memory</span>
+          <span class="air-qa-question">${qaItem.question}</span>
+        </div>
+        <div class="air-qa-body">
+          <span class="air-qa-label">Previously Chosen:</span>
+          <strong class="air-qa-val">${prevAnswer}</strong>
+        </div>
+        <div class="air-qa-actions">
+          <button type="button" class="air-qa-btn primary" id="air-qa-use-btn">⚡ Use Previously Chosen</button>
+          ${isDifferent ? `<button type="button" class="air-qa-btn update-btn" id="air-qa-update-btn">✏️ Update DB to "${currentVal}"</button>` : ''}
+          <button type="button" class="air-qa-close" id="air-qa-close-btn">&times;</button>
+        </div>
+      </div>
+    `;
+
+    activeQaToast.classList.remove('air-hidden');
+
+    const useBtn = activeQaToast.querySelector('#air-qa-use-btn');
+    if (useBtn) {
+      useBtn.onclick = (e) => {
+        e.preventDefault();
+        inputEl.value = prevAnswer;
+        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
+        showQaFeedbackBadge('✓ Applied Previously Chosen Answer!');
+        hideQaToast();
+      };
+    }
+
+    const updateBtn = activeQaToast.querySelector('#air-qa-update-btn');
+    if (updateBtn) {
+      updateBtn.onclick = (e) => {
+        e.preventDefault();
+        saveOrUpdateQaAnswer(qaItem.question, currentVal, qaItem.id);
+        hideQaToast();
+      };
+    }
+
+    const closeBtn = activeQaToast.querySelector('#air-qa-close-btn');
+    if (closeBtn) {
+      closeBtn.onclick = (e) => {
+        e.preventDefault();
+        hideQaToast();
+      };
+    }
+  }
+
+  function hideQaToast() {
+    if (activeQaToast) {
+      activeQaToast.classList.add('air-hidden');
+    }
+  }
+
+  function saveOrUpdateQaAnswer(question, newAnswer, existingId) {
+    if (!question || !newAnswer) return;
+    chrome.runtime.sendMessage({
+      action: 'SAVE_QA_ITEM',
+      id: existingId,
+      question: question.trim(),
+      answer: String(newAnswer).trim()
+    }, (resp) => {
+      if (resp && resp.success) {
+        showQaFeedbackBadge('✓ Updated Q&A Memory with Latest Choice!');
+        syncQaMemory();
+      }
+    });
+  }
+
+  function showQaFeedbackBadge(msg) {
+    let badge = document.querySelector('.air-qa-feedback');
+    if (!badge) {
+      badge = document.createElement('div');
+      badge.className = 'air-qa-feedback';
+      document.body.appendChild(badge);
+    }
+    badge.innerText = msg;
+    setTimeout(() => badge.classList.add('show'), 50);
+    setTimeout(() => {
+      badge.classList.remove('show');
+      setTimeout(() => badge.remove(), 400);
+    }, 2500);
+  }
+
+  function initQaTracker() {
+    syncQaMemory();
+
+    document.addEventListener('focusin', (e) => {
+      const el = e.target;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
+        const qText = getQuestionTextForInput(el);
+        if (qText) {
+          const match = matchQaItem(qText);
+          if (match) {
+            showQaMemoryToast(el, match);
+          }
+        }
+      }
+    });
+
+    document.addEventListener('change', (e) => {
+      const el = e.target;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
+        const qText = getQuestionTextForInput(el);
+        const val = (el.value || '').trim();
+        if (qText && val) {
+          const match = matchQaItem(qText);
+          if (match && match.answer.toLowerCase() !== val.toLowerCase()) {
+            showQaMemoryToast(el, match);
+          } else if (!match && val.length > 0 && qText.length > 4) {
+            saveOrUpdateQaAnswer(qText, val);
+          }
+        }
+      }
+    });
+
+    document.addEventListener('submit', (e) => {
+      const form = e.target;
+      if (form && form.querySelectorAll) {
+        const inputs = form.querySelectorAll('input, select, textarea');
+        for (const input of inputs) {
+          const qText = getQuestionTextForInput(input);
+          const val = (input.value || '').trim();
+          if (qText && val && val.length > 0) {
+            const match = matchQaItem(qText);
+            if (!match || match.answer.toLowerCase() !== val.toLowerCase()) {
+              saveOrUpdateQaAnswer(qText, val, match?.id);
+            }
+          }
+        }
+      }
+    });
   }
 })();

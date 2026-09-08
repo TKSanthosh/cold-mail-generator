@@ -638,3 +638,145 @@
   0% { left: -40%; }
   100% { left: 100%; }
 }
+
+/* Smart Q&A Memory Popover Toast */
+.air-qa-popover {
+  position: absolute !important;
+  z-index: 2147483647 !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  background: #0f172a !important;
+  color: #f8fafc !important;
+  border: 1px solid #6366f1 !important;
+  border-radius: 12px !important;
+  padding: 12px 16px !important;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(99, 102, 241, 0.3) !important;
+  max-width: 380px !important;
+  box-sizing: border-box !important;
+  animation: air-pop-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes air-pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.air-qa-content {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.air-qa-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 8px !important;
+}
+
+.air-qa-badge {
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  color: #a5b4fc !important;
+  background: rgba(99, 102, 241, 0.2) !important;
+  padding: 2px 8px !important;
+  border-radius: 9999px !important;
+  border: 1px solid rgba(99, 102, 241, 0.3) !important;
+}
+
+.air-qa-question {
+  font-size: 12px !important;
+  color: #94a3b8 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 220px !important;
+}
+
+.air-qa-body {
+  font-size: 13px !important;
+  color: #e2e8f0 !important;
+}
+
+.air-qa-label {
+  color: #94a3b8 !important;
+  margin-right: 6px !important;
+}
+
+.air-qa-val {
+  color: #38bdf8 !important;
+  font-weight: 700 !important;
+}
+
+.air-qa-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  margin-top: 4px !important;
+}
+
+.air-qa-btn {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  padding: 6px 12px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.air-qa-btn.primary {
+  background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%) !important;
+  color: #ffffff !important;
+}
+
+.air-qa-btn.primary:hover {
+  background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%) !important;
+}
+
+.air-qa-btn.update-btn {
+  background: #334155 !important;
+  color: #38bdf8 !important;
+  border: 1px solid #0284c7 !important;
+}
+
+.air-qa-btn.update-btn:hover {
+  background: #0284c7 !important;
+  color: #ffffff !important;
+}
+
+.air-qa-close {
+  background: transparent !important;
+  border: none !important;
+  color: #64748b !important;
+  font-size: 18px !important;
+  cursor: pointer !important;
+  margin-left: auto !important;
+  line-height: 1 !important;
+}
+
+.air-qa-close:hover {
+  color: #f1f5f9 !important;
+}
+
+/* Feedback toast badge */
+.air-qa-feedback {
+  position: fixed !important;
+  bottom: 24px !important;
+  left: 24px !important;
+  z-index: 2147483647 !important;
+  background: #10b981 !important;
+  color: #ffffff !important;
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  padding: 10px 18px !important;
+  border-radius: 9999px !important;
+  box-shadow: 0 10px 25px rgba(16, 185, 129, 0.4) !important;
+  opacity: 0 !important;
+  transform: translateY(12px) !important;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.air-qa-feedback.show {
+  opacity: 1 !important;
+  transform: translateY(0) !important;
+}
