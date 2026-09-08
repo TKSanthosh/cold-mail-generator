@@ -3742,11 +3742,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     setInstantApplyJob(jobItem);
     setInstantApplyAnswers(prev => ({
       ...prev,
-      noticePeriod: naukriConfig?.noticePeriod || '15 Days or less',
-      currentCtc: naukriConfig?.currentCtc || '12 LPA',
-      expectedCtc: naukriConfig?.expectedCtc || '18 LPA',
-      totalExperience: naukriConfig?.experienceYears || '4 Years',
-      preferredLocation: naukriConfig?.locationPreference || 'Bangalore / Remote',
+      noticePeriod: config?.noticePeriod || '15 Days or less',
+      currentCtc: config?.currentCtc || '12 LPA',
+      expectedCtc: config?.expectedCtc || '18 LPA',
+      totalExperience: config?.experienceYears || '4 Years',
+      preferredLocation: config?.locationPreference || 'Bangalore / Remote',
       customAnswers: ''
     }));
     setInstantApplyModalOpen(true);
