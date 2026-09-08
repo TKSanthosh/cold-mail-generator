@@ -959,7 +959,26 @@ function normalizeCompanyName(company) {
 }
 
 /**
- * Extracts exact and normalized company sets from applied jobs history
+ * Canonical check if an application is confirmed as submitted & verified on Naukri.
+ * Only returns true if status is SUBMITTED and verificationStatus is VERIFIED or RECONCILED.
+ * Never treats unconfirmed, pending, failed, or skipped attempts as applied.
+ */
+function isConfirmedAppliedRecord(app) {
+  if (!app) return false;
+  const statusStr = (app.status || '').toString().trim().toUpperCase();
+  const isSubmitted = statusStr === ApplicationState.SUBMITTED || statusStr === 'SUBMITTED' || statusStr === 'APPLIED (NAUKRI EASY APPLY - CONFIRMED)';
+  const verStr = (app.verificationStatus || '').toString().trim().toUpperCase();
+  const isVerified = verStr === VerificationStatus.VERIFIED ||
+                     verStr === VerificationStatus.RECONCILED ||
+                     verStr === 'VERIFIED' ||
+                     verStr === 'RECONCILED';
+  return isSubmitted && isVerified;
+}
+
+/**
+ * Extracts exact and normalized company sets from confirmed applied jobs history.
+ * STRICT TRUTH RULE: Only companies with confirmed, verified applications are included.
+ * Unconfirmed, failed, or timed-out submissions are NOT blacklisted, allowing re-application.
  */
 function getPastAppliedCompanySets(appsOrUserKey) {
   const allApps = typeof appsOrUserKey === 'string' ? getNaukriAppliedJobs(appsOrUserKey) : (appsOrUserKey || []);
@@ -968,7 +987,7 @@ function getPastAppliedCompanySets(appsOrUserKey) {
 
   if (Array.isArray(allApps)) {
     for (const app of allApps) {
-      if (app && app.company) {
+      if (app && app.company && isConfirmedAppliedRecord(app)) {
         const exact = app.company.toLowerCase().trim();
         exactCompanySet.add(exact);
         const norm = normalizeCompanyName(exact);
@@ -982,12 +1001,12 @@ function getPastAppliedCompanySets(appsOrUserKey) {
 /**
  * Aggregates Applied Jobs by Company & Role (Directory Log)
  * Returns unique companies with all roles applied, timestamps, and direct URLs
+ * STRICT TRUTH RULE: totalApplied increments ONLY for verified applications.
  */
-function getNaukriCompanyApplicationSummary(userKey) {
-  const allApps = getNaukriAppliedJobs(userKey);
+function buildCompanySummaryFromApps(allApps) {
   const companyMap = new Map();
 
-  for (const app of allApps) {
+  for (const app of (allApps || [])) {
     const rawCompany = (app.company || 'Unknown Company').trim();
     const normKey = normalizeCompanyName(rawCompany) || rawCompany.toLowerCase();
 
@@ -998,9 +1017,11 @@ function getNaukriCompanyApplicationSummary(userKey) {
         roles: [],
         applications: [],
         totalApplied: 0,
+        unconfirmedCount: 0,
+        failedCount: 0,
         lastAppliedAt: app.appliedAt || null,
-        status: app.status || 'SUBMITTED',
-        verificationStatus: app.verificationStatus || 'VERIFIED',
+        status: app.status || ApplicationState.SUBMISSION_UNCONFIRMED,
+        verificationStatus: app.verificationStatus || VerificationStatus.UNVERIFIED,
         latestJobUrl: app.jobUrl || 'https://www.naukri.com/'
       });
     }
@@ -1020,11 +1041,20 @@ function getNaukriCompanyApplicationSummary(userKey) {
       status: app.status,
       verificationStatus: app.verificationStatus
     });
-    entry.totalApplied++;
+
+    if (isConfirmedAppliedRecord(app)) {
+      entry.totalApplied++;
+    } else if (app.status === ApplicationState.FAILED || (app.status || '').toLowerCase().includes('failed')) {
+      entry.failedCount++;
+    } else {
+      entry.unconfirmedCount++;
+    }
 
     if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
       entry.lastAppliedAt = app.appliedAt;
       if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
+      entry.status = app.status;
+      entry.verificationStatus = app.verificationStatus;
     }
   }
 
@@ -1033,54 +1063,14 @@ function getNaukriCompanyApplicationSummary(userKey) {
   });
 }
 
+function getNaukriCompanyApplicationSummary(userKey) {
+  const allApps = getNaukriAppliedJobs(userKey);
+  return buildCompanySummaryFromApps(allApps);
+}
+
 async function getNaukriCompanyApplicationSummaryAsync(userKey) {
   const allApps = await getNaukriAppliedJobsAsync(userKey);
-  const companyMap = new Map();
-
-  for (const app of allApps) {
-    const rawCompany = (app.company || 'Unknown Company').trim();
-    const normKey = normalizeCompanyName(rawCompany) || rawCompany.toLowerCase();
-
-    if (!companyMap.has(normKey)) {
-      companyMap.set(normKey, {
-        company: rawCompany,
-        normalizedCompany: normKey,
-        roles: [],
-        applications: [],
-        totalApplied: 0,
-        lastAppliedAt: app.appliedAt || null,
-        status: app.status || 'SUBMITTED',
-        verificationStatus: app.verificationStatus || 'VERIFIED',
-        latestJobUrl: app.jobUrl || 'https://www.naukri.com/'
-      });
-    }
-
-    const entry = companyMap.get(normKey);
-    const roleTitle = app.jobTitle || 'Developer';
-    if (!entry.roles.includes(roleTitle)) {
-      entry.roles.push(roleTitle);
-    }
-    entry.applications.push({
-      id: app.id,
-      jobId: app.jobId,
-      jobTitle: roleTitle,
-      jobUrl: app.jobUrl,
-      location: app.location,
-      appliedAt: app.appliedAt,
-      status: app.status,
-      verificationStatus: app.verificationStatus
-    });
-    entry.totalApplied++;
-
-    if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
-      entry.lastAppliedAt = app.appliedAt;
-      if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
-    }
-  }
-
-  return Array.from(companyMap.values()).sort((a, b) => {
-    return new Date(b.lastAppliedAt || 0) - new Date(a.lastAppliedAt || 0);
-  });
+  return buildCompanySummaryFromApps(allApps);
 }
 
 /**
@@ -1739,6 +1729,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   const appliedCompaniesThisRun = new Set();
 
   for (const j of pastAppliedList) {
+    if (!isConfirmedAppliedRecord(j)) continue; // TRUTH RULE: Never block unconfirmed / failed attempts from being discovered & applied!
     if (j.jobId) pastAppliedSet.add(j.jobId);
     if (j.jobUrl) pastAppliedSet.add(j.jobUrl.split('?')[0].toLowerCase().trim());
     if (j.company && j.jobTitle) pastAppliedSet.add(`${j.company.toLowerCase().trim()}___${j.jobTitle.toLowerCase().trim()}`);
@@ -2384,6 +2375,7 @@ module.exports = {
   getAutoApplyStatus,
   normalizeCompanyName,
   getPastAppliedCompanySets,
+  isConfirmedAppliedRecord,
   getNaukriCompanyApplicationSummary,
   getNaukriCompanyApplicationSummaryAsync,
   getNaukriExternalJobs,

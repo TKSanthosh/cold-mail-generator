@@ -5379,10 +5379,22 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       </div>
                     </td>
                     <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">
-                      <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                        <Check className="w-3 h-3" />
-                        <span>{item.totalApplied} applied</span>
-                      </span>
+                      {item.totalApplied > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                          <Check className="w-3 h-3" />
+                          <span>{item.totalApplied} applied</span>
+                        </span>
+                      ) : item.unconfirmedCount > 0 ? (
+                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-[11px] bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/40" title="Application was attempted but confirmation from Naukri was inconclusive. Can be retried.">
+                          <AlertTriangle className="w-3 h-3 shrink-0" />
+                          <span>Unconfirmed (Not Applied)</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-rose-500 dark:text-rose-400 text-[11px] bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800/40">
+                          <XCircle className="w-3 h-3 shrink-0" />
+                          <span>Failed</span>
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
                       {item.lastAppliedAt ? new Date(item.lastAppliedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'Recently'}
