@@ -459,14 +459,14 @@ async function tailorResume(standardResumeJson, jd) {
   tailored.personalInfo.title = targetTitle;
 
   // 5. Build human-tone, results-oriented summary
-  tailored.summary = `Software Development Engineer with 3+ years of full-time engineering experience building, scaling, and maintaining production backend systems and distributed web applications. Proven track record in high-throughput API architecture, database query optimization, and monolithic-to-microservice migrations using Node.js, Express.js, React.js, MySQL, and MongoDB. Strong focus on backend reliability, race-condition mitigation, and secure authentication workflows across enterprise platforms.`;
+  tailored.summary = `Software Development Engineer with 4+ years of full-time engineering experience building, scaling, and maintaining production backend systems and distributed web applications. Proven track record in high-throughput API architecture, database query optimization, and monolithic-to-microservice migrations using Node.js, Express.js, React.js, MySQL, and MongoDB. Strong focus on backend reliability, race-condition mitigation, and secure authentication workflows across enterprise platforms.`;
 
   // 6. Optional LLM refinement for personalized title/summary nuance
   const systemPrompt = `You are an expert ATS resume optimizer.
 CANDIDATE INFORMATION:
 - Name: Santhosh T K
 - Core Expertise: Full Stack Software Engineering (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, Git, Docker, System Design).
-- Experience: 3.5+ years of software development experience.
+- Experience: 4+ years of software development experience.
 
 CRITICAL INSTRUCTIONS:
 1. PRESERVE ORIGINAL CONTENTS: Never remove or alter the candidate's authentic core skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS).

@@ -1178,6 +1178,64 @@
     return str.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  function isIgnoredLoginOrSearchField(inputEl, questionText = '') {
+    if (!inputEl) return true;
+    const type = (inputEl.type || '').toLowerCase();
+    const name = (inputEl.name || '').toLowerCase();
+    const id = (inputEl.id || '').toLowerCase();
+    const placeholder = (inputEl.placeholder || '').toLowerCase();
+    const aria = (inputEl.getAttribute('aria-label') || '').toLowerCase();
+    const qLower = (questionText || '').toLowerCase();
+    const path = window.location.pathname.toLowerCase();
+
+    // 1. Password input
+    if (type === 'password') return true;
+
+    // 2. Search inputs & search bars
+    if (type === 'search' || inputEl.getAttribute('role') === 'searchbox') return true;
+
+    // 3. Login / Auth / Search keywords in element attributes or question
+    const ignoreKeywords = [
+      'password', 'passwd', 'search', 'query', 'filter', 'login', 'signin', 'sign-in', 'log-in',
+      'auth', 'username', 'user_name', 'authenticator', 'captcha', 'verification_code', 'otp',
+      'access_token', 'secret'
+    ];
+    for (const kw of ignoreKeywords) {
+      if (id.includes(kw) || name.includes(kw) || placeholder.includes(kw) || aria.includes(kw) || qLower.includes(kw)) {
+        return true;
+      }
+    }
+
+    // 4. Pure Auth / Search paths
+    if (path.includes('/login') || path.includes('/signin') || path.includes('/auth') || path.includes('/accounts/')) {
+      if (!path.includes('candidate') && !path.includes('apply') && !path.includes('job')) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function isJobApplicationQuestion(questionText, inputEl) {
+    if (isIgnoredLoginOrSearchField(inputEl, questionText)) return false;
+
+    const normQ = (questionText || '').toLowerCase();
+    const normInput = ((inputEl?.name || '') + ' ' + (inputEl?.id || '') + ' ' + (inputEl?.placeholder || '')).toLowerCase();
+    const textToTest = normQ + ' ' + normInput;
+
+    const jobKeywords = [
+      'experience', 'yoe', 'years', 'notice period', 'ctc', 'salary', 'compensation',
+      'joining', 'lwd', 'last working day', 'relocate', 'relocation', 'location', 'city',
+      'bangalore', 'bengaluru', 'remote', 'hybrid', 'office', 'wfh', 'shift',
+      'qualification', 'degree', 'education', 'b.tech', 'bachelor', 'master',
+      'resume', 'cover letter', 'sponsorship', 'authorization', 'visa', 'citizen',
+      'react', 'node', 'javascript', 'typescript', 'python', 'java', 'sql', 'aws',
+      'cloud', 'skill', 'portfolio', 'github', 'linkedin', 'questionnaire', 'screening'
+    ];
+
+    return jobKeywords.some(kw => textToTest.includes(kw));
+  }
+
   function getQuestionTextForInput(inputEl) {
     if (!inputEl) return '';
 
@@ -1353,7 +1411,7 @@
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
-        if (qText) {
+        if (qText && isJobApplicationQuestion(qText, el)) {
           const match = matchQaItem(qText);
           if (match) {
             showQaMemoryToast(el, match);
@@ -1367,7 +1425,7 @@
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
         const val = (el.value || '').trim();
-        if (qText && val) {
+        if (qText && val && isJobApplicationQuestion(qText, el)) {
           const match = matchQaItem(qText);
           if (match && match.answer.toLowerCase() !== val.toLowerCase()) {
             showQaMemoryToast(el, match);
@@ -1385,7 +1443,7 @@
         for (const input of inputs) {
           const qText = getQuestionTextForInput(input);
           const val = (input.value || '').trim();
-          if (qText && val && val.length > 0) {
+          if (qText && val && val.length > 0 && isJobApplicationQuestion(qText, input)) {
             const match = matchQaItem(qText);
             if (!match || match.answer.toLowerCase() !== val.toLowerCase()) {
               saveOrUpdateQaAnswer(qText, val, match?.id);
