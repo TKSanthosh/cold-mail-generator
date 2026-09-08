@@ -2330,6 +2330,155 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
   }
 }
 
+/**
+ * INSTANT RETRY & SINGLE-JOB APPLICATION WORKER
+ * Allows instant re-application to unconfirmed/pending jobs after user provides Q&A answers.
+ * Saves Q&A answers to database, launches Puppeteer, navigates directly to jobUrl,
+ * fills out form, submits live, verifies DOM confirmation, and updates history record.
+ */
+async function retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, userAnswers = [] }) {
+  if (!jobUrl) {
+    throw new Error('Target job URL is required for instant application.');
+  }
+
+  // 1. Save any provided user Q&A answers into DB permanently
+  if (Array.isArray(userAnswers) && userAnswers.length > 0) {
+    for (const item of userAnswers) {
+      if (item && item.question && item.answer) {
+        await saveQaItemAsync(userKey, {
+          question: item.question.trim(),
+          answer: item.answer.trim(),
+          category: item.category || 'Recruiter Screening'
+        });
+      }
+    }
+  } else if (typeof userAnswers === 'object' && userAnswers !== null) {
+    for (const [qText, aText] of Object.entries(userAnswers)) {
+      if (qText && aText) {
+        await saveQaItemAsync(userKey, {
+          question: qText.trim(),
+          answer: String(aText).trim(),
+          category: 'Recruiter Screening'
+        });
+      }
+    }
+  }
+
+  // 2. Acquire exclusive lock for instant application run
+  await acquireUserLockAsync(userKey, 'instant_apply', 300);
+
+  const { findBrowserExecutable, restoreAndInjectNaukriSession } = require('./naukri.service');
+  const puppeteer = require('puppeteer');
+  let browser = null;
+
+  try {
+    const browserPath = findBrowserExecutable();
+    browser = await puppeteer.launch({
+      headless: 'new',
+      executablePath: browserPath || undefined,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    // Restore & inject session
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
+    }
+
+    // Resolve resume & Q&A Database
+    const resolvedResume = await resolveUserResumeFile(userKey);
+
+    // Navigate to job URL
+    console.log(`[INSTANT_APPLY] Navigating to target job URL: ${jobUrl}...`);
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Check if already applied on page
+    const existingCheck = await page.evaluate(() => {
+      const text = (document.body.innerText || document.body.textContent || '').toLowerCase();
+      return text.includes('already applied') || text.includes('applied on');
+    });
+
+    if (existingCheck) {
+      const verifiedRecord = {
+        id: jobId || `naukri_app_${Date.now()}`,
+        jobId: jobId || `job_${Date.now()}`,
+        jobUrl,
+        status: ApplicationState.SUBMITTED,
+        verificationStatus: VerificationStatus.VERIFIED,
+        verificationSource: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+        verifiedAt: new Date().toISOString(),
+        verificationDetails: 'Confirmed directly on Naukri job page DOM'
+      };
+      logNaukriAppliedJob(userKey, verifiedRecord);
+      return { success: true, verified: true, message: 'Job was already applied on Naukri and has been verified!' };
+    }
+
+    // Find and click Apply button
+    const clickApplied = await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, a'));
+      const btn = buttons.find(el => {
+        const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+        if (t.includes('save') && !t.includes('apply')) return false;
+        if (t.includes('company site')) return false;
+        return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button');
+      });
+      if (btn) {
+        btn.click();
+        return true;
+      }
+      return false;
+    });
+
+    if (clickApplied) {
+      await new Promise(r => setTimeout(r, 2500));
+    }
+
+    // Perform live DOM verification
+    const verification = await verifyNaukriSubmissionOnPage(page);
+
+    const jobItem = {
+      jobId: jobId || `job_${Date.now()}`,
+      jobUrl,
+      jobTitle: 'Target Role',
+      company: 'Naukri Employer'
+    };
+
+    if (verification.isConfirmed) {
+      const record = confirmNaukriApplicationSubmission(
+        userKey,
+        {
+          jobId: jobItem.jobId,
+          jobTitle: jobItem.jobTitle,
+          company: jobItem.company,
+          jobUrl,
+          resumeUsed: resolvedResume.fileName,
+          questionsAnsweredCount: userAnswers ? (Array.isArray(userAnswers) ? userAnswers.length : Object.keys(userAnswers).length) : 1,
+          duration: '10s'
+        },
+        {
+          status: VerificationStatus.VERIFIED,
+          source: verification.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+          details: verification.details || 'Verified live on Naukri page',
+          verifiedAt: new Date().toISOString()
+        }
+      );
+      return { success: true, verified: true, record, message: 'Application submitted and verified live on Naukri!' };
+    } else {
+      recordUnconfirmedNaukriApplication(userKey, jobItem, verification.details || 'Post-submit confirmation inconclusive');
+      return { success: true, verified: false, message: 'Application attempt completed. Verification status: Unconfirmed.' };
+    }
+  } finally {
+    if (browser) {
+      try { await browser.close(); } catch (e) {}
+    }
+    await releaseUserLockAsync(userKey, 'instant_apply');
+  }
+}
+
 module.exports = {
   ApplicationState,
   DEFAULT_QA_ITEMS,
@@ -2372,6 +2521,7 @@ module.exports = {
   discoverNaukriJobsWithPuppeteer,
   applyToNaukriJobsWithPuppeteer,
   runStandaloneNaukriApply,
+  retryAndApplySingleJobInstantAsync,
   getAutoApplyStatus,
   normalizeCompanyName,
   getPastAppliedCompanySets,

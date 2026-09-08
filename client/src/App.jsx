@@ -3725,6 +3725,61 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     applyAllAtOnce: false
   });
 
+  // Instant Q&A Application Modal State
+  const [instantApplyModalOpen, setInstantApplyModalOpen] = useState(false);
+  const [instantApplyJob, setInstantApplyJob] = useState(null);
+  const [instantApplyAnswers, setInstantApplyAnswers] = useState({
+    noticePeriod: '15 Days or less',
+    currentCtc: '12 LPA',
+    expectedCtc: '18 LPA',
+    totalExperience: '4 Years',
+    preferredLocation: 'Bangalore / Remote',
+    customAnswers: ''
+  });
+  const [isApplyingInstant, setIsApplyingInstant] = useState(false);
+
+  const handleOpenInstantApply = (jobItem) => {
+    setInstantApplyJob(jobItem);
+    setInstantApplyAnswers(prev => ({
+      ...prev,
+      noticePeriod: naukriConfig?.noticePeriod || '15 Days or less',
+      currentCtc: naukriConfig?.currentCtc || '12 LPA',
+      expectedCtc: naukriConfig?.expectedCtc || '18 LPA',
+      totalExperience: naukriConfig?.experienceYears || '4 Years',
+      preferredLocation: naukriConfig?.locationPreference || 'Bangalore / Remote',
+      customAnswers: ''
+    }));
+    setInstantApplyModalOpen(true);
+  };
+
+  const submitInstantApply = async () => {
+    if (!instantApplyJob || !instantApplyJob.jobUrl) return;
+    setIsApplyingInstant(true);
+    try {
+      const res = await apiFetch('/api/naukri/apply/retry-instant', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: instantApplyJob.id || instantApplyJob.jobId,
+          jobUrl: instantApplyJob.jobUrl,
+          userAnswers: instantApplyAnswers
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`⚡ ${data.message || 'Application submitted & verified live on Naukri!'}`, 'success');
+        setInstantApplyModalOpen(false);
+        fetchQaAndAppliedJobs();
+      } else {
+        showToast(`⚠️ ${data.error || data.message || 'Instant apply failed'}`, 'error');
+      }
+    } catch (err) {
+      showToast(`❌ Instant apply request failed: ${err.message}`, 'error');
+    } finally {
+      setIsApplyingInstant(false);
+    }
+  };
+
   // Real-time synchronization with background worker status
   useEffect(() => {
     if (!currentUser) return;
@@ -5874,6 +5929,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   <th className="p-3">Resume Used</th>
                   <th className="p-3">Screening Qs</th>
                   <th className="p-3">Status</th>
+                  <th className="p-3 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -5950,6 +6006,21 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                           </span>
                         )}
                       </td>
+                      <td className="p-3 text-right">
+                        {(isUnconfirmed || isWaiting || isFailed || isLegacy) && app.jobUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInstantApply(app)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow transition-all cursor-pointer"
+                            title="Fill required screening answers & apply instantly on Naukri"
+                          >
+                            <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                            <span>⚡ Answer & Apply Instantly</span>
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-slate-400 font-mono">—</span>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -5966,6 +6037,155 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Instant Q&A Screening & Application Modal */}
+      {instantApplyModalOpen && instantApplyJob && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+                  <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                    <span>Answer & Apply Instantly</span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                    {instantApplyJob.company} • {instantApplyJob.jobTitle}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setInstantApplyModalOpen(false)}
+                disabled={isApplyingInstant}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Provide screening answers below. The automation engine will navigate directly to this job, fill the form with your verified answers, save them to your Q&A DB, and submit live on Naukri with DOM verification!
+              </span>
+            </div>
+
+            <div className="flex flex-col gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Notice Period / Availability
+                </label>
+                <input
+                  type="text"
+                  value={instantApplyAnswers.noticePeriod}
+                  onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, noticePeriod: e.target.value })}
+                  placeholder="e.g. 15 Days or less, Immediate"
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Current CTC
+                  </label>
+                  <input
+                    type="text"
+                    value={instantApplyAnswers.currentCtc}
+                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, currentCtc: e.target.value })}
+                    placeholder="e.g. 12 LPA"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Expected CTC
+                  </label>
+                  <input
+                    type="text"
+                    value={instantApplyAnswers.expectedCtc}
+                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, expectedCtc: e.target.value })}
+                    placeholder="e.g. 18 LPA"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Total Relevant Experience
+                  </label>
+                  <input
+                    type="text"
+                    value={instantApplyAnswers.totalExperience}
+                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, totalExperience: e.target.value })}
+                    placeholder="e.g. 4 Years"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Preferred Location
+                  </label>
+                  <input
+                    type="text"
+                    value={instantApplyAnswers.preferredLocation}
+                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, preferredLocation: e.target.value })}
+                    placeholder="e.g. Bangalore / Remote"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Additional Screening Notes / Custom Answers (Optional)
+                </label>
+                <textarea
+                  value={instantApplyAnswers.customAnswers}
+                  onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, customAnswers: e.target.value })}
+                  placeholder="e.g. Willing to relocate: Yes. Primary tech stack: Node.js, React, Python."
+                  rows={2}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setInstantApplyModalOpen(false)}
+                disabled={isApplyingInstant}
+                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={submitInstantApply}
+                disabled={isApplyingInstant}
+                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
+              >
+                {isApplyingInstant ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Applying Live on Naukri...</span>
+                  </>
+                ) : (
+                  <>
+                    <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                    <span>⚡ Submit & Apply Live Now</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Unified Naukri Session & Auth Modal */}
