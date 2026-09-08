@@ -281,14 +281,17 @@ function generateResumePdf(resumeJson, outputPath) {
       }
 
       if (keywordsToEmbed.length > 0) {
-        const atsText = keywordsToEmbed.join(' • ');
+        // Human-Invisible, 100% ATS-Readable Keyword Layer
+        // Rendered in microscopic white text (#FFFFFF) at the bottom edge so ATS parsers index all JD keywords
+        const atsText = keywordsToEmbed.join(' | ');
         doc.page.margins.bottom = 0;
         doc.font('Helvetica')
            .fontSize(1)
            .fillColor('#FFFFFF')
-           .text(atsText, leftMargin, 836, {
+           .text(atsText, leftMargin, 834, {
              width: contentWidth,
-             lineBreak: false,
+             lineBreak: true,
+             height: 10,
              ellipsis: false
            });
       }

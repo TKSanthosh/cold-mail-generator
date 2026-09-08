@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "AI Resume Tailor & ATS Optimizer",
+  "version": "1.0.0",
+  "description": "Auto-scrapes job descriptions from LinkedIn, Naukri, Indeed & career pages, tailors your resume with AI, and downloads ATS-optimized PDFs instantly.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AI Resume Tailor",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "permissions": [
+    "activeTab",
+    "storage",
+    "downloads",
+    "scripting",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://localhost:5001/*",
+    "http://localhost:5000/*",
+    "http://127.0.0.1:5001/*",
+    "http://127.0.0.1:5000/*",
+    "https://*/*",
+    "http://*/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["content.css"],
+      "run_at": "document_idle"
+    }
+  ]
+}

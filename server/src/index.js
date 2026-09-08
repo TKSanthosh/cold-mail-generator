@@ -758,6 +758,72 @@ app.post('/api/bulk-parse', (req, res) => {
   res.json({ parsed });
 });
 
+function formatTailoredPdfName(candidateName, rawCompany, rawRole) {
+  let candidate = (candidateName || 'Santhosh_TK')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9_]/g, '')
+    .replace(/_+/g, '_');
+  if (candidate === 'Santhosh_T_K') candidate = 'Santhosh_TK';
+
+  // Clean company name
+  let comp = (rawCompany || 'Company')
+    .trim()
+    .replace(/^(the|inc|corp|corporation|llc|ltd|pvt|technologies|solutions)\s+/i, '')
+    .replace(/[\,\|\-].*$/, '')
+    .replace(/\s+(inc|corp|corporation|llc|ltd|pvt|technologies|solutions|india|usa)\.?$/i, '')
+    .trim();
+
+  const compUpper = comp.toUpperCase();
+  if (compUpper.includes('GOOGLE')) comp = 'Google';
+  else if (compUpper.includes('AMAZON') || compUpper.includes('AWS')) comp = 'Amazon';
+  else if (compUpper.includes('MICROSOFT')) comp = 'Microsoft';
+  else if (compUpper.includes('META') || compUpper.includes('FACEBOOK')) comp = 'Meta';
+  else if (compUpper.includes('APPLE')) comp = 'Apple';
+  else if (compUpper.includes('NETFLIX')) comp = 'Netflix';
+  else if (compUpper.includes('SIFY')) comp = 'Sify';
+  else if (compUpper.includes('IQVIA')) comp = 'IQVIA';
+  else if (compUpper.includes('LINKEDIN')) comp = 'LinkedIn';
+  else if (compUpper.includes('ORACLE')) comp = 'Oracle';
+  else {
+    comp = comp.split(/\s+/).slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+  }
+  comp = comp.replace(/[^a-zA-Z0-9]/g, '') || 'Company';
+
+  // Short role name
+  const roleStr = (rawRole || 'SWE').trim();
+  const rLower = roleStr.toLowerCase();
+  let shortRole = 'SWE';
+
+  if (rLower.includes('full stack') || rLower.includes('fullstack')) {
+    shortRole = 'FullStack_SWE';
+  } else if (rLower.includes('backend')) {
+    shortRole = 'Backend_SWE';
+  } else if (rLower.includes('frontend')) {
+    shortRole = 'Frontend_SWE';
+  } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
+    const numMatch = roleStr.match(/(?:iii|ii|iv|vi|ix|viii|vii|v|i|\b[1-9]\b)/i);
+    shortRole = numMatch ? `SDE_${numMatch[0].toUpperCase()}` : 'SDE';
+  } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+    shortRole = 'SWE';
+  } else if (rLower.includes('devops') || rLower.includes('cloud')) {
+    shortRole = 'DevOps';
+  } else if (rLower.includes('system') || rLower.includes('architect')) {
+    shortRole = 'SysArch';
+  } else {
+    shortRole = roleStr
+      .replace(/[,|-].*$/, '')
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+      .join('_')
+      .replace(/[^a-zA-Z0-9_]/g, '');
+  }
+
+  return `${candidate}_${comp}_${shortRole}.pdf`;
+}
+
 // --- DEDICATED JD RESUME TAILOR & APPLICATION LOGS ENDPOINTS (Per-User Sandbox) ---
 app.post('/api/applications/tailor', async (req, res) => {
   let userKey = resolveUserKey(req, res);
@@ -786,6 +852,11 @@ app.post('/api/applications/tailor', async (req, res) => {
       tailoredResume.personalInfo.title = role.trim();
     }
 
+    const displayRole = role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer');
+    const displayCompany = company ? company.trim() : 'Company';
+    const candidateName = tailoredResume.personalInfo?.name || standardResume.personalInfo?.name || 'Santhosh T K';
+    const cleanPdfFilename = formatTailoredPdfName(candidateName, displayCompany, displayRole);
+
     const userPaths = getUserPaths(userKey);
     const appId = `app_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`;
     const pdfFilename = `tailored_resume_${appId}.pdf`;
@@ -810,14 +881,15 @@ app.post('/api/applications/tailor', async (req, res) => {
     const newApplication = {
       id: appId,
       timestamp: new Date().toISOString(),
-      role: role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer'),
-      company: company ? company.trim() : 'Target Company',
+      role: displayRole,
+      company: displayCompany,
       jd: jd.trim(),
       jdSnippet: jd.trim().slice(0, 180) + (jd.trim().length > 180 ? '...' : ''),
       matchedSkills,
       atsScore,
       tailoredResume,
       pdfFilename,
+      downloadName: cleanPdfFilename,
       downloadUrl,
       status: 'Tailored & Ready'
     };
@@ -832,6 +904,7 @@ app.post('/api/applications/tailor', async (req, res) => {
       atsScore,
       matchedSkills,
       downloadUrl,
+      pdfFilename: cleanPdfFilename,
       userKey
     });
   } catch (e) {
@@ -900,10 +973,9 @@ app.get('/api/applications/:id/pdf', (req, res) => {
   }
 
   const candidateName = appItem.tailoredResume?.personalInfo?.name || 'Santhosh T K';
-  const roleName = (appItem.role || 'Resume').replace(/[^a-zA-Z0-9]+/g, '_');
-  const companyName = (appItem.company || 'Application').replace(/[^a-zA-Z0-9]+/g, '_');
-  const downloadName = `${candidateName.replace(/[^a-zA-Z0-9]+/g, '_')}_${roleName}_${companyName}.pdf`;
+  const downloadName = appItem.downloadName || formatTailoredPdfName(candidateName, appItem.company, appItem.role);
 
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
   res.download(pdfPath, downloadName);
 });
 

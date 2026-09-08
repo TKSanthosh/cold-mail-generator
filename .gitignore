@@ -31,6 +31,8 @@ server/users/
 server/data/
 *.pdf
 *.png
+!extension/icons/*.png
+*.log
 test_*.js
 !test_e2e_live.js
 !test_suite.js

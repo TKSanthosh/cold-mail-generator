@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Resume Tailor & ATS Optimizer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <div class="app-container">
+    <!-- TOP NAVBAR -->
+    <header class="navbar">
+      <div class="brand">
+        <div class="brand-logo">⚡</div>
+        <div>
+          <h1 class="brand-title">Resume Tailor</h1>
+          <span class="brand-version">ATS Booster v1.0</span>
+        </div>
+      </div>
+      <div class="nav-actions">
+        <div class="status-indicator" id="server-status" title="Checking server...">
+          <span class="status-dot"></span>
+          <span class="status-text" id="server-status-label">Localhost</span>
+        </div>
+        <button class="icon-btn" id="btn-toggle-settings" title="Settings">⚙️</button>
+      </div>
+    </header>
+
+    <!-- MAIN VIEW -->
+    <main class="view" id="view-main">
+      <!-- DETECTED PAGE INFO -->
+      <section class="card job-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="card-badge" id="badge-source">Active Tab</span>
+            <span class="card-hint" id="label-detected-status">Scanning page...</span>
+          </div>
+          <button class="rescan-btn" id="btn-rescan" title="Scan tab again">🔄 Scan Page</button>
+        </div>
+
+        <div class="form-grid">
+          <div class="field-group">
+            <label for="input-role">Target Role</label>
+            <input type="text" id="input-role" placeholder="e.g. Software Engineer" />
+          </div>
+          <div class="field-group">
+            <label for="input-company">Company</label>
+            <input type="text" id="input-company" placeholder="e.g. Google" />
+          </div>
+        </div>
+
+        <div class="field-group jd-field">
+          <div class="jd-header">
+            <label for="input-jd">Job Description (JD)</label>
+            <span class="char-count" id="badge-jd-count">0 characters</span>
+          </div>
+          <textarea id="input-jd" rows="4" placeholder="Job description will be extracted automatically from the active tab, or paste it here..."></textarea>
+        </div>
+      </section>
+
+      <!-- PRIMARY ACTION BUTTON -->
+      <div class="action-wrap" id="wrap-action">
+        <button class="cta-btn" id="btn-generate">
+          <span class="btn-sparkle">⚡</span>
+          <span>Optimize Resume for this Role</span>
+        </button>
+      </div>
+
+      <!-- LOADING STATE -->
+      <div class="card state-card hidden" id="state-loading">
+        <div class="spinner"></div>
+        <div class="state-text">
+          <h4 id="loading-heading">Tailoring Resume with AI...</h4>
+          <p id="loading-sub">Aligning skills, keywords & formatting 1-page PDF</p>
+        </div>
+      </div>
+
+      <!-- RESULTS SECTION -->
+      <section class="card result-card hidden" id="state-result">
+        <div class="result-header">
+          <div class="score-container">
+            <div class="score-circle">
+              <span class="score-val" id="res-score">96%</span>
+            </div>
+            <div>
+              <span class="score-title">ATS Match Score</span>
+              <span class="score-subtitle">High Probability of Shortlist</span>
+            </div>
+          </div>
+          <span class="badge-ready">Ready to Apply</span>
+        </div>
+
+        <!-- MATCHED SKILLS -->
+        <div class="result-block">
+          <span class="section-label">Matched Keywords & Skills</span>
+          <div class="chips-container" id="res-skills">
+            <!-- Chips injected by JS -->
+          </div>
+        </div>
+
+        <!-- TAILORED SUMMARY -->
+        <div class="result-block">
+          <div class="summary-header">
+            <span class="section-label">Tailored Profile Pitch</span>
+            <button class="tiny-copy-btn" id="btn-copy-summary">📋 Copy</button>
+          </div>
+          <div class="summary-box" id="res-summary">
+            <!-- Summary injected by JS -->
+          </div>
+        </div>
+
+        <!-- DOWNLOAD & COLD EMAIL CTAS -->
+        <div class="button-row">
+          <button class="primary-download-btn" id="btn-download-pdf">
+            📥 Download ATS PDF
+          </button>
+          <button class="secondary-email-btn" id="btn-open-email">
+            ✉️ Recruiter Email
+          </button>
+        </div>
+      </section>
+
+      <!-- COLD EMAIL MODAL DRAWER -->
+      <div class="email-drawer hidden" id="state-email-drawer">
+        <div class="drawer-header">
+          <span class="drawer-title">✉️ Tailored Cold Email</span>
+          <button class="close-drawer-btn" id="btn-close-drawer">&times;</button>
+        </div>
+        <div class="drawer-body">
+          <div class="field-group">
+            <label>Subject</label>
+            <input type="text" id="email-subject" readonly />
+          </div>
+          <div class="field-group">
+            <label>Body</label>
+            <textarea id="email-body" rows="6" readonly></textarea>
+          </div>
+          <button class="copy-email-btn" id="btn-copy-email">📋 Copy Email Text</button>
+        </div>
+      </div>
+
+      <!-- ERROR NOTIFICATION -->
+      <div class="toast-error hidden" id="state-error">
+        <span class="toast-icon">⚠️</span>
+        <span class="toast-msg" id="error-message">Server error</span>
+      </div>
+    </main>
+
+    <!-- SETTINGS VIEW -->
+    <section class="view hidden" id="view-settings">
+      <div class="settings-card">
+        <div class="settings-header">
+          <h3>Extension Configuration</h3>
+          <p>Connect with your Cold Mail & Resume Generator</p>
+        </div>
+
+        <div class="field-group">
+          <label for="set-server-url">Backend Server URL</label>
+          <input type="text" id="set-server-url" value="http://localhost:5001" placeholder="http://localhost:5001" />
+          <span class="field-desc">Default local server running on port 5001</span>
+        </div>
+
+        <div class="field-group">
+          <label for="set-user-key">User Profile Key</label>
+          <input type="text" id="set-user-key" value="tksanthosh494_gmail_com" placeholder="tksanthosh494_gmail_com" />
+          <span class="field-desc">Unique key corresponding to your resume profile</span>
+        </div>
+
+        <div class="toggle-group">
+          <label class="switch-label">
+            <input type="checkbox" id="set-auto-pilot" />
+            <span class="switch-text">🤖 Autonomous Auto-Pilot (Auto-detect & generate on page open)</span>
+          </label>
+        </div>
+
+        <div class="toggle-group">
+          <label class="switch-label">
+            <input type="checkbox" id="set-auto-widget" checked />
+            <span class="switch-text">Show floating "⚡ Optimize" button on job pages</span>
+          </label>
+        </div>
+
+        <div class="toggle-group">
+          <label class="switch-label">
+            <input type="checkbox" id="set-auto-download" checked />
+            <span class="switch-text">Auto-download PDF immediately upon generation</span>
+          </label>
+        </div>
+
+        <div class="settings-actions">
+          <button class="secondary-btn" id="btn-test-server">Test Connection</button>
+          <button class="primary-btn" id="btn-save-settings">Save & Close</button>
+        </div>
+
+        <div class="test-result hidden" id="test-result-box"></div>
+      </div>
+    </section>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
