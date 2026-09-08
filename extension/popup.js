@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const badgeSource = document.getElementById('badge-source');
   const labelDetectedStatus = document.getElementById('label-detected-status');
   const btnRescan = document.getElementById('btn-rescan');
+  const btnTogglePause = document.getElementById('btn-toggle-pause');
   const inputRole = document.getElementById('input-role');
   const inputCompany = document.getElementById('input-company');
   const inputJd = document.getElementById('input-jd');
@@ -104,6 +105,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
+      if (tab && tab.url) {
+        updatePauseButtonState(tab.url);
+      }
+
       const applyJobData = (d) => {
         if (!d) {
           labelDetectedStatus.innerText = 'No JD found on page (paste below)';
@@ -158,6 +163,61 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) {
       labelDetectedStatus.innerText = 'Paste JD below';
     }
+  }
+
+  let activeDomain = '';
+
+  function updatePauseButtonState(tabUrl) {
+    if (!btnTogglePause) return;
+    try {
+      const urlObj = new URL(tabUrl || '');
+      activeDomain = urlObj.hostname.toLowerCase();
+    } catch (e) {
+      activeDomain = '';
+    }
+
+    if (!activeDomain) {
+      btnTogglePause.style.display = 'none';
+      return;
+    }
+
+    btnTogglePause.style.display = 'inline-block';
+    chrome.storage.sync.get({ pausedSites: [] }, (data) => {
+      const list = data.pausedSites || [];
+      const isPaused = list.some(d => d.toLowerCase() === activeDomain);
+      if (isPaused) {
+        btnTogglePause.classList.add('paused');
+        btnTogglePause.innerText = `▶️ Resume on ${activeDomain}`;
+        btnTogglePause.title = `Click to resume AI features on ${activeDomain}`;
+      } else {
+        btnTogglePause.classList.remove('paused');
+        btnTogglePause.innerText = `⏸️ Stop for ${activeDomain}`;
+        btnTogglePause.title = `Click to stop/pause AI features on ${activeDomain}`;
+      }
+    });
+  }
+
+  if (btnTogglePause) {
+    btnTogglePause.addEventListener('click', () => {
+      if (!activeDomain) return;
+      chrome.storage.sync.get({ pausedSites: [] }, (data) => {
+        let list = data.pausedSites || [];
+        const index = list.findIndex(d => d.toLowerCase() === activeDomain);
+        if (index >= 0) {
+          list.splice(index, 1);
+        } else {
+          list.push(activeDomain);
+        }
+        chrome.storage.sync.set({ pausedSites: list }, () => {
+          updatePauseButtonState(`https://${activeDomain}`);
+          chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+            if (tabs[0] && tabs[0].id) {
+              chrome.tabs.sendMessage(tabs[0].id, { action: 'SITE_PAUSE_UPDATED' }).catch(() => {});
+            }
+          });
+        });
+      });
+    });
   }
 
   function updateCharCount() {

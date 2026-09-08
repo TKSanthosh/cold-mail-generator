@@ -11,6 +11,47 @@
   let floatingBtn = null;
   let floatingModal = null;
 
+  // --- SITE PAUSE / STOP CONTROL ENGINE ---
+  function getDomainFromUrl(url) {
+    try {
+      return new URL(url || window.location.href).hostname.toLowerCase();
+    } catch (e) {
+      return window.location.hostname.toLowerCase();
+    }
+  }
+
+  async function isSitePaused() {
+    return new Promise(resolve => {
+      const domain = getDomainFromUrl();
+      chrome.storage.sync.get({ pausedSites: [] }, (res) => {
+        const list = res.pausedSites || [];
+        const paused = list.some(d => d.toLowerCase() === domain);
+        resolve(paused);
+      });
+    });
+  }
+
+  async function toggleSitePause() {
+    const domain = getDomainFromUrl();
+    return new Promise(resolve => {
+      chrome.storage.sync.get({ pausedSites: [] }, (res) => {
+        let list = res.pausedSites || [];
+        const idx = list.findIndex(d => d.toLowerCase() === domain);
+        let nowPaused = false;
+        if (idx >= 0) {
+          list.splice(idx, 1);
+          nowPaused = false;
+        } else {
+          list.push(domain);
+          nowPaused = true;
+        }
+        chrome.storage.sync.set({ pausedSites: list }, () => {
+          resolve({ paused: nowPaused, domain });
+        });
+      });
+    });
+  }
+
   // --- STRICT DOMAIN & JOB VALIDATION TO PREVENT SPAM ---
   const BLACKLISTED_HOSTS = [
     'mail.google.com',
@@ -536,22 +577,53 @@
 
   // --- IN-PAGE FLOATING ACTION WIDGET & MODAL ---
 
-  function createFloatingButton() {
-    if (document.getElementById('air-floating-trigger')) return;
+  async function renderFloatingButtonState() {
+    if (!floatingBtn) return;
+    const paused = await isSitePaused();
+    if (paused) {
+      floatingBtn.classList.add('air-fab-paused');
+      floatingBtn.title = 'Extension paused for this site. Click to Resume.';
+      floatingBtn.innerHTML = `
+        <div class="air-fab-inner">
+          <span class="air-fab-icon">⏸️</span>
+          <span class="air-fab-text">Paused (Click to Resume)</span>
+        </div>
+      `;
+    } else {
+      floatingBtn.classList.remove('air-fab-paused');
+      floatingBtn.title = 'Optimize Resume for this job';
+      floatingBtn.innerHTML = `
+        <div class="air-fab-inner">
+          <span class="air-fab-icon">⚡</span>
+          <span class="air-fab-text">Optimize Resume</span>
+        </div>
+      `;
+    }
+  }
+
+  async function createFloatingButton() {
+    if (document.getElementById('air-floating-trigger')) {
+      floatingBtn = document.getElementById('air-floating-trigger');
+      await renderFloatingButtonState();
+      return;
+    }
 
     floatingBtn = document.createElement('div');
     floatingBtn.id = 'air-floating-trigger';
     floatingBtn.className = 'air-fab';
-    floatingBtn.innerHTML = `
-      <div class="air-fab-inner">
-        <span class="air-fab-icon">⚡</span>
-        <span class="air-fab-text">Optimize Resume</span>
-      </div>
-    `;
 
-    floatingBtn.addEventListener('click', (e) => {
+    await renderFloatingButtonState();
+
+    floatingBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      openModalWithData();
+      const paused = await isSitePaused();
+      if (paused) {
+        const { domain } = await toggleSitePause();
+        showQaFeedbackBadge(`▶️ Extension Resumed for ${domain}!`);
+        await renderFloatingButtonState();
+      } else {
+        openModalWithData();
+      }
     });
 
     document.body.appendChild(floatingBtn);
@@ -575,7 +647,10 @@
               <p class="air-modal-subtitle">Auto-tailor to this Job Description</p>
             </div>
           </div>
-          <button class="air-close-btn" id="air-modal-close" title="Close">&times;</button>
+          <div class="air-modal-header-actions">
+            <button class="air-pause-btn" id="air-modal-pause" title="Pause or Stop extension for this domain">⏸️ Stop for Page</button>
+            <button class="air-close-btn" id="air-modal-close" title="Close">&times;</button>
+          </div>
         </div>
 
         <div class="air-modal-body">
@@ -659,6 +734,12 @@
     // Event handlers
     document.getElementById('air-modal-close').addEventListener('click', closeModal);
     document.getElementById('air-backdrop').addEventListener('click', closeModal);
+    document.getElementById('air-modal-pause').addEventListener('click', async () => {
+      const { domain } = await toggleSitePause();
+      closeModal();
+      await renderFloatingButtonState();
+      showQaFeedbackBadge(`⏸️ Extension Paused for ${domain}! Click paused button to resume.`);
+    });
     document.getElementById('air-btn-generate').addEventListener('click', onGenerateClicked);
     document.getElementById('air-input-jd').addEventListener('input', updateCharCount);
 
@@ -879,8 +960,9 @@
   // --- ON-DEMAND JOB PROMPT & RESUME GENERATOR ---
   let jobPromptBanner = null;
 
-  function showJobPromptPopup(data) {
+  async function showJobPromptPopup(data) {
     if (!data || !data.jd) return;
+    if (await isSitePaused()) return;
 
     const pageKey = 'air_prompted_' + window.location.pathname + '_' + (data.role || '').slice(0, 15);
     if (sessionStorage.getItem(pageKey) === 'dismissed') {
@@ -1116,6 +1198,12 @@
 
   // --- MESSAGE LISTENER FROM POPUP & BACKGROUND ---
   chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    if (request.action === 'SITE_PAUSE_UPDATED') {
+      renderFloatingButtonState();
+      sendResponse({ success: true });
+      return true;
+    }
+
     if (request.action === 'GET_PAGE_JD') {
       const data = scrapeJobData(true) || {};
       sendResponse({
@@ -1294,7 +1382,8 @@
     return found || null;
   }
 
-  function showQaMemoryToast(inputEl, qaItem) {
+  async function showQaMemoryToast(inputEl, qaItem) {
+    if (await isSitePaused()) return;
     if (!inputEl || !qaItem || !qaItem.answer) return;
 
     const currentVal = (inputEl.value || '').trim();
@@ -1331,6 +1420,7 @@
         <div class="air-qa-actions">
           <button type="button" class="air-qa-btn primary" id="air-qa-use-btn">⚡ Use Previously Chosen</button>
           ${isDifferent ? `<button type="button" class="air-qa-btn update-btn" id="air-qa-update-btn">✏️ Update DB to "${currentVal}"</button>` : ''}
+          <button type="button" class="air-qa-btn pause-btn" id="air-qa-pause-btn" title="Pause Q&A tracking on this domain">⏸️ Stop for Page</button>
           <button type="button" class="air-qa-close" id="air-qa-close-btn">&times;</button>
         </div>
       </div>
@@ -1356,6 +1446,17 @@
         e.preventDefault();
         saveOrUpdateQaAnswer(qaItem.question, currentVal, qaItem.id);
         hideQaToast();
+      };
+    }
+
+    const pauseBtn = activeQaToast.querySelector('#air-qa-pause-btn');
+    if (pauseBtn) {
+      pauseBtn.onclick = async (e) => {
+        e.preventDefault();
+        const { domain } = await toggleSitePause();
+        hideQaToast();
+        await renderFloatingButtonState();
+        showQaFeedbackBadge(`⏸️ Q&A Tracking Paused for ${domain}!`);
       };
     }
 
@@ -1407,7 +1508,8 @@
   function initQaTracker() {
     syncQaMemory();
 
-    document.addEventListener('focusin', (e) => {
+    document.addEventListener('focusin', async (e) => {
+      if (await isSitePaused()) return;
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
@@ -1420,7 +1522,8 @@
       }
     });
 
-    document.addEventListener('change', (e) => {
+    document.addEventListener('change', async (e) => {
+      if (await isSitePaused()) return;
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
@@ -1436,7 +1539,8 @@
       }
     });
 
-    document.addEventListener('submit', (e) => {
+    document.addEventListener('submit', async (e) => {
+      if (await isSitePaused()) return;
       const form = e.target;
       if (form && form.querySelectorAll) {
         const inputs = form.querySelectorAll('input, select, textarea');

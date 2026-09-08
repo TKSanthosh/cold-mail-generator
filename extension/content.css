@@ -780,3 +780,50 @@
   opacity: 1 !important;
   transform: translateY(0) !important;
 }
+
+/* Modal Header Action Group & Pause Button */
+.air-modal-header-actions {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.air-pause-btn {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+  border-radius: 6px !important;
+  padding: 4px 10px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  cursor: pointer !important;
+  transition: all 0.15s ease !important;
+}
+
+.air-pause-btn:hover {
+  background: rgba(245, 158, 11, 0.25) !important;
+  color: #fbbf24 !important;
+}
+
+/* Paused Floating Button Pill */
+.air-fab-paused {
+  background: linear-gradient(135deg, #475569 0%, #334155 100%) !important;
+  box-shadow: 0 4px 16px rgba(51, 65, 85, 0.4) !important;
+  border: 1px solid rgba(148, 163, 184, 0.3) !important;
+}
+
+.air-fab-paused:hover {
+  background: linear-gradient(135deg, #64748b 0%, #475569 100%) !important;
+}
+
+/* Q&A Popover Pause Button */
+.air-qa-btn.pause-btn {
+  background: rgba(245, 158, 11, 0.15) !important;
+  color: #f59e0b !important;
+  border: 1px solid rgba(245, 158, 11, 0.3) !important;
+}
+
+.air-qa-btn.pause-btn:hover {
+  background: rgba(245, 158, 11, 0.25) !important;
+  color: #fbbf24 !important;
+}
