@@ -58,10 +58,11 @@ const DEFAULT_FILTER_CONFIG = {
   experienceMax: 6,
   locations: ['Bangalore', 'Bengaluru', 'Remote'],
   remotePreference: 'any', // 'any', 'remote', 'hybrid', 'onsite'
-  maxJobsPerCompanyPerRun: 2, // Configurable company diversity limit (max 1 or 2 per company per run)
+  maxJobsPerCompanyPerRun: 1, // Strict company diversity limit (max 1 per company)
   maxJobsPerRun: 12,
   dailyTarget: 50,
   easyApplyOnly: true,
+  neverApplySameCompanyTwice: true, // Permanent company deduplication: never apply to the same company again
   excludedCompanies: [],
   excludedJobTitles: [],
   minRelevanceScore: 40
@@ -902,6 +903,146 @@ function recordUnconfirmedNaukriApplication(userKey, jobItem, reason = 'Naukri p
 }
 
 /**
+ * Company Name Normalizer
+ * Strips common legal suffixes and cleans whitespace to ensure robust deduplication
+ * E.g. "Fornax Technology Services Private Limited" -> "fornax"
+ *      "Swiggy India Pvt Ltd" -> "swiggy"
+ */
+function normalizeCompanyName(company) {
+  if (!company || typeof company !== 'string') return '';
+  return company
+    .toLowerCase()
+    .replace(/\b(private|pvt|ltd|limited|inc|llc|technologies|technology|tech|solutions|services|corp|corporation|group|india|enterprises|systems|software)\b/gi, '')
+    .replace(/[^a-z0-9]/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extracts exact and normalized company sets from applied jobs history
+ */
+function getPastAppliedCompanySets(allApps) {
+  const exactCompanySet = new Set();
+  const normalizedCompanySet = new Set();
+
+  if (Array.isArray(allApps)) {
+    for (const app of allApps) {
+      if (app && app.company) {
+        const exact = app.company.toLowerCase().trim();
+        exactCompanySet.add(exact);
+        const norm = normalizeCompanyName(exact);
+        if (norm) normalizedCompanySet.add(norm);
+      }
+    }
+  }
+  return { exactCompanySet, normalizedCompanySet };
+}
+
+/**
+ * Aggregates Applied Jobs by Company & Role (Directory Log)
+ * Returns unique companies with all roles applied, timestamps, and direct URLs
+ */
+function getNaukriCompanyApplicationSummary(userKey) {
+  const allApps = getNaukriAppliedJobs(userKey);
+  const companyMap = new Map();
+
+  for (const app of allApps) {
+    const rawCompany = (app.company || 'Unknown Company').trim();
+    const normKey = normalizeCompanyName(rawCompany) || rawCompany.toLowerCase();
+
+    if (!companyMap.has(normKey)) {
+      companyMap.set(normKey, {
+        company: rawCompany,
+        normalizedCompany: normKey,
+        roles: [],
+        applications: [],
+        totalApplied: 0,
+        lastAppliedAt: app.appliedAt || null,
+        status: app.status || 'SUBMITTED',
+        verificationStatus: app.verificationStatus || 'VERIFIED',
+        latestJobUrl: app.jobUrl || 'https://www.naukri.com/'
+      });
+    }
+
+    const entry = companyMap.get(normKey);
+    const roleTitle = app.jobTitle || 'Developer';
+    if (!entry.roles.includes(roleTitle)) {
+      entry.roles.push(roleTitle);
+    }
+    entry.applications.push({
+      id: app.id,
+      jobId: app.jobId,
+      jobTitle: roleTitle,
+      jobUrl: app.jobUrl,
+      location: app.location,
+      appliedAt: app.appliedAt,
+      status: app.status,
+      verificationStatus: app.verificationStatus
+    });
+    entry.totalApplied++;
+
+    if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
+      entry.lastAppliedAt = app.appliedAt;
+      if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
+    }
+  }
+
+  return Array.from(companyMap.values()).sort((a, b) => {
+    return new Date(b.lastAppliedAt || 0) - new Date(a.lastAppliedAt || 0);
+  });
+}
+
+async function getNaukriCompanyApplicationSummaryAsync(userKey) {
+  const allApps = await getNaukriAppliedJobsAsync(userKey);
+  const companyMap = new Map();
+
+  for (const app of allApps) {
+    const rawCompany = (app.company || 'Unknown Company').trim();
+    const normKey = normalizeCompanyName(rawCompany) || rawCompany.toLowerCase();
+
+    if (!companyMap.has(normKey)) {
+      companyMap.set(normKey, {
+        company: rawCompany,
+        normalizedCompany: normKey,
+        roles: [],
+        applications: [],
+        totalApplied: 0,
+        lastAppliedAt: app.appliedAt || null,
+        status: app.status || 'SUBMITTED',
+        verificationStatus: app.verificationStatus || 'VERIFIED',
+        latestJobUrl: app.jobUrl || 'https://www.naukri.com/'
+      });
+    }
+
+    const entry = companyMap.get(normKey);
+    const roleTitle = app.jobTitle || 'Developer';
+    if (!entry.roles.includes(roleTitle)) {
+      entry.roles.push(roleTitle);
+    }
+    entry.applications.push({
+      id: app.id,
+      jobId: app.jobId,
+      jobTitle: roleTitle,
+      jobUrl: app.jobUrl,
+      location: app.location,
+      appliedAt: app.appliedAt,
+      status: app.status,
+      verificationStatus: app.verificationStatus
+    });
+    entry.totalApplied++;
+
+    if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
+      entry.lastAppliedAt = app.appliedAt;
+      if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
+    }
+  }
+
+  return Array.from(companyMap.values()).sort((a, b) => {
+    return new Date(b.lastAppliedAt || 0) - new Date(a.lastAppliedAt || 0);
+  });
+}
+
+/**
  * Strict Daily Target & Applications Metric Calculator
  * Counts ONLY confirmed SUBMITTED applications today with explicit verification evidence (VERIFIED / RECONCILED).
  * Does not count WAITING, FAILED, SKIPPED, LEGACY_UNVERIFIED, or UNCONFIRMED submissions.
@@ -1029,22 +1170,37 @@ function calculateJobRelevanceScore(job, filterConfig) {
 
 /**
  * Company Diversity Interleaver & Queue Builder
- * Prevents any company from dominating the application queue.
+ * Prevents any company from dominating the application queue and strictly excludes
+ * companies that have already been applied to previously.
  */
-function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedSet) {
-  const maxPerCompany = filterConfig.maxJobsPerCompanyPerRun || 2;
+function buildDiverseApplicationQueue(discoveredJobs, filterConfig = {}, pastAppliedSet = null, pastAppliedCompanies = null) {
+  const strictCompanyDedup = filterConfig.neverApplySameCompanyTwice !== false;
+  const maxPerCompany = strictCompanyDedup ? 1 : (filterConfig.maxJobsPerCompanyPerRun || 1);
   const filteredJobs = [];
 
-  // Filter out already applied jobs and low relevance score
+  const activeExactCompSet = (pastAppliedCompanies && pastAppliedCompanies.exactCompanySet) ? new Set(pastAppliedCompanies.exactCompanySet) : new Set();
+  const activeNormCompSet = (pastAppliedCompanies && pastAppliedCompanies.normalizedCompanySet) ? new Set(pastAppliedCompanies.normalizedCompanySet) : new Set();
+
+  // Filter out already applied jobs, duplicate companies, and low relevance scores
   for (const job of discoveredJobs) {
     const canonicalId = job.jobId || '';
     const cleanUrl = (job.url || '').split('?')[0].toLowerCase().trim();
-    const dedupKey = `${job.company.toLowerCase().trim()}___${job.title.toLowerCase().trim()}`;
+    const compRaw = (job.company || '').toLowerCase().trim();
+    const compNorm = normalizeCompanyName(compRaw);
+    const dedupKey = `${compRaw}___${(job.title || '').toLowerCase().trim()}`;
 
     if (pastAppliedSet) {
       if (canonicalId && pastAppliedSet.has(canonicalId)) continue;
       if (cleanUrl && pastAppliedSet.has(cleanUrl)) continue;
       if (pastAppliedSet.has(dedupKey)) continue;
+    }
+
+    // STRICT COMPANY EXCLUSION: Never apply to the same company again!
+    if (strictCompanyDedup) {
+      if (activeExactCompSet.has(compRaw) || (compNorm && activeNormCompSet.has(compNorm))) {
+        console.log(`[COMPANY_EXCLUDED] Skipping job "${job.title}" at "${job.company}" - This company was already applied to previously.`);
+        continue;
+      }
     }
 
     const score = (typeof job.score === 'number') ? job.score : calculateJobRelevanceScore(job, filterConfig);
@@ -1056,7 +1212,7 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
   // Group by company
   const companyBuckets = new Map();
   for (const job of filteredJobs) {
-    const compKey = job.company.toLowerCase().trim();
+    const compKey = (job.company || '').toLowerCase().trim();
     if (!companyBuckets.has(compKey)) {
       companyBuckets.set(compKey, []);
     }
@@ -1078,14 +1234,16 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
     return topB - topA;
   });
 
-  // Round-robin interleaving
+  // Interleave and track companies so no duplicate company is ever queued
   const finalQueue = [];
+  const queuedCompanySet = new Set();
   let hasMore = true;
   let round = 0;
 
   while (hasMore && round < maxPerCompany) {
     hasMore = false;
     for (const comp of companies) {
+      if (strictCompanyDedup && queuedCompanySet.has(comp)) continue;
       const bucket = companyBuckets.get(comp);
       if (bucket && bucket[round]) {
         finalQueue.push({
@@ -1100,6 +1258,10 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig, pastAppliedS
           state: ApplicationState.QUEUED,
           createdAt: new Date().toISOString()
         });
+        queuedCompanySet.add(comp);
+        activeExactCompSet.add(comp);
+        const norm = normalizeCompanyName(comp);
+        if (norm) activeNormCompSet.add(norm);
         hasMore = true;
       }
     }
@@ -1529,9 +1691,12 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   const qaDb = await getQaDatabaseAsync(userKey);
   console.log(`[Q&A] Loaded ${qaDb.length} verified recruiter Q&A records directly from database.`);
 
-  // 4. Load Past Applied Records for Deduplication
+  // 4. Load Past Applied Records for Strict Deduplication
   const pastAppliedList = await getNaukriAppliedJobsAsync(userKey);
   const pastAppliedSet = new Set();
+  const pastAppliedCompanies = getPastAppliedCompanySets(pastAppliedList);
+  const appliedCompaniesThisRun = new Set();
+
   for (const j of pastAppliedList) {
     if (j.jobId) pastAppliedSet.add(j.jobId);
     if (j.jobUrl) pastAppliedSet.add(j.jobUrl.split('?')[0].toLowerCase().trim());
@@ -1542,9 +1707,9 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   console.log(`[SEARCH] Discovering jobs on Naukri...`);
   const rawDiscovered = await discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig);
 
-  // 6. Build Diverse Ranked Queue
-  console.log(`[DIVERSITY] Applying company diversity rules (Max ${filterConfig.maxJobsPerCompanyPerRun || 2} per company)...`);
-  const freshDiverseQueue = buildDiverseApplicationQueue(rawDiscovered, filterConfig, pastAppliedSet);
+  // 6. Build Diverse Ranked Queue (strictly excluding previously applied companies)
+  console.log(`[DIVERSITY] Applying company diversity rules & strict company deduplication (never apply same company twice)...`);
+  const freshDiverseQueue = buildDiverseApplicationQueue(rawDiscovered, filterConfig, pastAppliedSet, pastAppliedCompanies);
 
   // Merge: Prioritize ready-to-resume jobs at the front, then new diverse jobs
   const combinedQueue = [
@@ -1569,6 +1734,26 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   for (let i = 0; i < jobsToProcess.length; i++) {
     const jobItem = jobsToProcess[i];
     const jobStartTime = Date.now();
+
+    // Strict Company Deduplication Check before navigating
+    if (filterConfig.neverApplySameCompanyTwice !== false) {
+      const compRaw = (jobItem.company || '').toLowerCase().trim();
+      const compNorm = normalizeCompanyName(compRaw);
+      const alreadyApplied = appliedCompaniesThisRun.has(compRaw) ||
+                             pastAppliedCompanies.exactCompanySet.has(compRaw) ||
+                             (compNorm && (appliedCompaniesThisRun.has(compNorm) || pastAppliedCompanies.normalizedCompanySet.has(compNorm)));
+
+      if (alreadyApplied) {
+        console.log(`[COMPANY_DEDUP] Skipping application for "${jobItem.jobTitle}" at "${jobItem.company}" - Company already applied to.`);
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.SKIPPED,
+          stage: 'Skipped - Company Already Applied To Previously',
+          failureStage: 'Company Deduplication'
+        });
+        continue;
+      }
+    }
+
     activeApplyJobState.progress.current = i + 1;
     activeApplyJobState.progress.currentJob = `${jobItem.jobTitle} at ${jobItem.company}`;
     activeApplyJobState.progress.status = `Applying to ${jobItem.company}...`;
@@ -2016,6 +2201,14 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
 
   let browser = null;
   try {
+    activeApplyJobState.running = true;
+    activeApplyJobState.progress = {
+      current: 1,
+      total: customOptions.maxJobsPerRun || 12,
+      currentJob: '',
+      status: 'Connecting to Naukri session & initializing browser...'
+    };
+
     const config = await getNaukriConfigAsync(userKey);
     let browserPath = findBrowserExecutable();
     const launchOptions = {
@@ -2072,6 +2265,7 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
 
     return await applyToNaukriJobsWithPuppeteer(page, userKey, customOptions);
   } finally {
+    activeApplyJobState.running = false;
     if (browser) {
       try { await browser.close(); } catch (e) {}
     }
@@ -2080,9 +2274,9 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
 }
 
 module.exports = {
+  ApplicationState,
   DEFAULT_QA_ITEMS,
   DEFAULT_FILTER_CONFIG,
-  ApplicationState,
   getFilterConfig,
   saveFilterConfig,
   getQaDatabase,
@@ -2121,5 +2315,9 @@ module.exports = {
   discoverNaukriJobsWithPuppeteer,
   applyToNaukriJobsWithPuppeteer,
   runStandaloneNaukriApply,
-  getAutoApplyStatus
+  getAutoApplyStatus,
+  normalizeCompanyName,
+  getPastAppliedCompanySets,
+  getNaukriCompanyApplicationSummary,
+  getNaukriCompanyApplicationSummaryAsync
 };

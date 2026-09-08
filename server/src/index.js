@@ -90,7 +90,8 @@ const {
   clearNaukriQueue,
   runStandaloneNaukriApply,
   reconcileNaukriAppliedJobs,
-  getAutoApplyStatus
+  getAutoApplyStatus,
+  getNaukriCompanyApplicationSummary
 } = require('./services/naukri_apply.service');
 
 const app = express();
@@ -1129,25 +1130,50 @@ app.post('/api/naukri/queue/update', (req, res) => {
   res.json({ success: true, item: updated, queue: getNaukriQueue(userKey) });
 });
 
-// Live Easy Apply Execution (with database resume resolution & zero hallucination)
+// Live Easy Apply Execution (Asynchronous non-blocking trigger with real-time status stream)
 app.post('/api/naukri/apply/start', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const options = req.body || {};
-  try {
-    const result = await runStandaloneNaukriApply(userKey, options);
-    res.json(result);
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+  const currentStatus = getAutoApplyStatus();
+
+  if (currentStatus && currentStatus.running) {
+    return res.json({
+      success: true,
+      started: false,
+      alreadyRunning: true,
+      message: 'Naukri Auto-Apply is already in progress.',
+      status: currentStatus
+    });
   }
+
+  // Start in background without hanging client HTTP request
+  runStandaloneNaukriApply(userKey, options).catch(err => {
+    console.warn(`[ASYNC EASY APPLY WARN for ${userKey}]:`, err.message);
+  });
+
+  res.json({
+    success: true,
+    started: true,
+    message: 'Easy Apply started in background.',
+    status: getAutoApplyStatus()
+  });
 });
 
 app.get('/api/naukri/apply/history', (req, res) => {
   const userKey = resolveUserKey(req, res);
   res.json({
     applications: getNaukriAppliedJobs(userKey),
+    appliedCompanies: getNaukriCompanyApplicationSummary(userKey),
     todayStats: getTodayAppliedStats(userKey),
     queue: getNaukriQueue(userKey),
     pending: getPendingQuestions(userKey)
+  });
+});
+
+app.get('/api/naukri/applied-companies', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.json({
+    companies: getNaukriCompanyApplicationSummary(userKey)
   });
 });
 

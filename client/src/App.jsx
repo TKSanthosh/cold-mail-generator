@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X, Zap, RotateCw } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X, Zap, RotateCw, Building2 } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3557,6 +3557,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [applyTargetCount, setApplyTargetCount] = useState(12);
   const [isAutoApplying, setIsAutoApplying] = useState(false);
   const [applyProgress, setApplyProgress] = useState(null);
+  const [appliedCompanies, setAppliedCompanies] = useState([]);
   const [showNewQaModal, setShowNewQaModal] = useState(false);
   const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
   const [pendingAnswerInputs, setPendingAnswerInputs] = useState({});
@@ -3576,8 +3577,46 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     applyAllAtOnce: false
   });
 
+  // Real-time synchronization with background worker status
+  useEffect(() => {
+    if (!currentUser) return;
+    let isMounted = true;
+
+    const pollStatus = async () => {
+      try {
+        const res = await apiFetch('/api/naukri/apply/status');
+        const data = await res.json();
+        if (!isMounted) return;
+
+        if (data && data.running) {
+          setIsAutoApplying(true);
+          if (data.progress) {
+            setApplyProgress(data.progress);
+          }
+        } else {
+          // If server is idle, guarantee that any stale loading state is cleared immediately!
+          setIsAutoApplying(prev => {
+            if (prev) {
+              setApplyProgress(null);
+              fetchQaAndAppliedJobs();
+            }
+            return false;
+          });
+        }
+      } catch (e) {}
+    };
+
+    pollStatus();
+    const interval = setInterval(pollStatus, 3000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [currentUser]);
+
   const fetchPortfolio = async () => {
     if (!currentUser) return;
+    setIsCheckingPortfolio(true);
     try {
       const res = await apiFetch('/api/naukri/portfolio');
       const data = await res.json();
@@ -3586,7 +3625,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         setPortfolioConfig(data.config);
         if (typeof data.config.applyAllAtOnce !== 'undefined') setApplyAllAtOnce(data.config.applyAllAtOnce);
       }
-    } catch (e) {}
+    } catch (e) {
+    } finally {
+      setIsCheckingPortfolio(false);
+    }
   };
 
   const handleCheckPortfolio = async () => {
@@ -3697,6 +3739,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (Array.isArray(qaData.qaItems)) setQaItems(qaData.qaItems);
       if (Array.isArray(pendData.pending)) setPendingQuestions(pendData.pending);
       if (Array.isArray(appData.applications)) setAppliedJobs(appData.applications);
+      if (Array.isArray(appData.appliedCompanies)) setAppliedCompanies(appData.appliedCompanies);
       if (appData.todayStats) setTodayStats(appData.todayStats);
       if (filterData.filters) setFilterConfig(filterData.filters);
       if (Array.isArray(queueData.queue)) setApplicationQueue(queueData.queue);
@@ -5271,14 +5314,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
 
           <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-            <button
-              onClick={handleStartAutoApply}
-              disabled={isAutoApplying || (!config.hasSession && !formData.username)}
-              className="text-xs text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 underline font-semibold cursor-pointer disabled:opacity-50"
-              title="Force an immediate automated background cycle now"
-            >
-              {isAutoApplying ? '🔄 Auto-Cycle in progress...' : '⚡ Trigger immediate background cycle'}
-            </button>
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+              <span>Periodic Self-Trigger: 24/7 Cloud Background</span>
+            </span>
           </div>
         </div>
 
@@ -5346,20 +5385,30 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
         {/* Live Auto-Apply Progress Banner */}
         {isAutoApplying && applyProgress && (
-          <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col gap-2 animate-pulse">
+          <div className="p-4 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800 rounded-xl flex flex-col gap-2">
             <div className="flex justify-between items-center text-xs">
               <span className="font-bold text-indigo-900 dark:text-indigo-200 flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
-                <span>{applyProgress.status}</span>
+                <span>{applyProgress.status || 'Autonomous background cycle in progress...'}</span>
               </span>
-              <span className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
-                {applyProgress.current} / {applyProgress.total}
-              </span>
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-indigo-700 dark:text-indigo-300 font-bold">
+                  {applyProgress.current || 1} / {applyProgress.total || 1}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => { setIsAutoApplying(false); setApplyProgress(null); }}
+                  className="text-[10px] text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-pointer underline font-medium"
+                  title="Dismiss this progress indicator"
+                >
+                  Dismiss
+                </button>
+              </div>
             </div>
             <div className="w-full bg-indigo-200 dark:bg-indigo-900 h-2 rounded-full overflow-hidden">
               <div
                 className="bg-indigo-600 dark:bg-indigo-400 h-2 transition-all duration-500 rounded-full"
-                style={{ width: `${Math.round((applyProgress.current / (applyProgress.total || 1)) * 100)}%` }}
+                style={{ width: `${Math.min(100, Math.round(((applyProgress.current || 1) / (applyProgress.total || 1)) * 100))}%` }}
               ></div>
             </div>
           </div>
@@ -5579,7 +5628,91 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         </div>
       </div>
 
-      {/* 7. Detailed Applied Jobs History Table */}
+      {/* 7. Applied Companies & Roles Directory (Strict Deduplication - Never Applied Twice) */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+              <span>Applied Companies & Roles Directory ({appliedCompanies.length})</span>
+            </h3>
+            <span className="text-[10px] font-mono bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 px-2 py-0.5 rounded-full font-bold">
+              🛡️ Deduplicated • Never Applied Twice
+            </span>
+          </div>
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Every company applied is logged here and permanently excluded from re-application.
+          </p>
+        </div>
+
+        {appliedCompanies.length === 0 ? (
+          <div className="py-6 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
+            No companies applied yet. As the autonomous 24/7 background scheduler applies to jobs, companies will be registered here.
+          </div>
+        ) : (
+          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
+            <table className="w-full text-left text-xs border-collapse min-w-[650px]">
+              <thead>
+                <tr className="bg-slate-50 dark:bg-slate-800/80 border-b border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 font-bold">
+                  <th className="p-3">Company Name</th>
+                  <th className="p-3">Roles Applied</th>
+                  <th className="p-3">Total Submissions</th>
+                  <th className="p-3">Latest Application</th>
+                  <th className="p-3 text-right">Job Posting</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {appliedCompanies.map((item, idx) => (
+                  <tr key={item.normalizedCompany || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
+                    <td className="p-3">
+                      <span className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                        <Building2 className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                        <span>{item.company}</span>
+                      </span>
+                    </td>
+                    <td className="p-3">
+                      <div className="flex flex-wrap gap-1">
+                        {item.roles.map((r, rIdx) => (
+                          <span key={rIdx} className="px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-[11px] font-medium border border-indigo-200 dark:border-indigo-800/50">
+                            {r}
+                          </span>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">
+                      <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                        <Check className="w-3 h-3" />
+                        <span>{item.totalApplied} applied</span>
+                      </span>
+                    </td>
+                    <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
+                      {item.lastAppliedAt ? new Date(item.lastAppliedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'Recently'}
+                    </td>
+                    <td className="p-3 text-right">
+                      {item.latestJobUrl ? (
+                        <a
+                          href={item.latestJobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-1"
+                          title="Open verified job link on Naukri"
+                        >
+                          <span>View Job</span>
+                          <ExternalLink className="w-3 h-3" />
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 text-[11px]">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* 8. Detailed Applied Jobs History Table */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-4 sm:p-6 shadow-sm flex flex-col gap-4 transition-colors">
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
           <h3 className="text-sm sm:text-base font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
