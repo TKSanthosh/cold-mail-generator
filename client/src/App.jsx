@@ -1,7 +1,104 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ListChecks, CheckSquare, X, Zap, RotateCw, Building2 } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ListChecks, CheckSquare, X, Zap, RotateCw, Building2 } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
+
+// Reusable, responsive pagination component for any dataset
+function Pagination({
+  currentPage,
+  totalItems,
+  pageSize,
+  onPageChange,
+  onPageSizeChange,
+  pageSizeOptions = [10, 20, 50],
+  itemName = 'items'
+}) {
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  if (totalItems <= 0) return null;
+
+  const startIdx = Math.min((currentPage - 1) * pageSize + 1, totalItems);
+  const endIdx = Math.min(currentPage * pageSize, totalItems);
+
+  const getPageNumbers = () => {
+    const delta = 1;
+    const range = [];
+    for (let i = Math.max(2, currentPage - delta); i <= Math.min(totalPages - 1, currentPage + delta); i++) {
+      range.push(i);
+    }
+    if (currentPage - delta > 2) range.unshift('...');
+    if (currentPage + delta < totalPages - 1) range.push('...');
+    range.unshift(1);
+    if (totalPages > 1) range.push(totalPages);
+    return range;
+  };
+
+  return (
+    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 pb-1 px-2 border-t border-slate-200 dark:border-slate-800 text-xs text-slate-500 dark:text-slate-400 select-none">
+      <div className="flex items-center gap-2 flex-wrap">
+        <span>
+          Showing <strong className="text-slate-700 dark:text-slate-200 font-semibold">{startIdx}</strong>–<strong className="text-slate-700 dark:text-slate-200 font-semibold">{endIdx}</strong> of <strong className="text-slate-700 dark:text-slate-200 font-semibold">{totalItems}</strong> {itemName}
+        </span>
+        {onPageSizeChange && (
+          <div className="flex items-center gap-1.5 ml-1 sm:ml-3">
+            <span className="text-[11px]">Per page:</span>
+            <select
+              value={pageSize}
+              aria-label="Rows per page"
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              className="px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 text-xs cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
+            >
+              {pageSizeOptions.map(opt => (
+                <option key={opt} value={opt}>{opt}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => onPageChange(currentPage - 1)}
+            disabled={currentPage <= 1}
+            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium transition-colors flex items-center gap-0.5 cursor-pointer"
+            title="Previous page"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Prev</span>
+          </button>
+
+          {getPageNumbers().map((p, idx) => (
+            p === '...' ? (
+              <span key={`ellipsis-${idx}`} className="px-1.5 py-1 text-slate-400">…</span>
+            ) : (
+              <button
+                key={p}
+                onClick={() => onPageChange(p)}
+                className={`min-w-[28px] h-7 px-2 py-0.5 rounded text-xs font-semibold transition-colors cursor-pointer ${
+                  currentPage === p
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {p}
+              </button>
+            )
+          ))}
+
+          <button
+            onClick={() => onPageChange(currentPage + 1)}
+            disabled={currentPage >= totalPages}
+            className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300 font-medium transition-colors flex items-center gap-0.5 cursor-pointer"
+            title="Next page"
+          >
+            <span className="hidden sm:inline">Next</span>
+            <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Helper to make authenticated, per-user sandbox API calls with 30-Day JWT & Cookies
 export const apiFetch = async (endpoint, options = {}) => {
@@ -1162,6 +1259,12 @@ function LogsViewer({ showToast, isActive, currentUser }) {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedLog, setSelectedLog] = useState(null);
+  const [logsPage, setLogsPage] = useState(1);
+  const [logsPageSize, setLogsPageSize] = useState(10);
+
+  useEffect(() => {
+    setLogsPage(1);
+  }, [searchQuery]);
 
   const getCachedLogs = () => {
     try {
@@ -1264,6 +1367,7 @@ function LogsViewer({ showToast, isActive, currentUser }) {
       (l.subject && l.subject.toLowerCase().includes(q))
     );
   });
+  const paginatedLogs = filteredLogs.slice((logsPage - 1) * logsPageSize, logsPage * logsPageSize);
 
   const totalSent = logs.filter(l => l.status === 'Sent' || l.status === 'Sent Successfully' || l.status?.includes('Sent')).length;
   const tailoredCount = logs.filter(l => (l.resumeType || '').includes('Tailored')).length;
@@ -1391,7 +1495,7 @@ function LogsViewer({ showToast, isActive, currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {filteredLogs.map((log) => (
+                {paginatedLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/60 transition-colors">
                     <td className="p-3 text-slate-500 dark:text-slate-400 font-mono whitespace-nowrap">
                       {new Date(log.timestamp).toLocaleDateString()} {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -1443,6 +1547,14 @@ function LogsViewer({ showToast, isActive, currentUser }) {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              currentPage={logsPage}
+              totalItems={filteredLogs.length}
+              pageSize={logsPageSize}
+              onPageChange={setLogsPage}
+              onPageSizeChange={(sz) => { setLogsPageSize(sz); setLogsPage(1); }}
+              itemName="emails"
+            />
           </div>
         )}
       </div>
@@ -3575,6 +3687,24 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [appliedCompanies, setAppliedCompanies] = useState([]);
   const [externalJobs, setExternalJobs] = useState([]);
   const [naukriSubTab, setNaukriSubTab] = useState('companies');
+
+  // Table Pagination & Search States
+  const [companiesPage, setCompaniesPage] = useState(1);
+  const [companiesPageSize, setCompaniesPageSize] = useState(10);
+  const [companiesSearch, setCompaniesSearch] = useState('');
+  const [companiesFilter, setCompaniesFilter] = useState('all'); // 'all', 'verified', 'unconfirmed'
+
+  const [externalPage, setExternalPage] = useState(1);
+  const [externalPageSize, setExternalPageSize] = useState(10);
+  const [externalSearch, setExternalSearch] = useState('');
+
+  const [historyPage, setHistoryPage] = useState(1);
+  const [historyPageSize, setHistoryPageSize] = useState(10);
+  const [historySearch, setHistorySearch] = useState('');
+  const [historyFilter, setHistoryFilter] = useState('all'); // 'all', 'verified', 'unconfirmed', 'failed'
+
+  const [queuePage, setQueuePage] = useState(1);
+  const [queuePageSize, setQueuePageSize] = useState(10);
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showNewQaModal, setShowNewQaModal] = useState(false);
   const [newQaForm, setNewQaForm] = useState({ question: '', answer: '', category: 'Skills' });
@@ -4309,6 +4439,54 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       </div>
     );
   }
+
+  // 1. Filtered & Paginated Companies Directory
+  const filteredCompanies = appliedCompanies.filter(item => {
+    const q = companiesSearch.toLowerCase().trim();
+    const matchesSearch = !q ||
+      (item.company && item.company.toLowerCase().includes(q)) ||
+      (item.roles && item.roles.some(r => r.toLowerCase().includes(q)));
+    
+    if (!matchesSearch) return false;
+    if (companiesFilter === 'verified') return item.totalApplied > 0;
+    if (companiesFilter === 'unconfirmed') return item.totalApplied === 0;
+    return true;
+  });
+  const paginatedCompanies = filteredCompanies.slice((companiesPage - 1) * companiesPageSize, companiesPage * companiesPageSize);
+
+  // 2. Filtered & Paginated External Career Site Jobs
+  const filteredExternalJobs = externalJobs.filter(item => {
+    const q = externalSearch.toLowerCase().trim();
+    if (!q) return true;
+    return (item.company && item.company.toLowerCase().includes(q)) ||
+           ((item.jobTitle || item.title) && (item.jobTitle || item.title).toLowerCase().includes(q)) ||
+           (item.location && item.location.toLowerCase().includes(q));
+  });
+  const paginatedExternalJobs = filteredExternalJobs.slice((externalPage - 1) * externalPageSize, externalPage * externalPageSize);
+
+  // 3. Filtered & Paginated Applied Jobs History
+  const filteredAppliedJobs = appliedJobs.filter(app => {
+    const q = historySearch.toLowerCase().trim();
+    const title = (app.jobTitle || '').toLowerCase();
+    const comp = (app.company || '').toLowerCase();
+    const matchesSearch = !q || title.includes(q) || comp.includes(q);
+    if (!matchesSearch) return false;
+
+    const s = (app.status || '').toLowerCase();
+    const vStatus = app.verificationStatus || '';
+    const isVerified = (app.status === 'SUBMITTED' || s.includes('confirmed')) && (vStatus === 'VERIFIED' || vStatus === 'RECONCILED');
+    const isUnconfirmed = app.status === 'SUBMISSION_UNCONFIRMED' || vStatus === 'UNVERIFIED';
+    const isFailed = s.includes('failed') || vStatus === 'FAILED';
+
+    if (historyFilter === 'verified') return isVerified;
+    if (historyFilter === 'unconfirmed') return isUnconfirmed;
+    if (historyFilter === 'failed') return isFailed;
+    return true;
+  });
+  const paginatedAppliedJobs = filteredAppliedJobs.slice((historyPage - 1) * historyPageSize, historyPage * historyPageSize);
+
+  // 4. Paginated Queue
+  const paginatedQueue = applicationQueue.slice((queuePage - 1) * queuePageSize, queuePage * queuePageSize);
 
   return (
     <div className="flex flex-col gap-4 sm:gap-6">
@@ -5150,7 +5328,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {applicationQueue.map((item) => (
+                {paginatedQueue.map((item) => (
                   <tr key={item.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50">
                     <td className="p-2.5">
                       <span className="font-bold text-slate-900 dark:text-slate-100 block">{item.jobTitle}</span>
@@ -5179,6 +5357,16 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </tbody>
             </table>
           </div>
+          {applicationQueue.length > 10 && (
+            <Pagination
+              currentPage={queuePage}
+              totalItems={applicationQueue.length}
+              pageSize={queuePageSize}
+              onPageChange={setQueuePage}
+              onPageSizeChange={(sz) => { setQueuePageSize(sz); setQueuePage(1); }}
+              itemName="queued jobs"
+            />
+          )}
         </div>
       )}
 
@@ -5344,9 +5532,56 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </p>
         </div>
 
-        {appliedCompanies.length === 0 ? (
+        {/* Search & Filter Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search companies or roles..."
+              value={companiesSearch}
+              onChange={(e) => { setCompaniesSearch(e.target.value); setCompaniesPage(1); }}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => { setCompaniesFilter('all'); setCompaniesPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                companiesFilter === 'all'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              All ({appliedCompanies.length})
+            </button>
+            <button
+              onClick={() => { setCompaniesFilter('verified'); setCompaniesPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                companiesFilter === 'verified'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800'
+              }`}
+            >
+              ✓ Verified ({appliedCompanies.filter(c => c.totalApplied > 0).length})
+            </button>
+            <button
+              onClick={() => { setCompaniesFilter('unconfirmed'); setCompaniesPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                companiesFilter === 'unconfirmed'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800'
+              }`}
+            >
+              ⚠️ Unconfirmed ({appliedCompanies.filter(c => c.totalApplied === 0).length})
+            </button>
+          </div>
+        </div>
+
+        {filteredCompanies.length === 0 ? (
           <div className="py-6 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            No companies applied yet. As the autonomous 24/7 background scheduler applies to jobs, companies will be registered here.
+            {appliedCompanies.length === 0 ? 'No companies applied yet. As the autonomous 24/7 background scheduler applies to jobs, companies will be registered here.' : 'No companies match your search or filter.'}
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
@@ -5361,7 +5596,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {appliedCompanies.map((item, idx) => (
+                {paginatedCompanies.map((item, idx) => (
                   <tr key={item.normalizedCompany || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="p-3">
                       <span className="font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
@@ -5419,6 +5654,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              currentPage={companiesPage}
+              totalItems={filteredCompanies.length}
+              pageSize={companiesPageSize}
+              onPageChange={setCompaniesPage}
+              onPageSizeChange={(sz) => { setCompaniesPageSize(sz); setCompaniesPage(1); }}
+              itemName="companies"
+            />
           </div>
         )}
       </div>
@@ -5442,9 +5685,21 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </p>
         </div>
 
-        {externalJobs.length === 0 ? (
+        {/* Search Bar */}
+        <div className="relative max-w-sm">
+          <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search external jobs or companies..."
+            value={externalSearch}
+            onChange={(e) => { setExternalSearch(e.target.value); setExternalPage(1); }}
+            className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+          />
+        </div>
+
+        {filteredExternalJobs.length === 0 ? (
           <div className="py-6 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            No external company site jobs collected yet. As jobs with "Apply on company site" are encountered, they will be saved here automatically.
+            {externalJobs.length === 0 ? 'No external company site jobs collected yet. As jobs with "Apply on company site" are encountered, they will be saved here automatically.' : 'No external jobs match your search query.'}
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
@@ -5459,7 +5714,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {externalJobs.map((item, idx) => (
+                {paginatedExternalJobs.map((item, idx) => (
                   <tr key={item.jobId || idx} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
                     <td className="p-3 font-bold text-slate-900 dark:text-slate-100">
                       <span className="flex items-center gap-1.5">
@@ -5498,6 +5753,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 ))}
               </tbody>
             </table>
+            <Pagination
+              currentPage={externalPage}
+              totalItems={filteredExternalJobs.length}
+              pageSize={externalPageSize}
+              onPageChange={setExternalPage}
+              onPageSizeChange={(sz) => { setExternalPageSize(sz); setExternalPage(1); }}
+              itemName="external jobs"
+            />
           </div>
         )}
       </div>
@@ -5539,9 +5802,66 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         </div>
 
-        {appliedJobs.length === 0 ? (
+        {/* Search & Filter Controls */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 pt-1">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search by job title or company..."
+              value={historySearch}
+              onChange={(e) => { setHistorySearch(e.target.value); setHistoryPage(1); }}
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 placeholder-slate-400"
+            />
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <button
+              onClick={() => { setHistoryFilter('all'); setHistoryPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                historyFilter === 'all'
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              All ({appliedJobs.length})
+            </button>
+            <button
+              onClick={() => { setHistoryFilter('verified'); setHistoryPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                historyFilter === 'verified'
+                  ? 'bg-emerald-600 text-white shadow-sm'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 hover:bg-emerald-100 dark:hover:bg-emerald-900 border border-emerald-200 dark:border-emerald-800'
+              }`}
+            >
+              ✓ Verified ({appliedJobs.filter(a => (a.status === 'SUBMITTED' || (a.status || '').toLowerCase().includes('confirmed')) && (a.verificationStatus === 'VERIFIED' || a.verificationStatus === 'RECONCILED')).length})
+            </button>
+            <button
+              onClick={() => { setHistoryFilter('unconfirmed'); setHistoryPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                historyFilter === 'unconfirmed'
+                  ? 'bg-amber-600 text-white shadow-sm'
+                  : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800'
+              }`}
+            >
+              ⚠️ Unconfirmed ({appliedJobs.filter(a => a.status === 'SUBMISSION_UNCONFIRMED' || a.verificationStatus === 'UNVERIFIED').length})
+            </button>
+            <button
+              onClick={() => { setHistoryFilter('failed'); setHistoryPage(1); }}
+              className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                historyFilter === 'failed'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900 border border-rose-200 dark:border-rose-800'
+              }`}
+            >
+              ❌ Failed ({appliedJobs.filter(a => (a.status || '').toLowerCase().includes('failed') || a.verificationStatus === 'FAILED').length})
+            </button>
+          </div>
+        </div>
+
+        {filteredAppliedJobs.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
-            No jobs applied via Easy Apply yet. The autonomous 24/7 background worker is actively scanning and applying automatically.
+            {appliedJobs.length === 0 ? 'No jobs applied via Easy Apply yet. The autonomous 24/7 background worker is actively scanning and applying automatically.' : 'No application records match your search or filter.'}
           </div>
         ) : (
           <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto touch-scroll">
@@ -5557,7 +5877,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                {appliedJobs.map((app) => {
+                {paginatedAppliedJobs.map((app) => {
                   const s = (app.status || '').toLowerCase();
                   const vStatus = app.verificationStatus || '';
                   const isVerified = (app.status === 'SUBMITTED' || s.includes('confirmed')) && (vStatus === 'VERIFIED' || vStatus === 'RECONCILED');
@@ -5635,6 +5955,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 })}
               </tbody>
             </table>
+            <Pagination
+              currentPage={historyPage}
+              totalItems={filteredAppliedJobs.length}
+              pageSize={historyPageSize}
+              onPageChange={setHistoryPage}
+              onPageSizeChange={(sz) => { setHistoryPageSize(sz); setHistoryPage(1); }}
+              itemName="submissions"
+            />
           </div>
         )}
       </div>
