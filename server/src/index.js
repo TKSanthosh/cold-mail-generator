@@ -790,35 +790,59 @@ function formatTailoredPdfName(candidateName, rawCompany, rawRole) {
   }
   comp = comp.replace(/[^a-zA-Z0-9]/g, '') || 'Company';
 
-  // Short role name
+  // Clean and map role name
   const roleStr = (rawRole || 'SWE').trim();
   const rLower = roleStr.toLowerCase();
+
+  // Junk role blacklist (e.g. Google Careers UI artifacts)
+  const junkRoles = [
+    'job details', 'job detail', 'details', 'early', 'early career', 'mid', 'advanced',
+    'intern', 'internship', 'apply', 'career', 'careers', 'search', 'overview',
+    'responsibilities', 'qualifications', 'heading'
+  ];
+  const isJunk = junkRoles.includes(rLower) || junkRoles.some(j => rLower === j || rLower === `${j} career`);
+
   let shortRole = 'SWE';
 
-  if (rLower.includes('full stack') || rLower.includes('fullstack')) {
-    shortRole = 'FullStack_SWE';
-  } else if (rLower.includes('backend')) {
-    shortRole = 'Backend_SWE';
-  } else if (rLower.includes('frontend')) {
-    shortRole = 'Frontend_SWE';
-  } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
-    const numMatch = roleStr.match(/(?:iii|ii|iv|vi|ix|viii|vii|v|i|\b[1-9]\b)/i);
-    shortRole = numMatch ? `SDE_${numMatch[0].toUpperCase()}` : 'SDE';
-  } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+  if (!isJunk) {
+    if (rLower.includes('full stack') || rLower.includes('fullstack')) {
+      shortRole = 'FullStack_SWE';
+    } else if (rLower.includes('backend')) {
+      shortRole = 'Backend_SWE';
+    } else if (rLower.includes('frontend') || rLower.includes('ui developer') || rLower.includes('web developer')) {
+      shortRole = 'Frontend_SWE';
+    } else if (rLower.includes('machine learning') || rLower.includes('ml ') || rLower.endsWith(' ml') || rLower.includes('ai ') || rLower.includes('deep learning')) {
+      shortRole = 'AI_MLE';
+    } else if (rLower.includes('data engineer') || rLower.includes('data platform')) {
+      shortRole = 'Data_Eng';
+    } else if (rLower.includes('devops') || rLower.includes('sre') || rLower.includes('site reliability')) {
+      shortRole = 'DevOps';
+    } else if (rLower.includes('cloud')) {
+      shortRole = 'Cloud_SWE';
+    } else if (rLower.includes('security')) {
+      shortRole = 'Security_Eng';
+    } else if (rLower.includes('system') || rLower.includes('architect')) {
+      shortRole = 'SysArch';
+    } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
+      const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+      shortRole = numMatch ? `SDE_${numMatch[1].toUpperCase()}` : 'SDE';
+    } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+      const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+      shortRole = numMatch ? `SWE_${numMatch[1].toUpperCase()}` : 'SWE';
+    } else {
+      shortRole = roleStr
+        .replace(/[,|-].*$/, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join('_')
+        .replace(/[^a-zA-Z0-9_]/g, '');
+    }
+  }
+
+  if (!shortRole || junkRoles.includes(shortRole.toLowerCase())) {
     shortRole = 'SWE';
-  } else if (rLower.includes('devops') || rLower.includes('cloud')) {
-    shortRole = 'DevOps';
-  } else if (rLower.includes('system') || rLower.includes('architect')) {
-    shortRole = 'SysArch';
-  } else {
-    shortRole = roleStr
-      .replace(/[,|-].*$/, '')
-      .trim()
-      .split(/\s+/)
-      .slice(0, 2)
-      .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-      .join('_')
-      .replace(/[^a-zA-Z0-9_]/g, '');
   }
 
   return `${candidate}_${comp}_${shortRole}.pdf`;
@@ -924,7 +948,17 @@ app.get('/api/applications', (req, res) => {
     if ((!apps || apps.length === 0) && userKey !== 'tksanthosh494_gmail_com') {
       apps = getUserApplications('tksanthosh494_gmail_com');
     }
-    res.json({ applications: apps });
+    const enriched = (apps || []).map(a => {
+      const candidateName = a.tailoredResume?.personalInfo?.name || 'Santhosh T K';
+      const cleanDownloadName = formatTailoredPdfName(candidateName, a.company, a.role);
+      const cleanDownloadUrl = `/api/applications/${a.id}/pdf?userKey=${encodeURIComponent(userKey)}`;
+      return {
+        ...a,
+        downloadName: cleanDownloadName,
+        downloadUrl: cleanDownloadUrl
+      };
+    });
+    res.json({ applications: enriched });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -941,7 +975,7 @@ app.post('/api/applications/sync', (req, res) => {
   }
 });
 
-app.get('/api/applications/:id/pdf', (req, res) => {
+app.get('/api/applications/:id/pdf', async (req, res) => {
   let userKey = resolveUserKey(req, res);
   const explicitKey = req.query.userKey || req.headers['x-user-key'];
   if (explicitKey) {
@@ -962,21 +996,37 @@ app.get('/api/applications/:id/pdf', (req, res) => {
     }
   }
 
-  if (!appItem || !appItem.pdfFilename) {
-    return res.status(404).json({ error: 'Application record or PDF not found' });
+  if (!appItem) {
+    return res.status(404).json({ error: 'Application record not found' });
   }
 
   const userPaths = getUserPaths(userKey);
+  if (!appItem.pdfFilename) {
+    appItem.pdfFilename = `tailored_resume_${appItem.id}.pdf`;
+  }
   const pdfPath = path.join(userPaths.uploadsDir, appItem.pdfFilename);
+
+  // If PDF file is missing on disk, compile it on-the-fly!
   if (!fs.existsSync(pdfPath)) {
-    return res.status(404).json({ error: 'PDF file not found on server' });
+    if (appItem.tailoredResume) {
+      try {
+        fs.mkdirSync(path.dirname(pdfPath), { recursive: true });
+        await generateResumePdf(appItem.tailoredResume, pdfPath);
+      } catch (err) {
+        console.error('Failed to generate PDF on-the-fly:', err);
+        return res.status(500).json({ error: 'Failed to generate PDF file on server' });
+      }
+    } else {
+      return res.status(404).json({ error: 'Resume data not found to generate PDF' });
+    }
   }
 
   const candidateName = appItem.tailoredResume?.personalInfo?.name || 'Santhosh T K';
-  const downloadName = appItem.downloadName || formatTailoredPdfName(candidateName, appItem.company, appItem.role);
+  const downloadName = formatTailoredPdfName(candidateName, appItem.company, appItem.role);
 
+  res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `attachment; filename="${downloadName}"`);
-  res.download(pdfPath, downloadName);
+  res.sendFile(path.resolve(pdfPath));
 });
 
 app.delete('/api/applications/:id', (req, res) => {
@@ -1768,16 +1818,7 @@ async function initDatabaseStartupSync() {
 
 // Async Database-First Bootstrap
 async function startServer() {
-  // 1. Fully hydrate all users, resumes, applications, logs, session cookies, and configs from Supabase
-  await initDatabaseStartupSync();
-
-  // 2. Initialize background schedulers & 24/7 Keep-Alive Anti-Sleep Heartbeat
-  initScheduler();
-  initLinkedInScheduler();
-  initNaukriScheduler();
-  initKeepAliveService(PORT);
-
-  // 3. Serve production client assets
+  // 1. Serve production client assets
   const clientDistPath = path.join(__dirname, '../../client/dist');
   if (fs.existsSync(clientDistPath)) {
     app.use(express.static(clientDistPath));
@@ -1787,7 +1828,7 @@ async function startServer() {
     });
   }
 
-  // 4. Guarantee that ANY unhandled /api route ALWAYS returns JSON, never HTML
+  // 2. Guarantee that ANY unhandled /api route ALWAYS returns JSON, never HTML
   app.all('/api/*', (req, res) => {
     res.status(404).json({ success: false, error: `API endpoint not found: ${req.method} ${req.path}` });
   });
@@ -1801,10 +1842,24 @@ async function startServer() {
     next(err);
   });
 
-  // 5. Start HTTP Server
+  // 3. Start HTTP Server immediately so endpoints are instantly available
   app.listen(PORT, () => {
     console.log(`[INFO] Cold Email Backend running 24/7 on http://localhost:${PORT}`);
   });
+
+  // 4. Background Database Hydration & Schedulers
+  initDatabaseStartupSync()
+    .then(() => {
+      console.log('[DATABASE PERSISTENCE] Background sync finished successfully.');
+    })
+    .catch(err => {
+      console.warn('[DATABASE PERSISTENCE WARN]', err.message);
+    });
+
+  initScheduler();
+  initLinkedInScheduler();
+  initNaukriScheduler();
+  initKeepAliveService(PORT);
 }
 
 startServer().catch(err => {

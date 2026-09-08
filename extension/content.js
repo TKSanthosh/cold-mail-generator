@@ -371,38 +371,55 @@
 
     // 1. Role Title Extraction
     let role = '';
-    // Look for h1/h2 headings in the main detail area
-    const roleCandidates = document.querySelectorAll(
-      'main h1, [role="main"] h1, [role="region"] h1, h1.pcuMzf, h1[itemprop="title"], h1, h2'
-    );
-    for (const el of roleCandidates) {
-      const text = cleanText(el.innerText);
-      if (text &&
-          text.length >= 4 &&
-          text.length <= 100 &&
-          !text.toLowerCase().includes('minimum qualification') &&
-          !text.toLowerCase().includes('preferred qualification') &&
-          !text.toLowerCase().includes('about the job') &&
-          !text.toLowerCase().includes('responsibilit') &&
-          !text.toLowerCase().includes('back to') &&
-          !text.toLowerCase().includes('careers') &&
-          !text.toLowerCase().includes('search')) {
-        role = text;
-        break;
-      }
-    }
+    const junkTitles = [
+      'job details', 'job detail', 'details', 'early', 'early career', 'mid', 'advanced',
+      'intern', 'internship', 'apply', 'minimum qualifications', 'preferred qualifications',
+      'about the job', 'responsibilities', 'back to jobs', 'overview', 'qualifications',
+      'share', 'save', 'learn more', 'how we hire', 'benefits', 'locations', 'teams', 'search'
+    ];
 
-    if (!role && path.includes('/jobs/results/')) {
-      const slugMatch = path.match(/results\/\d+-(.+)$/);
+    // Priority 1: Check URL slug on Google Careers (100% accurate role title)
+    // Example: /jobs/results/124061208973058758-software-engineer-full-stack-google-cloud
+    if (path.includes('/jobs/results/')) {
+      const slugMatch = path.match(/results\/\d+-([a-z0-9\-]+)(?:\?|#|$)/i);
       if (slugMatch && slugMatch[1]) {
-        role = slugMatch[1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const slugTitle = slugMatch[1]
+          .replace(/-/g, ' ')
+          .replace(/\b\w/g, c => c.toUpperCase())
+          .trim();
+        if (slugTitle.length > 3 && !junkTitles.some(j => slugTitle.toLowerCase() === j)) {
+          role = slugTitle;
+        }
       }
     }
 
+    // Priority 2: Look for dedicated h1 headings (exclude h2 which matches metadata chips like "Early Career")
+    if (!role) {
+      const roleCandidates = document.querySelectorAll(
+        'main h1, [role="main"] h1, [role="region"] h1, h1.pcuMzf, h1[itemprop="title"], h1'
+      );
+      for (const el of roleCandidates) {
+        const text = cleanText(el.innerText);
+        const lower = text.toLowerCase();
+        if (text &&
+            text.length >= 4 &&
+            text.length <= 120 &&
+            !junkTitles.some(j => lower === j || lower.startsWith(j + ' ') || lower.endsWith(' ' + j))) {
+          role = text;
+          break;
+        }
+      }
+    }
+
+    // Priority 3: Document title
     if (!role && document.title) {
       const parts = document.title.split(/[-–|]/);
-      if (parts.length > 0 && parts[0].trim().length > 3) {
-        role = parts[0].trim();
+      if (parts.length > 0) {
+        const t = parts[0].trim();
+        const lowerT = t.toLowerCase();
+        if (t.length > 3 && !junkTitles.some(j => lowerT === j)) {
+          role = t;
+        }
       }
     }
 
@@ -804,17 +821,57 @@
 
     const roleStr = (rawRole || 'SWE').trim();
     const rLower = roleStr.toLowerCase();
+
+    // Junk role blacklist
+    const junkRoles = [
+      'job details', 'job detail', 'details', 'early', 'early career', 'mid', 'advanced',
+      'intern', 'internship', 'apply', 'career', 'careers', 'search', 'overview',
+      'responsibilities', 'qualifications', 'heading'
+    ];
+    const isJunk = junkRoles.includes(rLower) || junkRoles.some(j => rLower === j || rLower === `${j} career`);
+
     let shortRole = 'SWE';
-    if (rLower.includes('full stack') || rLower.includes('fullstack')) shortRole = 'FullStack_SWE';
-    else if (rLower.includes('backend')) shortRole = 'Backend_SWE';
-    else if (rLower.includes('frontend')) shortRole = 'Frontend_SWE';
-    else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
-      const numMatch = roleStr.match(/(?:iii|ii|iv|vi|ix|viii|vii|v|i|\b[1-9]\b)/i);
-      shortRole = numMatch ? `SDE_${numMatch[0].toUpperCase()}` : 'SDE';
-    } else if (rLower.includes('software engineer') || rLower.includes('swe')) shortRole = 'SWE';
-    else if (rLower.includes('devops') || rLower.includes('cloud')) shortRole = 'DevOps';
-    else if (rLower.includes('system') || rLower.includes('architect')) shortRole = 'SysArch';
-    else shortRole = roleStr.replace(/[,|-].*$/, '').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('_').replace(/[^a-zA-Z0-9_]/g, '');
+
+    if (!isJunk) {
+      if (rLower.includes('full stack') || rLower.includes('fullstack')) {
+        shortRole = 'FullStack_SWE';
+      } else if (rLower.includes('backend')) {
+        shortRole = 'Backend_SWE';
+      } else if (rLower.includes('frontend') || rLower.includes('ui developer') || rLower.includes('web developer')) {
+        shortRole = 'Frontend_SWE';
+      } else if (rLower.includes('machine learning') || rLower.includes('ml ') || rLower.endsWith(' ml') || rLower.includes('ai ') || rLower.includes('deep learning')) {
+        shortRole = 'AI_MLE';
+      } else if (rLower.includes('data engineer') || rLower.includes('data platform')) {
+        shortRole = 'Data_Eng';
+      } else if (rLower.includes('devops') || rLower.includes('sre') || rLower.includes('site reliability')) {
+        shortRole = 'DevOps';
+      } else if (rLower.includes('cloud')) {
+        shortRole = 'Cloud_SWE';
+      } else if (rLower.includes('security')) {
+        shortRole = 'Security_Eng';
+      } else if (rLower.includes('system') || rLower.includes('architect')) {
+        shortRole = 'SysArch';
+      } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
+        const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+        shortRole = numMatch ? `SDE_${numMatch[1].toUpperCase()}` : 'SDE';
+      } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+        const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+        shortRole = numMatch ? `SWE_${numMatch[1].toUpperCase()}` : 'SWE';
+      } else {
+        shortRole = roleStr
+          .replace(/[,|-].*$/, '')
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join('_')
+          .replace(/[^a-zA-Z0-9_]/g, '');
+      }
+    }
+
+    if (!shortRole || junkRoles.includes(shortRole.toLowerCase())) {
+      shortRole = 'SWE';
+    }
 
     return `${candidate}_${comp}_${shortRole}.pdf`;
   }

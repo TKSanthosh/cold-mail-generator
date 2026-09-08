@@ -238,17 +238,57 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     const roleStr = (rawRole || 'SWE').trim();
     const rLower = roleStr.toLowerCase();
+
+    // Junk role blacklist
+    const junkRoles = [
+      'job details', 'job detail', 'details', 'early', 'early career', 'mid', 'advanced',
+      'intern', 'internship', 'apply', 'career', 'careers', 'search', 'overview',
+      'responsibilities', 'qualifications', 'heading'
+    ];
+    const isJunk = junkRoles.includes(rLower) || junkRoles.some(j => rLower === j || rLower === `${j} career`);
+
     let shortRole = 'SWE';
-    if (rLower.includes('full stack') || rLower.includes('fullstack')) shortRole = 'FullStack_SWE';
-    else if (rLower.includes('backend')) shortRole = 'Backend_SWE';
-    else if (rLower.includes('frontend')) shortRole = 'Frontend_SWE';
-    else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
-      const numMatch = roleStr.match(/(?:iii|ii|iv|vi|ix|viii|vii|v|i|\b[1-9]\b)/i);
-      shortRole = numMatch ? `SDE_${numMatch[0].toUpperCase()}` : 'SDE';
-    } else if (rLower.includes('software engineer') || rLower.includes('swe')) shortRole = 'SWE';
-    else if (rLower.includes('devops') || rLower.includes('cloud')) shortRole = 'DevOps';
-    else if (rLower.includes('system') || rLower.includes('architect')) shortRole = 'SysArch';
-    else shortRole = roleStr.replace(/[,|-].*$/, '').trim().split(/\s+/).slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('_').replace(/[^a-zA-Z0-9_]/g, '');
+
+    if (!isJunk) {
+      if (rLower.includes('full stack') || rLower.includes('fullstack')) {
+        shortRole = 'FullStack_SWE';
+      } else if (rLower.includes('backend')) {
+        shortRole = 'Backend_SWE';
+      } else if (rLower.includes('frontend') || rLower.includes('ui developer') || rLower.includes('web developer')) {
+        shortRole = 'Frontend_SWE';
+      } else if (rLower.includes('machine learning') || rLower.includes('ml ') || rLower.endsWith(' ml') || rLower.includes('ai ') || rLower.includes('deep learning')) {
+        shortRole = 'AI_MLE';
+      } else if (rLower.includes('data engineer') || rLower.includes('data platform')) {
+        shortRole = 'Data_Eng';
+      } else if (rLower.includes('devops') || rLower.includes('sre') || rLower.includes('site reliability')) {
+        shortRole = 'DevOps';
+      } else if (rLower.includes('cloud')) {
+        shortRole = 'Cloud_SWE';
+      } else if (rLower.includes('security')) {
+        shortRole = 'Security_Eng';
+      } else if (rLower.includes('system') || rLower.includes('architect')) {
+        shortRole = 'SysArch';
+      } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
+        const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+        shortRole = numMatch ? `SDE_${numMatch[1].toUpperCase()}` : 'SDE';
+      } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+        const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+        shortRole = numMatch ? `SWE_${numMatch[1].toUpperCase()}` : 'SWE';
+      } else {
+        shortRole = roleStr
+          .replace(/[,|-].*$/, '')
+          .trim()
+          .split(/\s+/)
+          .slice(0, 2)
+          .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+          .join('_')
+          .replace(/[^a-zA-Z0-9_]/g, '');
+      }
+    }
+
+    if (!shortRole || junkRoles.includes(shortRole.toLowerCase())) {
+      shortRole = 'SWE';
+    }
 
     return `${candidate}_${comp}_${shortRole}.pdf`;
   }
