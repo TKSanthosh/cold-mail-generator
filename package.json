@@ -10,8 +10,8 @@
     "start": "node server/src/index.js",
     "dev:server": "node server/src/index.js",
     "dev:client": "npm run dev --prefix client",
-    "test": "node test_suite.js",
-    "test:e2e": "node test_e2e_live.js"
+    "test": "node tests/e2e_regression_suite.js",
+    "test:e2e": "node tests/e2e_regression_suite.js"
   },
   "keywords": [
     "cold-email",
