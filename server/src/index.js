@@ -1089,6 +1089,33 @@ app.post('/api/naukri/qa/answer-pending', async (req, res) => {
   }
 });
 
+app.post('/api/naukri/qa/batch', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { items } = req.body;
+  if (!Array.isArray(items)) {
+    return res.status(400).json({ success: false, error: 'items must be an array' });
+  }
+  try {
+    for (const item of items) {
+      if (item && item.question && item.answer) {
+        await saveQaItemAsync(userKey, {
+          question: item.question.trim(),
+          answer: String(item.answer).trim(),
+          category: item.category || 'Recruiter Screening'
+        });
+        if (item.pendingId) {
+          await resolvePendingQuestionAsync(userKey, item.pendingId, String(item.answer).trim());
+        }
+      }
+    }
+    const qaItems = await getQaDatabaseAsync(userKey);
+    const pending = getPendingQuestions(userKey);
+    res.json({ success: true, count: items.length, qaItems, pending });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // --- NAUKRI CONTINUOUS PORTFOLIO CHECKER & SMART MICRO-UPDATER ENDPOINTS ---
 app.get('/api/naukri/portfolio', async (req, res) => {
   const userKey = resolveUserKey(req, res);

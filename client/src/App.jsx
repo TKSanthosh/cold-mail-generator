@@ -3725,56 +3725,173 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     applyAllAtOnce: false
   });
 
-  // Instant Q&A Application Modal State
+  // Cumulated Screening Q&A & Instant Application Modal State
   const [instantApplyModalOpen, setInstantApplyModalOpen] = useState(false);
   const [instantApplyJob, setInstantApplyJob] = useState(null);
-  const [instantApplyAnswers, setInstantApplyAnswers] = useState({
-    noticePeriod: '15 Days or less',
-    currentCtc: '12 LPA',
-    expectedCtc: '18 LPA',
-    totalExperience: '4 Years',
-    preferredLocation: 'Bangalore / Remote',
-    customAnswers: ''
-  });
+  const [instantApplyQuestions, setInstantApplyQuestions] = useState([]);
   const [isApplyingInstant, setIsApplyingInstant] = useState(false);
+
+  const updateQuestionAnswer = (qId, newAnswer) => {
+    setInstantApplyQuestions(prev =>
+      prev.map(q => (q.id === qId ? { ...q, answer: newAnswer } : q))
+    );
+  };
+
+  const buildDefaultQuestions = () => {
+    return [
+      {
+        id: 'std_exp',
+        question: 'How many years of total experience do you have?',
+        answer: '4 Years',
+        category: 'Experience',
+        options: ['3 Years', '3.5 Years', '4 Years', '4.5 Years', '5+ Years']
+      },
+      {
+        id: 'std_notice',
+        question: 'What is your official notice period / availability?',
+        answer: '15 Days or less',
+        category: 'Availability',
+        options: ['Immediate / Serving', '15 Days or less', '30 Days', '45 Days', '60 Days']
+      },
+      {
+        id: 'std_c_ctc',
+        question: 'What is your Current CTC (in LPA)?',
+        answer: '10.78 LPA',
+        category: 'Compensation',
+        options: ['8 LPA', '10.78 LPA', '12 LPA', '14 LPA']
+      },
+      {
+        id: 'std_e_ctc',
+        question: 'What is your Expected CTC (in LPA)?',
+        answer: '18 LPA',
+        category: 'Compensation',
+        options: ['15 LPA', '16 LPA', '18 LPA', '20 LPA', '22 LPA']
+      },
+      {
+        id: 'std_loc',
+        question: 'What is your preferred work location?',
+        answer: 'Bangalore / Remote',
+        category: 'Location',
+        options: ['Bangalore', 'Remote', 'Bangalore / Remote', 'Hybrid']
+      },
+      {
+        id: 'std_relocate',
+        question: 'Are you willing to relocate to Bangalore / Bengaluru?',
+        answer: 'Yes',
+        category: 'Location',
+        options: ['Yes', 'No', 'Already in Bangalore']
+      }
+    ];
+  };
 
   const handleOpenInstantApply = (jobItem) => {
     setInstantApplyJob(jobItem);
-    setInstantApplyAnswers(prev => ({
-      ...prev,
-      noticePeriod: config?.noticePeriod || '15 Days or less',
-      currentCtc: config?.currentCtc || '12 LPA',
-      expectedCtc: config?.expectedCtc || '18 LPA',
-      totalExperience: config?.experienceYears || '4 Years',
-      preferredLocation: config?.locationPreference || 'Bangalore / Remote',
-      customAnswers: ''
+    
+    // Find matching pending questions for this specific job or company
+    const matchingPending = (pendingQuestions || []).filter(
+      p => (jobItem && p.jobId === (jobItem.id || jobItem.jobId)) || (jobItem && p.company?.toLowerCase() === jobItem.company?.toLowerCase())
+    );
+
+    const questionsList = [];
+    const seen = new Set();
+
+    for (const p of matchingPending) {
+      questionsList.push({
+        id: p.id,
+        pendingId: p.id,
+        question: p.question,
+        answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+        category: p.category || 'Recruiter Screening',
+        options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
+      });
+      seen.add(p.question.toLowerCase());
+    }
+
+    const defaultQs = buildDefaultQuestions();
+    for (const sq of defaultQs) {
+      if (!seen.has(sq.question.toLowerCase())) {
+        const dbItem = (qaItems || []).find(q => q.id === sq.id || (q.question && q.question.toLowerCase() === sq.question.toLowerCase()));
+        if (dbItem && dbItem.answer) {
+          sq.answer = dbItem.answer;
+        }
+        questionsList.push(sq);
+      }
+    }
+
+    setInstantApplyQuestions(questionsList);
+    setInstantApplyModalOpen(true);
+  };
+
+  const handleOpenCumulatedPendingModal = () => {
+    setInstantApplyJob({
+      company: 'All Unconfirmed Jobs',
+      jobTitle: `${(pendingQuestions || []).length} Recruiter Screening Question(s)`,
+      isBatchAll: true
+    });
+
+    const questionsList = (pendingQuestions || []).map(p => ({
+      id: p.id,
+      pendingId: p.id,
+      jobId: p.jobId,
+      company: p.company,
+      jobTitle: p.jobTitle,
+      question: p.question,
+      answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+      category: p.category || 'Recruiter Screening',
+      options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
     }));
+
+    if (questionsList.length === 0) {
+      setInstantApplyQuestions(buildDefaultQuestions());
+    } else {
+      setInstantApplyQuestions(questionsList);
+    }
     setInstantApplyModalOpen(true);
   };
 
   const submitInstantApply = async () => {
-    if (!instantApplyJob || !instantApplyJob.jobUrl) return;
     setIsApplyingInstant(true);
     try {
-      const res = await apiFetch('/api/naukri/apply/retry-instant', {
+      const itemsToSave = instantApplyQuestions.map(q => ({
+        pendingId: q.pendingId,
+        question: q.question,
+        answer: q.answer,
+        category: q.category
+      }));
+
+      // 1. Store ALL answers in DB first!
+      await apiFetch('/api/naukri/qa/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          jobId: instantApplyJob.id || instantApplyJob.jobId,
-          jobUrl: instantApplyJob.jobUrl,
-          userAnswers: instantApplyAnswers
-        })
+        body: JSON.stringify({ items: itemsToSave })
       });
-      const data = await res.json();
-      if (data.success) {
-        showToast(`⚡ ${data.message || 'Application submitted & verified live on Naukri!'}`, 'success');
+
+      // 2. Submit live application on Naukri
+      if (instantApplyJob && instantApplyJob.jobUrl) {
+        const res = await apiFetch('/api/naukri/apply/retry-instant', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jobId: instantApplyJob.id || instantApplyJob.jobId,
+            jobUrl: instantApplyJob.jobUrl,
+            userAnswers: itemsToSave
+          })
+        });
+        const data = await res.json();
+        if (data.success) {
+          showToast(`⚡ ${data.message || 'Answers saved to DB & Application submitted live on Naukri!'}`, 'success');
+          setInstantApplyModalOpen(false);
+          fetchQaAndAppliedJobs();
+        } else {
+          showToast(`⚠️ Answers saved to DB! ${data.error || data.message || 'Instant apply finished'}`, 'warning');
+        }
+      } else {
+        showToast(`✅ ${itemsToSave.length} screening answer(s) saved to DB! Automation will use them for all matching jobs!`, 'success');
         setInstantApplyModalOpen(false);
         fetchQaAndAppliedJobs();
-      } else {
-        showToast(`⚠️ ${data.error || data.message || 'Instant apply failed'}`, 'error');
       }
     } catch (err) {
-      showToast(`❌ Instant apply request failed: ${err.message}`, 'error');
+      showToast(`❌ Failed to submit Q&A: ${err.message}`, 'error');
     } finally {
       setIsApplyingInstant(false);
     }
@@ -5831,6 +5948,15 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </h3>
           <div className="flex items-center gap-2 flex-wrap">
             <button
+              type="button"
+              onClick={handleOpenCumulatedPendingModal}
+              className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow px-3 py-1 rounded-lg flex items-center gap-1.5 font-bold cursor-pointer transition-all"
+              title="Answer all screening questions for unconfirmed jobs at once and save to DB"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+              <span>⚡ Answer ALL Screening Qs ({pendingQuestions.length > 0 ? pendingQuestions.length : 'Batch'})</span>
+            </button>
+            <button
               onClick={handleReconcileWithNaukri}
               disabled={isReconciling}
               className="text-xs bg-indigo-50 dark:bg-indigo-950/50 text-indigo-700 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 border border-indigo-200 dark:border-indigo-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold cursor-pointer transition-all disabled:opacity-60"
@@ -6039,20 +6165,23 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       </div>
       )}
 
-      {/* Instant Q&A Screening & Application Modal */}
+      {/* Cumulated Screening Q&A & Instant Application Modal */}
       {instantApplyModalOpen && instantApplyJob && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-indigo-200 dark:border-indigo-800 flex flex-col gap-4 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-indigo-50 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 rounded-xl border border-indigo-200 dark:border-indigo-800">
                   <Zap className="w-5 h-5 text-amber-500 fill-amber-500" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    <span>Answer & Apply Instantly</span>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <span>Screening Q&A & Instant Submit Engine</span>
+                    <span className="text-[10px] bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 font-extrabold px-2.5 py-0.5 rounded-full border border-indigo-200 dark:border-indigo-800">
+                      DB Auto-Sync Active
+                    </span>
                   </h3>
-                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-semibold">
                     {instantApplyJob.company} • {instantApplyJob.jobTitle}
                   </p>
                 </div>
@@ -6067,122 +6196,104 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </button>
             </div>
 
-            <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-xl border border-amber-200 dark:border-amber-900 text-xs text-amber-900 dark:text-amber-200 flex items-start gap-2">
+            <div className="bg-amber-50 dark:bg-amber-950/30 p-3.5 rounded-xl border border-amber-200 dark:border-amber-900 text-xs text-amber-950 dark:text-amber-200 flex items-start gap-2.5">
               <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <span>
-                Provide screening answers below. The automation engine will navigate directly to this job, fill the form with your verified answers, save them to your Q&A DB, and submit live on Naukri with DOM verification!
+              <div>
+                <strong className="block font-bold mb-0.5">Zero-Hallucination Policy:</strong>
+                Select or type your verified answers below. Clicking an option chip populates the answer instantly. Answers are stored in your Q&A DB permanently so the automation engine never asks again!
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 my-1">
+              {instantApplyQuestions.map((q, idx) => (
+                <div key={q.id || idx} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col gap-2.5">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex flex-col">
+                      {q.company && (
+                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
+                          {q.company} • {q.jobTitle}
+                        </span>
+                      )}
+                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 mt-0.5">
+                        <span className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">Q{idx + 1}.</span>
+                        <span>{q.question}</span>
+                      </span>
+                    </div>
+                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold px-2 py-0.5 rounded shrink-0">
+                      {q.category || 'Screening'}
+                    </span>
+                  </div>
+
+                  {/* Option Chips if options are present */}
+                  {Array.isArray(q.options) && q.options.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] text-slate-400 font-extrabold uppercase mr-1">Quick Options:</span>
+                      {q.options.map((opt, optIdx) => {
+                        const isSelected = String(q.answer).trim().toLowerCase() === String(opt).trim().toLowerCase();
+                        return (
+                          <button
+                            key={optIdx}
+                            type="button"
+                            onClick={() => updateQuestionAnswer(q.id, opt)}
+                            className={`text-xs font-extrabold px-3 py-1 rounded-lg border transition-all cursor-pointer ${
+                              isSelected
+                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-slate-300 dark:border-slate-700'
+                            }`}
+                          >
+                            {isSelected ? '✓ ' : ''}{opt}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Text Input Box */}
+                  <div>
+                    <input
+                      type="text"
+                      value={q.answer || ''}
+                      onChange={(e) => updateQuestionAnswer(q.id, e.target.value)}
+                      placeholder="Type your exact answer or choose an option above..."
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
+                {instantApplyQuestions.length} Screening Question(s) Ready
               </span>
-            </div>
-
-            <div className="flex flex-col gap-3">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Notice Period / Availability
-                </label>
-                <input
-                  type="text"
-                  value={instantApplyAnswers.noticePeriod}
-                  onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, noticePeriod: e.target.value })}
-                  placeholder="e.g. 15 Days or less, Immediate"
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                />
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setInstantApplyModalOpen(false)}
+                  disabled={isApplyingInstant}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitInstantApply}
+                  disabled={isApplyingInstant}
+                  className="inline-flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
+                >
+                  {isApplyingInstant ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Saving Answers to DB & Applying Live on Naukri...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                      <span>⚡ Save to DB & Apply Live Now</span>
+                    </>
+                  )}
+                </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Current CTC
-                  </label>
-                  <input
-                    type="text"
-                    value={instantApplyAnswers.currentCtc}
-                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, currentCtc: e.target.value })}
-                    placeholder="e.g. 12 LPA"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Expected CTC
-                  </label>
-                  <input
-                    type="text"
-                    value={instantApplyAnswers.expectedCtc}
-                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, expectedCtc: e.target.value })}
-                    placeholder="e.g. 18 LPA"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Total Relevant Experience
-                  </label>
-                  <input
-                    type="text"
-                    value={instantApplyAnswers.totalExperience}
-                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, totalExperience: e.target.value })}
-                    placeholder="e.g. 4 Years"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                    Preferred Location
-                  </label>
-                  <input
-                    type="text"
-                    value={instantApplyAnswers.preferredLocation}
-                    onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, preferredLocation: e.target.value })}
-                    placeholder="e.g. Bangalore / Remote"
-                    className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
-                  Additional Screening Notes / Custom Answers (Optional)
-                </label>
-                <textarea
-                  value={instantApplyAnswers.customAnswers}
-                  onChange={(e) => setInstantApplyAnswers({ ...instantApplyAnswers, customAnswers: e.target.value })}
-                  placeholder="e.g. Willing to relocate: Yes. Primary tech stack: Node.js, React, Python."
-                  rows={2}
-                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100 dark:border-slate-800">
-              <button
-                type="button"
-                onClick={() => setInstantApplyModalOpen(false)}
-                disabled={isApplyingInstant}
-                className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={submitInstantApply}
-                disabled={isApplyingInstant}
-                className="inline-flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
-              >
-                {isApplyingInstant ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Applying Live on Naukri...</span>
-                  </>
-                ) : (
-                  <>
-                    <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                    <span>⚡ Submit & Apply Live Now</span>
-                  </>
-                )}
-              </button>
             </div>
           </div>
         </div>
