@@ -1077,6 +1077,24 @@ app.post('/api/naukri/portfolio/micro-update', async (req, res) => {
   }
 });
 
+app.get('/api/naukri/portfolio/config', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const config = await getNaukriConfigAsync(userKey);
+    res.json({
+      success: true,
+      config: {
+        continuousPortfolioEnabled: config.continuousPortfolioEnabled ?? true,
+        autoMicroUpdateEnabled: config.autoMicroUpdateEnabled ?? true,
+        autoMicroUpdateIntervalMinutes: config.autoMicroUpdateIntervalMinutes ?? 60,
+        applyAllAtOnce: config.applyAllAtOnce ?? false
+      }
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 app.post('/api/naukri/portfolio/config', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
@@ -1602,7 +1620,21 @@ async function startServer() {
     });
   }
 
-  // 4. Start HTTP Server
+  // 4. Guarantee that ANY unhandled /api route ALWAYS returns JSON, never HTML
+  app.all('/api/*', (req, res) => {
+    res.status(404).json({ success: false, error: `API endpoint not found: ${req.method} ${req.path}` });
+  });
+
+  // Global error handler for /api routes to prevent Express from sending HTML
+  app.use((err, req, res, next) => {
+    if (req.path && req.path.startsWith('/api')) {
+      console.error('[API ERROR]', err);
+      return res.status(err.status || 500).json({ success: false, error: err.message || 'Internal Server Error' });
+    }
+    next(err);
+  });
+
+  // 5. Start HTTP Server
   app.listen(PORT, () => {
     console.log(`[INFO] Cold Email Backend running 24/7 on http://localhost:${PORT}`);
   });

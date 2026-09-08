@@ -4,7 +4,7 @@ import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XC
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
 // Helper to make authenticated, per-user sandbox API calls with 30-Day JWT & Cookies
-export const apiFetch = (endpoint, options = {}) => {
+export const apiFetch = async (endpoint, options = {}) => {
   let userKey = '';
   let jwtToken = '';
   try {
@@ -19,11 +19,26 @@ export const apiFetch = (endpoint, options = {}) => {
     ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
   };
 
-  return fetch(`${BACKEND_URL}${endpoint}`, {
+  const response = await fetch(`${BACKEND_URL}${endpoint}`, {
     ...options,
     credentials: 'include', // Send and receive 30-day JWT cookies
     headers
   });
+
+  // Safe wrapper around response.json() to prevent raw syntax errors when HTML is returned
+  response.json = async () => {
+    const text = await response.text();
+    try {
+      return JSON.parse(text);
+    } catch (parseErr) {
+      if (!response.ok) {
+        throw new Error(`Server returned HTTP ${response.status} (${response.statusText || 'Error'})`);
+      }
+      throw new Error('Server returned unexpected response format');
+    }
+  };
+
+  return response;
 };
 
 export default function App() {

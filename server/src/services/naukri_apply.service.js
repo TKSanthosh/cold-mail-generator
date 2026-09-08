@@ -166,6 +166,7 @@ function recordExternalCompanyJob(userKey, jobItem) {
         detectedAt: new Date().toISOString()
       });
       const filePath = getExternalJobsFilePath(userKey);
+      fs.mkdirSync(path.dirname(filePath), { recursive: true });
       fs.writeFileSync(filePath, JSON.stringify(existing.slice(0, 300), null, 2), 'utf8');
       supabaseSaveNaukriConfig(userKey, { externalJobs: existing.slice(0, 300) }).catch(() => {});
     }
@@ -960,7 +961,8 @@ function normalizeCompanyName(company) {
 /**
  * Extracts exact and normalized company sets from applied jobs history
  */
-function getPastAppliedCompanySets(allApps) {
+function getPastAppliedCompanySets(appsOrUserKey) {
+  const allApps = typeof appsOrUserKey === 'string' ? getNaukriAppliedJobs(appsOrUserKey) : (appsOrUserKey || []);
   const exactCompanySet = new Set();
   const normalizedCompanySet = new Set();
 
