@@ -827,3 +827,24 @@
   background: rgba(245, 158, 11, 0.25) !important;
   color: #fbbf24 !important;
 }
+
+/* Auto-Prefilled Input Styling (Non-intrusive, fully editable indicator) */
+.air-field-prefilled {
+  transition: border-color 0.25s ease, box-shadow 0.25s ease, background-color 0.25s ease !important;
+  border-color: rgba(99, 102, 241, 0.5) !important;
+  background-color: rgba(99, 102, 241, 0.04) !important;
+}
+
+.air-field-prefilled:focus {
+  border-color: #6366f1 !important;
+  background-color: transparent !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2) !important;
+}
+
+input[type="radio"].air-field-prefilled,
+input[type="checkbox"].air-field-prefilled {
+  accent-color: #6366f1 !important;
+  outline: 2px solid rgba(99, 102, 241, 0.4) !important;
+  outline-offset: 2px !important;
+}
+

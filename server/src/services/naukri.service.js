@@ -2784,10 +2784,10 @@ async function applyNaukriMicroChanges(userKey = 'default_user', options = {}) {
       if (!targetHeadline) {
         if (mode === 'rotate') {
           const variations = [
-            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ YOE | Node.js • React.js • Express • AWS • MongoDB`,
-            `SDE 2 / Full Stack Engineer | Node.js, Express.js, React.js, MySQL, MongoDB, AWS, REST APIs | 3.5+ Years Exp`,
-            `Senior Full Stack Developer (MERN Stack) | 3.5+ YOE | Node.js, React, Microservices, Cloud & Distributed Systems`,
-            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS`
+            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 4+ YOE | Node.js • React.js • Express • AWS • MongoDB`,
+            `SDE 2 / Full Stack Engineer | Node.js, Express.js, React.js, MySQL, MongoDB, AWS, REST APIs | 4+ Years Exp`,
+            `Senior Full Stack Developer (MERN Stack) | 4+ YOE | Node.js, React, Microservices, Cloud & Distributed Systems`,
+            `Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 4+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS`
           ];
           const curIndex = variations.findIndex(v => v.trim() === currentVal.trim());
           targetHeadline = variations[(curIndex + 1) % variations.length];

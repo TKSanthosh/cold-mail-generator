@@ -530,18 +530,22 @@ body {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 9px;
+  animation: fadeIn 0.2s ease;
 }
 
 .drawer-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 6px;
 }
 
 .drawer-title {
   font-size: 12px;
   font-weight: 700;
+  color: var(--text-primary);
 }
 
 .close-drawer-btn {
@@ -550,17 +554,122 @@ body {
   color: var(--text-muted);
   font-size: 18px;
   cursor: pointer;
+  padding: 0 4px;
 }
 
-.copy-email-btn {
-  background: var(--primary);
+.close-drawer-btn:hover {
+  color: #fff;
+}
+
+.drawer-attachment-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px dashed #38bdf8;
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 11px;
+  color: #7dd3fc;
+}
+
+.drawer-attachment-badge .att-icon {
+  font-size: 13px;
+}
+
+.drawer-actions-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.drawer-send-btn {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #fff;
   border: none;
   border-radius: var(--radius-sm);
-  padding: 7px;
+  padding: 9px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-shadow: 0 3px 10px rgba(16, 185, 129, 0.3);
+  transition: all 0.15s ease;
+}
+
+.drawer-send-btn:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.drawer-send-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.drawer-draft-btn {
+  background: var(--bg-main);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
   font-size: 11px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.drawer-draft-btn:hover {
+  background: #374151;
+  color: #fff;
+}
+
+.drawer-copy-btn {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.drawer-copy-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.drawer-status {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  animation: fadeIn 0.2s ease;
+}
+
+.drawer-status.success {
+  background: rgba(16, 185, 129, 0.15);
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+
+.drawer-status.error {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+.drawer-status.loading {
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
 }
 
 /* ERROR TOAST */

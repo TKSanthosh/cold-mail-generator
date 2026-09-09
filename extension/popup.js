@@ -32,10 +32,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnOpenEmail = document.getElementById('btn-open-email');
 
   const stateEmailDrawer = document.getElementById('state-email-drawer');
+  const emailTo = document.getElementById('email-to');
   const emailSubject = document.getElementById('email-subject');
   const emailBody = document.getElementById('email-body');
   const btnCloseDrawer = document.getElementById('btn-close-drawer');
+  const btnSendEmail = document.getElementById('btn-send-email');
+  const btnDraftEmail = document.getElementById('btn-draft-email');
   const btnCopyEmail = document.getElementById('btn-copy-email');
+  const drawerAttachedPdfName = document.getElementById('drawer-attached-pdf-name');
+  const drawerStatusBox = document.getElementById('drawer-status-box');
 
   // Settings inputs
   const setServerUrl = document.getElementById('set-server-url');
@@ -57,6 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let generatedPdfUrl = '';
   let generatedPdfFilename = '';
+  let currentTailoredResumeData = null;
 
   // Load stored settings
   chrome.storage.sync.get(currentSettings, (stored) => {
@@ -388,6 +394,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       generatedPdfUrl = resp.downloadUrl;
       generatedPdfFilename = resp.pdfFilename || formatTailoredPdfName('Santhosh_TK', company, role);
+      currentTailoredResumeData = resp.application?.tailoredResume || null;
 
       // Render results
       resScore.innerText = `${resp.atsScore || 95}%`;
@@ -447,12 +454,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     const company = inputCompany.value.trim() || 'your team';
     const candidateName = 'Santhosh T K';
 
+    if (drawerAttachedPdfName) {
+      drawerAttachedPdfName.innerText = generatedPdfFilename || `${candidateName.replace(/\s+/g, '_')}_${company.replace(/\s+/g, '')}_Tailored.pdf`;
+    }
+
     emailSubject.value = `${role} | 4+ Years Experience | Interested in ${company}`;
     emailBody.value = `Hi Hiring Team,
 
-I came across the ${role} opening at ${company} and wanted to reach out directly. With 4+ years of software development experience specializing in full-stack engineering (React.js, Node.js, Express, databases, and microservices), I am confident I can make an immediate impact on your engineering initiatives.
+I came across the ${role} opening at ${company} and wanted to reach out directly. With 4+ years of software development experience specializing in full-stack engineering (React.js, Node.js, Express, databases, and microservices), I am confident I can make an immediate positive impact on your engineering initiatives.
 
-I have attached my resume for the ${role} position for your review.
+I have attached my tailored resume for the ${role} position for your review.
 
 I would welcome the opportunity to discuss how my technical background aligns with ${company}'s goals.
 
@@ -461,18 +472,126 @@ ${candidateName}
 tksanthosh494@gmail.com | +91 8825802707
 LinkedIn: https://linkedin.com/in/santhosh-tk`;
 
+    if (drawerStatusBox) {
+      drawerStatusBox.className = 'drawer-status hidden';
+      drawerStatusBox.innerText = '';
+    }
+
     stateEmailDrawer.classList.toggle('hidden');
+    if (!stateEmailDrawer.classList.contains('hidden') && emailTo) {
+      emailTo.focus();
+    }
   });
 
   btnCloseDrawer.addEventListener('click', () => {
     stateEmailDrawer.classList.add('hidden');
   });
 
+  function showDrawerStatus(type, msg) {
+    if (!drawerStatusBox) return;
+    drawerStatusBox.className = `drawer-status ${type}`;
+    drawerStatusBox.innerText = msg;
+    drawerStatusBox.classList.remove('hidden');
+  }
+
+  // Send Email via Gmail
+  if (btnSendEmail) {
+    btnSendEmail.addEventListener('click', () => {
+      const to = emailTo ? emailTo.value.trim() : '';
+      const subject = emailSubject.value.trim();
+      const body = emailBody.value.trim();
+      const role = inputRole.value.trim() || 'Software Developer';
+      const company = inputCompany.value.trim() || 'Company';
+
+      if (!to) {
+        showDrawerStatus('error', '⚠️ Please enter a recipient email (e.g. recruiter@company.com).');
+        if (emailTo) emailTo.focus();
+        return;
+      }
+
+      if (!subject || !body) {
+        showDrawerStatus('error', '⚠️ Email subject and body cannot be empty.');
+        return;
+      }
+
+      btnSendEmail.disabled = true;
+      if (btnDraftEmail) btnDraftEmail.disabled = true;
+      showDrawerStatus('loading', '⏳ Sending email with tailored PDF attached via Gmail...');
+
+      chrome.runtime.sendMessage({
+        action: 'SEND_EMAIL',
+        email: to,
+        subject,
+        body,
+        resume: currentTailoredResumeData,
+        role,
+        company,
+        serverUrl: currentSettings.serverUrl,
+        userKey: currentSettings.userKey
+      }, (resp) => {
+        btnSendEmail.disabled = false;
+        if (btnDraftEmail) btnDraftEmail.disabled = false;
+
+        if (!resp || !resp.success) {
+          showDrawerStatus('error', `⚠️ ${resp?.error || 'Failed to send email. Check your connection or Gmail auth.'}`);
+          return;
+        }
+
+        showDrawerStatus('success', '✅ Email sent successfully via Gmail with tailored PDF attached!');
+      });
+    });
+  }
+
+  // Save as Draft in Gmail
+  if (btnDraftEmail) {
+    btnDraftEmail.addEventListener('click', () => {
+      const to = emailTo ? emailTo.value.trim() : '';
+      const subject = emailSubject.value.trim();
+      const body = emailBody.value.trim();
+      const role = inputRole.value.trim() || 'Software Developer';
+      const company = inputCompany.value.trim() || 'Company';
+
+      if (!to) {
+        showDrawerStatus('error', '⚠️ Please enter a recipient email.');
+        if (emailTo) emailTo.focus();
+        return;
+      }
+
+      btnSendEmail.disabled = true;
+      btnDraftEmail.disabled = true;
+      showDrawerStatus('loading', '⏳ Saving draft in Gmail with tailored PDF attached...');
+
+      chrome.runtime.sendMessage({
+        action: 'CREATE_DRAFT',
+        email: to,
+        subject,
+        body,
+        resume: currentTailoredResumeData,
+        role,
+        company,
+        serverUrl: currentSettings.serverUrl,
+        userKey: currentSettings.userKey
+      }, (resp) => {
+        btnSendEmail.disabled = false;
+        btnDraftEmail.disabled = false;
+
+        if (!resp || !resp.success) {
+          showDrawerStatus('error', `⚠️ ${resp?.error || 'Failed to create draft in Gmail.'}`);
+          return;
+        }
+
+        showDrawerStatus('success', '✅ Draft saved in Gmail with tailored PDF attached!');
+      });
+    });
+  }
+
   btnCopyEmail.addEventListener('click', () => {
-    const fullText = `Subject: ${emailSubject.value}\n\n${emailBody.value}`;
+    const to = emailTo ? emailTo.value.trim() : '';
+    const toLine = to ? `To: ${to}\n` : '';
+    const fullText = `${toLine}Subject: ${emailSubject.value}\n\n${emailBody.value}`;
     navigator.clipboard.writeText(fullText);
     btnCopyEmail.innerText = '✅ Copied to Clipboard!';
-    setTimeout(() => { btnCopyEmail.innerText = '📋 Copy Email Text'; }, 2000);
+    setTimeout(() => { btnCopyEmail.innerText = '📋 Copy Text'; }, 2000);
   });
 
   function showError(msg) {

@@ -58,6 +58,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'SEND_EMAIL') {
+    handleSendEmail(request)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
+  if (request.action === 'CREATE_DRAFT') {
+    handleCreateDraft(request)
+      .then(res => sendResponse(res))
+      .catch(err => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (request.action === 'GET_QA_ITEMS') {
     handleGetQaItems(request)
       .then(res => sendResponse(res))
@@ -84,12 +98,34 @@ async function checkUrlOnline(url) {
     const cleanUrl = url.replace(/\/+$/, '');
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), 2500);
-    const resp = await fetch(`${cleanUrl}/api/applications`, {
+    
+    // First try health check
+    const resp = await fetch(`${cleanUrl}/api/health`, {
+      method: 'GET',
+      signal: ctrl.signal
+    }).catch(() => null);
+
+    if (resp && resp.ok) {
+      const data = await resp.json().catch(() => null);
+      if (data && data.status === 'ok') {
+        clearTimeout(timer);
+        return true;
+      }
+    }
+
+    // Fallback try applications endpoint
+    const appResp = await fetch(`${cleanUrl}/api/applications`, {
       method: 'GET',
       signal: ctrl.signal
     });
     clearTimeout(timer);
-    return resp.ok;
+    if (appResp.ok) {
+      const data = await appResp.json().catch(() => null);
+      if (data && (Array.isArray(data) || Array.isArray(data.applications))) {
+        return true;
+      }
+    }
+    return false;
   } catch (e) {
     return false;
   }
@@ -101,8 +137,8 @@ async function resolveLiveServerUrl(preferredUrl) {
     return clean;
   }
 
-  // Auto-failover between port 5001 and 5000
-  const alternates = ['http://localhost:5001', 'http://localhost:5000', 'http://127.0.0.1:5001', 'http://127.0.0.1:5000'];
+  // Auto-failover between port 5001 and 5000 (validating health)
+  const alternates = ['http://localhost:5001', 'http://127.0.0.1:5001', 'http://localhost:5000', 'http://127.0.0.1:5000'];
   for (const alt of alternates) {
     if (alt !== clean && await checkUrlOnline(alt)) {
       console.log(`[AI Resume Tailor] Auto-switched server from ${clean} to live server: ${alt}`);
@@ -219,4 +255,86 @@ async function handleSaveQaItem(data = {}) {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const result = await res.json();
   return { success: true, item: result.item, qaItems: result.qaItems };
+}
+
+async function handleSendEmail(data) {
+  const settings = await getStoredSettings();
+  const rawUrl = data.serverUrl || settings.serverUrl || 'http://localhost:5001';
+  const serverUrl = await resolveLiveServerUrl(rawUrl);
+  const userKey = data.userKey || settings.userKey || 'tksanthosh494_gmail_com';
+
+  const payload = {
+    email: data.email,
+    subject: data.subject,
+    body: data.body,
+    resume: data.resume,
+    company: data.company || 'Company',
+    hrName: data.hrName || 'Hiring Manager',
+    userKey
+  };
+
+  const response = await fetch(`${serverUrl}/api/send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-key': userKey
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let errMsg = `Server returned HTTP ${response.status}`;
+    try {
+      const errObj = JSON.parse(errorText);
+      if (errObj.error) errMsg = errObj.error;
+    } catch (_) {
+      if (errorText) errMsg += `: ${errorText.slice(0, 120)}`;
+    }
+    throw new Error(errMsg);
+  }
+
+  const result = await response.json();
+  return { success: true, message: result.message || 'Email sent successfully via Gmail!', result };
+}
+
+async function handleCreateDraft(data) {
+  const settings = await getStoredSettings();
+  const rawUrl = data.serverUrl || settings.serverUrl || 'http://localhost:5001';
+  const serverUrl = await resolveLiveServerUrl(rawUrl);
+  const userKey = data.userKey || settings.userKey || 'tksanthosh494_gmail_com';
+
+  const payload = {
+    email: data.email,
+    subject: data.subject,
+    body: data.body,
+    resume: data.resume,
+    company: data.company || 'Company',
+    hrName: data.hrName || 'Hiring Manager',
+    userKey
+  };
+
+  const response = await fetch(`${serverUrl}/api/draft`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-key': userKey
+    },
+    body: JSON.stringify(payload)
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let errMsg = `Server returned HTTP ${response.status}`;
+    try {
+      const errObj = JSON.parse(errorText);
+      if (errObj.error) errMsg = errObj.error;
+    } catch (_) {
+      if (errorText) errMsg += `: ${errorText.slice(0, 120)}`;
+    }
+    throw new Error(errMsg);
+  }
+
+  const result = await response.json();
+  return { success: true, message: result.message || 'Draft saved in Gmail!', result };
 }

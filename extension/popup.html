@@ -126,19 +126,43 @@
       <!-- COLD EMAIL MODAL DRAWER -->
       <div class="email-drawer hidden" id="state-email-drawer">
         <div class="drawer-header">
-          <span class="drawer-title">✉️ Tailored Cold Email</span>
-          <button class="close-drawer-btn" id="btn-close-drawer">&times;</button>
+          <span class="drawer-title">✉️ Tailored Cold Email & Outreach</span>
+          <button class="close-drawer-btn" id="btn-close-drawer" title="Close">&times;</button>
         </div>
         <div class="drawer-body">
           <div class="field-group">
+            <label>Recipient / HR Email</label>
+            <input type="email" id="email-to" placeholder="e.g. recruiter@company.com or hiring team email" />
+          </div>
+          <div class="field-group">
             <label>Subject</label>
-            <input type="text" id="email-subject" readonly />
+            <input type="text" id="email-subject" placeholder="Subject" />
           </div>
           <div class="field-group">
             <label>Body</label>
-            <textarea id="email-body" rows="6" readonly></textarea>
+            <textarea id="email-body" rows="6" placeholder="Email body..."></textarea>
           </div>
-          <button class="copy-email-btn" id="btn-copy-email">📋 Copy Email Text</button>
+
+          <div class="drawer-attachment-badge">
+            <span class="att-icon">📎</span>
+            <span class="att-text">Attached: <strong id="drawer-attached-pdf-name">Tailored_Resume.pdf</strong></span>
+          </div>
+
+          <!-- ACTIONS -->
+          <div class="drawer-actions-grid">
+            <button class="drawer-send-btn" id="btn-send-email">
+              🚀 Send via Gmail
+            </button>
+            <button class="drawer-draft-btn" id="btn-draft-email">
+              📝 Save Draft
+            </button>
+            <button class="drawer-copy-btn" id="btn-copy-email">
+              📋 Copy Text
+            </button>
+          </div>
+
+          <!-- DRAWER STATUS TOAST -->
+          <div class="drawer-status hidden" id="drawer-status-box"></div>
         </div>
       </div>
 

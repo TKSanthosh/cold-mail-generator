@@ -381,9 +381,9 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
   exp.forEach(job => {
     if (job.company && job.company.includes('IQVIA')) {
       job.highlights = [
-        'Enhanced core backend service reliability across an enterprise clinical engagement management platform by engineering scalable API routes in Node.js, React.js, and MySQL.',
-        'Accelerated client feature delivery turnaround times by refactoring legacy modules into reusable backend components and collaborating with cross-functional engineering teams.',
-        'Diagnosed and resolved complex production issues and database bottlenecks, maintaining high platform availability and low latency during peak usage cycles.'
+        'Architecting and optimizing high-throughput backend services and interactive UI workflows in Node.js, React.js, and MySQL for enterprise clinical event management.',
+        'Accelerated client feature delivery turnaround by ~25% by refactoring legacy modules into reusable backend components and collaborating with cross-functional engineering teams.',
+        'Diagnosed and resolved 20+ critical platform issues and database bottlenecks, improving application stability and maintaining high availability during peak cycles.'
       ];
     } else if (job.company && job.company.includes('Sify')) {
       if (Array.isArray(job.projects)) {

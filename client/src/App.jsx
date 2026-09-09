@@ -5446,7 +5446,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </span>
             </div>
             <p className="text-xs font-medium text-slate-800 dark:text-slate-200 leading-relaxed bg-white dark:bg-slate-900/80 p-2.5 rounded-lg border border-slate-200 dark:border-slate-700 select-all">
-              {portfolioData?.headline || "Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 3.5+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS."}
+              {portfolioData?.headline || "Software Development Engineer 2 (SDE2) | Full Stack Developer | MERN Stack | 4+ Years | Node.js | React.js | Express.js | MySQL | MongoDB | REST APIs | AWS."}
             </p>
           </div>
 

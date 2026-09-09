@@ -191,21 +191,23 @@
   function isValidJobDescription(jd) {
     if (!jd || typeof jd !== 'string') return false;
     const clean = jd.trim();
-    if (clean.length < 150) return false;
+    if (clean.length < 50) return false;
 
     const lower = clean.toLowerCase();
     const recruitmentKeywords = [
       'responsibilities', 'requirements', 'qualifications', 'experience',
       'skills', 'what you will do', 'what you\'ll do', 'duties', 'about the role',
       'candidate profile', 'about the job', 'job description', 'minimum qualifications',
-      'preferred qualifications'
+      'preferred qualifications', 'summary', 'overview', 'role', 'team', 'who you are',
+      'equal opportunity', 'opportunity', 'technologies', 'emerging', 'deliver', 'innovation',
+      'management level', 'time type', 'job requisition', 'software'
     ];
 
     let matchCount = 0;
     for (const kw of recruitmentKeywords) {
       if (lower.includes(kw)) matchCount++;
     }
-    return matchCount >= 2;
+    return clean.length >= 150 ? matchCount >= 1 : matchCount >= 2;
   }
 
   // --- JOB DESCRIPTION PARSERS ---
@@ -370,15 +372,73 @@
   }
 
   function extractWorkday() {
-    const roleEl = document.querySelector('h1[data-automation-id="jobPostingHeader"], h2[data-automation-id="jobPostingHeader"], h1');
-    const companyEl = document.querySelector('[data-automation-id="companyName"], header img[alt], .css-1q2s3w');
-    const descEl = document.querySelector('[data-automation-id="jobPostingDescription"], .job-description');
+    // 1. Role Title
+    let role = '';
+    const roleEl = document.querySelector(
+      'h1[data-automation-id="jobPostingHeader"], h2[data-automation-id="jobPostingHeader"], [data-automation-id="jobPostingHeader"], [class*="jobPostingHeader"], h1, h2'
+    );
+    if (roleEl) {
+      role = cleanText(roleEl.innerText);
+    }
+    if (!role && document.title) {
+      role = document.title.split(/[-|–]/)[0].trim();
+    }
 
-    if (descEl && cleanText(descEl.innerText).length > 80) {
+    // 2. Company Name
+    let company = '';
+    const companyEl = document.querySelector(
+      '[data-automation-id="companyName"], img[data-automation-id="clientLogo"], header img[alt], .css-1q2s3w'
+    );
+    if (companyEl) {
+      company = companyEl.alt || cleanText(companyEl.innerText);
+    }
+    if (!company) {
+      const host = window.location.hostname.toLowerCase();
+      const match = host.match(/^([a-z0-9-]+)\.(?:wd\d+\.)?myworkdayjobs\.com/i);
+      if (match && match[1]) {
+        const raw = match[1].toLowerCase();
+        if (raw === 'pwc') company = 'PwC';
+        else if (raw === 'ey') company = 'EY';
+        else if (raw === 'kpmg') company = 'KPMG';
+        else if (raw === 'deloitte') company = 'Deloitte';
+        else if (raw === 'ibm') company = 'IBM';
+        else company = raw.charAt(0).toUpperCase() + raw.slice(1);
+      }
+    }
+
+    // 3. Job Description Text
+    let jdText = '';
+
+    // Check main body/page containers in Workday
+    const mainContainers = Array.from(document.querySelectorAll(
+      '[data-automation-id="jobPostingBody"], [data-automation-id="jobPostingPage"], [data-automation-id="job-posting-details"], main, [role="main"]'
+    ));
+
+    for (const cont of mainContainers) {
+      const t = cont.innerText.trim();
+      if (t.length > jdText.length) {
+        jdText = t;
+      }
+    }
+
+    // Check all dedicated description & rich-text nodes
+    const descEls = Array.from(document.querySelectorAll(
+      '[data-automation-id="jobPostingDescription"], [data-automation-id="rich-text-container"], [data-automation-id="jobPostingRichText"], [data-automation-id="jobDescription"], .job-description, [class*="job-description"], [class*="rich-text"]'
+    ));
+
+    if (descEls.length > 0) {
+      const parts = descEls.map(el => el.innerText.trim()).filter(t => t.length > 20);
+      const combined = parts.join('\n\n');
+      if (combined.length > jdText.length || !jdText) {
+        jdText = combined;
+      }
+    }
+
+    if (jdText && cleanText(jdText).length > 50) {
       return {
-        role: roleEl ? cleanText(roleEl.innerText) : '',
-        company: companyEl ? (companyEl.alt || cleanText(companyEl.innerText)) : '',
-        jd: descEl.innerText.trim(),
+        role: role || 'Software Engineer',
+        company: company || 'Company',
+        jd: jdText.trim(),
         source: 'Workday'
       };
     }
@@ -609,12 +669,21 @@
     }
 
     if (!data) {
-      data = extractGoogleCareers() || extractOracleCloud() || extractWorkday() || extractGeneric();
+      data = extractWorkday() || extractGoogleCareers() || extractOracleCloud() || extractGeneric();
     }
 
-    if (data && isValidJobDescription(data.jd) && isValidRoleTitle(data.role)) {
-      currentScrapedData = data;
-      return data;
+    if (data) {
+      if (force) {
+        if (data.jd && data.jd.trim().length > 20) {
+          currentScrapedData = data;
+          return data;
+        }
+      } else {
+        if (isValidJobDescription(data.jd) && isValidRoleTitle(data.role)) {
+          currentScrapedData = data;
+          return data;
+        }
+      }
     }
 
     return null;
@@ -1293,15 +1362,21 @@
     initQaTracker();
   }
 
-  // --- SMART Q&A FORM TRACKER & MEMORY TOAST SYSTEM ---
+  // --- SMART Q&A FORM TRACKER & SUPABASE AUTO-PREFILL / AUTO-RECORD ENGINE ---
   let localQaMemory = [];
   let activeQaToast = null;
   let activeQaInput = null;
+  let prefillDebounceTimer = null;
+  let formObserver = null;
 
-  function syncQaMemory() {
+  function syncQaMemory(onComplete) {
     chrome.runtime.sendMessage({ action: 'GET_QA_ITEMS' }, (resp) => {
       if (resp && resp.success && Array.isArray(resp.qaItems)) {
         localQaMemory = resp.qaItems;
+        console.log(`[AI Tailor Q&A] Loaded ${localQaMemory.length} questions from Supabase memory.`);
+        // Run auto-prefill once memory is hydrated
+        autoPrefillPageQuestions(true);
+        if (typeof onComplete === 'function') onComplete(localQaMemory);
       }
     });
   }
@@ -1327,7 +1402,10 @@
     // 2. Search inputs & search bars
     if (type === 'search' || inputEl.getAttribute('role') === 'searchbox') return true;
 
-    // 3. Login / Auth / Search keywords in element attributes or question
+    // 3. Hidden or button fields
+    if (type === 'hidden' || type === 'submit' || type === 'button' || type === 'image' || type === 'reset') return true;
+
+    // 4. Login / Auth / Search keywords in element attributes or question
     const ignoreKeywords = [
       'password', 'passwd', 'search', 'query', 'filter', 'login', 'signin', 'sign-in', 'log-in',
       'auth', 'username', 'user_name', 'authenticator', 'captcha', 'verification_code', 'otp',
@@ -1339,9 +1417,9 @@
       }
     }
 
-    // 4. Pure Auth / Search paths
+    // 5. Pure Auth / Login paths (excluding job application flows)
     if (path.includes('/login') || path.includes('/signin') || path.includes('/auth') || path.includes('/accounts/')) {
-      if (!path.includes('candidate') && !path.includes('apply') && !path.includes('job')) {
+      if (!path.includes('candidate') && !path.includes('apply') && !path.includes('job') && !path.includes('careers')) {
         return true;
       }
     }
@@ -1351,6 +1429,7 @@
 
   function isJobApplicationQuestion(questionText, inputEl) {
     if (isIgnoredLoginOrSearchField(inputEl, questionText)) return false;
+    if (!questionText || questionText.trim().length < 3) return false;
 
     const normQ = (questionText || '').toLowerCase();
     const normInput = ((inputEl?.name || '') + ' ' + (inputEl?.id || '') + ' ' + (inputEl?.placeholder || '')).toLowerCase();
@@ -1360,11 +1439,22 @@
       'experience', 'yoe', 'years', 'notice period', 'ctc', 'salary', 'compensation',
       'joining', 'lwd', 'last working day', 'relocate', 'relocation', 'location', 'city',
       'bangalore', 'bengaluru', 'remote', 'hybrid', 'office', 'wfh', 'shift',
-      'qualification', 'degree', 'education', 'b.tech', 'bachelor', 'master',
-      'resume', 'cover letter', 'sponsorship', 'authorization', 'visa', 'citizen',
+      'qualification', 'degree', 'education', 'b.tech', 'bachelor', 'master', 'university', 'college',
+      'resume', 'cover letter', 'sponsorship', 'authorization', 'visa', 'citizen', 'work authorization',
       'react', 'node', 'javascript', 'typescript', 'python', 'java', 'sql', 'aws',
-      'cloud', 'skill', 'portfolio', 'github', 'linkedin', 'questionnaire', 'screening'
+      'cloud', 'skill', 'portfolio', 'github', 'linkedin', 'questionnaire', 'screening',
+      'gender', 'veteran', 'disability', 'pronouns', 'hear about us', 'source', 'authorized',
+      'gpa', 'current company', 'current employer', 'current title', 'current role', 'total experience',
+      'expected salary', 'current salary', 'expected ctc', 'current ctc', 'current compensation',
+      'reason for leaving', 'available to start', 'start date', 'willing to relocate'
     ];
+
+    // If on a job application domain or page, be more accepting of form questions
+    if (isJobDomainOrPath()) {
+      if (jobKeywords.some(kw => textToTest.includes(kw))) return true;
+      // General question heuristics on application pages
+      if (normQ.length >= 4 && !normQ.includes('search') && !normQ.includes('login')) return true;
+    }
 
     return jobKeywords.some(kw => textToTest.includes(kw));
   }
@@ -1384,14 +1474,28 @@
     const parentLabel = inputEl.closest('label');
     if (parentLabel && cleanText(parentLabel.innerText)) return cleanText(parentLabel.innerText);
 
-    // 3. Preceding question element
-    const container = inputEl.closest('.form-group, .input-group, fieldset, section, div');
-    if (container) {
-      const heading = container.querySelector('label, legend, h1, h2, h3, h4, h5, h6, .question, [class*="label"], [class*="question"]');
-      if (heading && cleanText(heading.innerText)) return cleanText(heading.innerText);
+    // 3. ARIA labelledby
+    const ariaLabelledby = inputEl.getAttribute('aria-labelledby');
+    if (ariaLabelledby) {
+      try {
+        const lbls = ariaLabelledby.split(/\s+/).map(id => document.getElementById(id)).filter(Boolean);
+        const combined = lbls.map(l => cleanText(l.innerText)).filter(Boolean).join(' ');
+        if (combined) return combined;
+      } catch (_) {}
     }
 
-    // 4. Attributes
+    // 4. Preceding question element / container heading
+    const container = inputEl.closest('.form-group, .input-group, .field, .application-question, [data-automation-id*="formField"], fieldset, section, div');
+    if (container) {
+      const heading = container.querySelector('label, legend, h1, h2, h3, h4, h5, h6, .question, [class*="label"], [class*="question"], [data-automation-id*="label"]');
+      if (heading && cleanText(heading.innerText)) {
+        const t = cleanText(heading.innerText);
+        // Avoid returning entire giant form texts
+        if (t.length > 2 && t.length < 250) return t;
+      }
+    }
+
+    // 5. Attributes
     const ariaLabel = inputEl.getAttribute('aria-label');
     if (ariaLabel) return cleanText(ariaLabel);
 
@@ -1409,22 +1513,173 @@
     const normQ = normalizeText(questionText);
     if (normQ.length < 3) return null;
 
+    // 1. Exact normalized match
     let found = localQaMemory.find(q => normalizeText(q.question) === normQ);
     if (found) return found;
 
+    // 2. Keyword match
     for (const item of localQaMemory) {
-      if (Array.isArray(item.keywords)) {
-        const hasKw = item.keywords.some(kw => normQ.includes(normalizeText(kw)));
+      if (Array.isArray(item.keywords) && item.keywords.length > 0) {
+        const hasKw = item.keywords.some(kw => {
+          const normKw = normalizeText(kw);
+          return normKw.length > 2 && normQ.includes(normKw);
+        });
         if (hasKw) return item;
       }
     }
 
+    // 3. Substring inclusion match
     found = localQaMemory.find(q => {
       const qNorm = normalizeText(q.question);
-      return (normQ.length > 4 && qNorm.includes(normQ)) || (qNorm.length > 4 && normQ.includes(qNorm));
+      return (normQ.length > 5 && qNorm.includes(normQ)) || (qNorm.length > 5 && normQ.includes(qNorm));
     });
 
     return found || null;
+  }
+
+  /** Native property setter for React, Angular, Vue, and Workday reactive state binding */
+  function setNativeInputValue(el, value) {
+    if (!el) return;
+    const tag = el.tagName.toLowerCase();
+
+    if (tag === 'select') {
+      let matched = false;
+      const targetVal = String(value).toLowerCase().trim();
+      for (let i = 0; i < el.options.length; i++) {
+        const opt = el.options[i];
+        const optText = (opt.text || '').toLowerCase().trim();
+        const optVal = (opt.value || '').toLowerCase().trim();
+        if (optVal === targetVal || optText === targetVal || (targetVal.length > 2 && optText.includes(targetVal))) {
+          el.selectedIndex = i;
+          matched = true;
+          break;
+        }
+      }
+      if (matched) {
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      return;
+    }
+
+    if (el.type === 'radio' || el.type === 'checkbox') {
+      const isChecked = ['true', 'yes', '1', 'checked'].includes(String(value).toLowerCase().trim());
+      el.checked = isChecked;
+      el.dispatchEvent(new Event('click', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return;
+    }
+
+    // Text / Textarea / Number / Tel
+    const proto = tag === 'textarea' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+    const setDescriptor = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+    if (setDescriptor) {
+      setDescriptor.call(el, value);
+    } else {
+      el.value = value;
+    }
+
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    el.dispatchEvent(new Event('blur', { bubbles: true }));
+  }
+
+  function prefillRadioGroup(radioGroup, answer) {
+    const target = String(answer).toLowerCase().trim();
+    for (const radio of radioGroup) {
+      const rVal = (radio.value || '').toLowerCase().trim();
+      let rLabel = '';
+      if (radio.id) {
+        const lbl = document.querySelector(`label[for="${CSS.escape(radio.id)}"]`);
+        if (lbl) rLabel = cleanText(lbl.innerText).toLowerCase();
+      }
+      if (!rLabel) {
+        const parentLbl = radio.closest('label');
+        if (parentLbl) rLabel = cleanText(parentLbl.innerText).toLowerCase();
+      }
+      if (!rLabel && radio.parentElement) {
+        rLabel = cleanText(radio.parentElement.innerText).toLowerCase();
+      }
+
+      if (rVal === target || rLabel === target || (target.length > 1 && (rLabel.includes(target) || target.includes(rLabel)))) {
+        radio.checked = true;
+        radio.dataset.airPrefilled = 'true';
+        radio.classList.add('air-field-prefilled');
+        radio.dispatchEvent(new Event('click', { bubbles: true }));
+        radio.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Automatically scans current page/step and prefills all matching questions from Supabase database.
+   * Keeps fields 100% editable for the user.
+   */
+  function autoPrefillPageQuestions(silent = false) {
+    if (isSitePaused() || !localQaMemory || localQaMemory.length === 0) return 0;
+
+    let prefilledCount = 0;
+
+    // 1. Process Radio Groups
+    const radioGroups = {};
+    document.querySelectorAll('input[type="radio"]').forEach(radio => {
+      if (isIgnoredLoginOrSearchField(radio)) return;
+      const name = radio.name || 'unnamed_radio_group';
+      if (!radioGroups[name]) radioGroups[name] = [];
+      radioGroups[name].push(radio);
+    });
+
+    for (const groupName in radioGroups) {
+      const group = radioGroups[groupName];
+      const firstRadio = group[0];
+      // Skip if already answered by user
+      if (group.some(r => r.dataset.airTouched === 'true' || (r.checked && !r.dataset.airPrefilled))) {
+        continue;
+      }
+      const qText = getQuestionTextForInput(firstRadio);
+      if (qText && isJobApplicationQuestion(qText, firstRadio)) {
+        const match = matchQaItem(qText);
+        if (match && match.answer) {
+          if (prefillRadioGroup(group, match.answer)) {
+            prefilledCount++;
+          }
+        }
+      }
+    }
+
+    // 2. Process Text, Textarea, and Select Inputs
+    const inputs = document.querySelectorAll(
+      'input:not([type="radio"]):not([type="submit"]):not([type="button"]):not([type="hidden"]):not([type="file"]):not([type="image"]), textarea, select'
+    );
+
+    inputs.forEach(el => {
+      if (isIgnoredLoginOrSearchField(el)) return;
+      if (el.dataset.airTouched === 'true') return; // User manually touched/edited this
+
+      const currentVal = (el.value || '').trim();
+      // If already has non-prefilled value, do not overwrite
+      if (currentVal.length > 0 && el.dataset.airPrefilled !== 'true') return;
+
+      const qText = getQuestionTextForInput(el);
+      if (!qText || !isJobApplicationQuestion(qText, el)) return;
+
+      const match = matchQaItem(qText);
+      if (match && match.answer) {
+        // Prefill the field while leaving it 100% editable
+        setNativeInputValue(el, match.answer);
+        el.dataset.airPrefilled = 'true';
+        el.classList.add('air-field-prefilled');
+        prefilledCount++;
+      }
+    });
+
+    if (prefilledCount > 0 && !silent) {
+      showQaFeedbackBadge(`💡 Auto-prefilled ${prefilledCount} question${prefilledCount > 1 ? 's' : ''} from Q&A database! (Editable)`);
+    }
+
+    return prefilledCount;
   }
 
   async function showQaMemoryToast(inputEl, qaItem) {
@@ -1455,16 +1710,16 @@
     activeQaToast.innerHTML = `
       <div class="air-qa-content">
         <div class="air-qa-header">
-          <span class="air-qa-badge">💡 Q&A Memory</span>
+          <span class="air-qa-badge">💡 Supabase Q&A</span>
           <span class="air-qa-question">${qaItem.question}</span>
         </div>
         <div class="air-qa-body">
-          <span class="air-qa-label">Previously Chosen:</span>
+          <span class="air-qa-label">Stored Answer:</span>
           <strong class="air-qa-val">${prevAnswer}</strong>
         </div>
         <div class="air-qa-actions">
-          <button type="button" class="air-qa-btn primary" id="air-qa-use-btn">⚡ Use Previously Chosen</button>
-          ${isDifferent ? `<button type="button" class="air-qa-btn update-btn" id="air-qa-update-btn">✏️ Update DB to "${currentVal}"</button>` : ''}
+          <button type="button" class="air-qa-btn primary" id="air-qa-use-btn">⚡ Fill Stored Answer</button>
+          ${isDifferent ? `<button type="button" class="air-qa-btn update-btn" id="air-qa-update-btn">✏️ Update Supabase to "${currentVal}"</button>` : ''}
           <button type="button" class="air-qa-btn pause-btn" id="air-qa-pause-btn" title="Pause Q&A tracking on this domain">⏸️ Stop for Page</button>
           <button type="button" class="air-qa-close" id="air-qa-close-btn">&times;</button>
         </div>
@@ -1477,10 +1732,10 @@
     if (useBtn) {
       useBtn.onclick = (e) => {
         e.preventDefault();
-        inputEl.value = prevAnswer;
-        inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-        inputEl.dispatchEvent(new Event('change', { bubbles: true }));
-        showQaFeedbackBadge('✓ Applied Previously Chosen Answer!');
+        setNativeInputValue(inputEl, prevAnswer);
+        inputEl.dataset.airPrefilled = 'true';
+        inputEl.classList.add('air-field-prefilled');
+        showQaFeedbackBadge('✓ Applied stored answer from Supabase!');
         hideQaToast();
       };
     }
@@ -1522,14 +1777,18 @@
 
   function saveOrUpdateQaAnswer(question, newAnswer, existingId) {
     if (!question || !newAnswer) return;
+    const cleanQ = question.trim();
+    const cleanA = String(newAnswer).trim();
+    if (cleanQ.length < 3 || cleanA.length === 0) return;
+
     chrome.runtime.sendMessage({
       action: 'SAVE_QA_ITEM',
       id: existingId,
-      question: question.trim(),
-      answer: String(newAnswer).trim()
+      question: cleanQ,
+      answer: cleanA
     }, (resp) => {
       if (resp && resp.success) {
-        showQaFeedbackBadge('✓ Updated Q&A Memory with Latest Choice!');
+        showQaFeedbackBadge(`✓ Saved to Supabase: "${cleanQ.slice(0, 30)}${cleanQ.length > 30 ? '...' : ''}"`);
         syncQaMemory();
       }
     });
@@ -1551,8 +1810,50 @@
   }
 
   function initQaTracker() {
-    syncQaMemory();
+    // 1. Initial memory sync & prefill
+    syncQaMemory(() => {
+      autoPrefillPageQuestions(false);
+    });
 
+    // 2. Dynamic multi-step / modal SPA observer
+    if (!formObserver && window.MutationObserver) {
+      formObserver = new MutationObserver((mutations) => {
+        if (isSitePaused()) return;
+        let hasNewInputs = false;
+        for (const m of mutations) {
+          if (m.addedNodes.length > 0) {
+            for (const node of m.addedNodes) {
+              if (node.nodeType === 1) {
+                if (node.matches && (node.matches('input, select, textarea, form, [role="dialog"]') || node.querySelector('input, select, textarea'))) {
+                  hasNewInputs = true;
+                  break;
+                }
+              }
+            }
+          }
+          if (hasNewInputs) break;
+        }
+
+        if (hasNewInputs) {
+          clearTimeout(prefillDebounceTimer);
+          prefillDebounceTimer = setTimeout(() => {
+            autoPrefillPageQuestions(true);
+          }, 500);
+        }
+      });
+
+      formObserver.observe(document.body, { childList: true, subtree: true });
+    }
+
+    // 3. Mark fields as user-touched as soon as user types or modifies them
+    document.addEventListener('input', (e) => {
+      const el = e.target;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
+        el.dataset.airTouched = 'true';
+      }
+    }, true);
+
+    // 4. On Focus: Display memory popover if stored answer exists
     document.addEventListener('focusin', async (e) => {
       if (isSitePaused()) return;
       const el = e.target;
@@ -1560,30 +1861,32 @@
         const qText = getQuestionTextForInput(el);
         if (qText && isJobApplicationQuestion(qText, el)) {
           const match = matchQaItem(qText);
-          if (match) {
+          if (match && (!el.value || el.value.trim().toLowerCase() !== match.answer.toLowerCase())) {
             showQaMemoryToast(el, match);
           }
         }
       }
     });
 
+    // 5. On Change / Blur: Automatically capture and sync answered/updated questions to Supabase
     document.addEventListener('change', async (e) => {
       if (isSitePaused()) return;
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
+        el.dataset.airTouched = 'true';
         const qText = getQuestionTextForInput(el);
         const val = (el.value || '').trim();
         if (qText && val && isJobApplicationQuestion(qText, el)) {
           const match = matchQaItem(qText);
-          if (match && match.answer.toLowerCase() !== val.toLowerCase()) {
-            showQaMemoryToast(el, match);
-          } else if (!match && val.length > 0 && qText.length > 4) {
-            saveOrUpdateQaAnswer(qText, val);
+          if (!match || match.answer.toLowerCase() !== val.toLowerCase()) {
+            // New question or user updated their answer -> auto-record to Supabase!
+            saveOrUpdateQaAnswer(qText, val, match?.id);
           }
         }
       }
     });
 
+    // 6. On Form Submit: Capture all valid answered questions across the form
     document.addEventListener('submit', async (e) => {
       if (isSitePaused()) return;
       const form = e.target;
