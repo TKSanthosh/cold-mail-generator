@@ -398,16 +398,60 @@ async function runMasterRegressionSuite() {
   // 2e. Safe JSON Exception Handling Wrapper
   try {
     const htmlGateway = '<!DOCTYPE html><html><body>502 Bad Gateway</body></html>';
-    let safeMessageHandled = false;
-    try {
-      JSON.parse(htmlGateway);
-    } catch (_) {
-      const wrappedError = new Error('Server returned HTTP 502 (Bad Gateway)');
-      safeMessageHandled = wrappedError.message.includes('502');
-    }
-    assert('Mini Safe JSON Wrapper: Catches raw HTML response without crashing process', safeMessageHandled);
-  } catch (e) {
-    assert('Mini Safe JSON Test', false, e.message);
+    const parsed = typeof htmlGateway === 'object' ? htmlGateway : JSON.parse(htmlGateway);
+    assert('Mini Safe JSON Wrapper: Throws expected JSON parse error on HTML', false);
+  } catch (err) {
+    assert('Mini Safe JSON Wrapper: Catches raw HTML response without crashing process', true);
+  }
+
+  // 2f. Company Profile & 200+ Employee Threshold Inspector Tests
+  try {
+    const { inspectCompanySizeAndProfile, KNOWN_ENTERPRISE_COMPANIES, DEFAULT_FILTER_CONFIG } = require(path.join(rootDir, 'server/src/services/naukri_apply.service'));
+
+    assert('Mini Company Intel: DEFAULT_FILTER_CONFIG specifies minCompanyEmployees: 200', DEFAULT_FILTER_CONFIG.minCompanyEmployees === 200);
+    assert('Mini Company Intel: DEFAULT_FILTER_CONFIG specifies excludeStartups: true', DEFAULT_FILTER_CONFIG.excludeStartups === true);
+
+    // Test 1: Known Enterprise Whitelist
+    const mockPageEnterprise = {
+      evaluate: async () => ({ parsedMinEmployees: null, parsedMaxEmployees: null, tags: [] })
+    };
+    const resInfosys = await inspectCompanySizeAndProfile(mockPageEnterprise, { company: 'Infosys Limited' }, { minCompanyEmployees: 200, excludeStartups: true });
+    assert('Mini Company Intel [Infosys Whitelist]: Qualifies as 200+ established enterprise', resInfosys.eligible === true && resInfosys.isStartup === false);
+
+    const resCognizant = await inspectCompanySizeAndProfile(mockPageEnterprise, { company: 'Cognizant Technology Solutions' }, { minCompanyEmployees: 200, excludeStartups: true });
+    assert('Mini Company Intel [Cognizant Whitelist]: Qualifies as 200+ established enterprise', resCognizant.eligible === true && resCognizant.isStartup === false);
+
+    // Test 2: Sub-200 Small Startup (< 50 employees)
+    const mockPageSmallStartup = {
+      evaluate: async () => ({
+        parsedMinEmployees: 1,
+        parsedMaxEmployees: 25,
+        sizeSnippet: '1-25 Employees',
+        reviewCount: 2,
+        isMncOrCorporate: false,
+        isStartupExplicit: true,
+        tags: ['startup', 'early stage']
+      })
+    };
+    const resStartup = await inspectCompanySizeAndProfile(mockPageSmallStartup, { company: 'Stealth AI Labs' }, { minCompanyEmployees: 200, excludeStartups: true });
+    assert('Mini Company Intel [Small Startup 1-25 employees]: Strictly rejected (< 200 employees)', resStartup.eligible === false && resStartup.isStartup === true);
+
+    // Test 3: Large 500-1000 Employee Company
+    const mockPageLargeComp = {
+      evaluate: async () => ({
+        parsedMinEmployees: 500,
+        parsedMaxEmployees: 1000,
+        sizeSnippet: '500-1000 Employees',
+        reviewCount: 450,
+        isMncOrCorporate: true,
+        isStartupExplicit: false,
+        tags: ['corporate', 'mnc']
+      })
+    };
+    const resLarge = await inspectCompanySizeAndProfile(mockPageLargeComp, { company: 'Global Tech Systems' }, { minCompanyEmployees: 200, excludeStartups: true });
+    assert('Mini Company Intel [500-1000 Employees]: Strictly approved (>= 200 employees)', resLarge.eligible === true && resLarge.isStartup === false);
+  } catch (err) {
+    assert('Mini Company Intel Test Suite', false, err.message);
   }
 
   // =========================================================================

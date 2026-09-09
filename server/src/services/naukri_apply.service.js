@@ -63,6 +63,8 @@ const DEFAULT_FILTER_CONFIG = {
   dailyTarget: 50,
   easyApplyOnly: true,
   neverApplySameCompanyTwice: true, // Permanent company deduplication: never apply to the same company again
+  minCompanyEmployees: 200, // Strictly verify company has at least 200+ employees
+  excludeStartups: true, // Exclude early-stage startups (< 200 employees)
   excludedCompanies: [],
   excludedJobTitles: [],
   minRelevanceScore: 40
@@ -1595,6 +1597,195 @@ async function discoverNaukriJobsWithPuppeteer(page, userKey, filterConfig = nul
   return allDiscovered;
 }
 
+// Whitelist of established enterprises, MNCs, and corporate tech employers (automatically qualified as 200+ employees)
+const KNOWN_ENTERPRISE_COMPANIES = new Set([
+  'infosys', 'tcs', 'tata consultancy services', 'wipro', 'cognizant', 'accenture', 'hcl', 'hcltech',
+  'tech mahindra', 'capgemini', 'ibm', 'oracle', 'sap', 'microsoft', 'amazon', 'aws', 'google',
+  'meta', 'facebook', 'apple', 'cisco', 'intel', 'amd', 'nvidia', 'dell', 'hp', 'hewlett packard',
+  'samsung', 'qualcomm', 'broadcom', 'sify', 'sify technologies', 'iqvia', 'swiggy', 'zomato',
+  'razorpay', 'paytm', 'one97', 'flipkart', 'myntra', 'jio', 'reliance', 'reliance jio', 'airtel',
+  'bharti airtel', 'siemens', 'bosch', 'ltimindtree', 'mindtree', 'l&t infotech', 'cgi', 'dxc',
+  'dxc technology', 'ey', 'ernst & young', 'pwc', 'pricewaterhousecoopers', 'deloitte', 'kpmg',
+  'jpmorgan', 'jpmorgan chase', 'morgan stanley', 'goldman sachs', 'wells fargo', 'citi', 'citibank',
+  'hsbc', 'standard chartered', 'barclays', 'deutsche bank', 'american express', 'amex', 'fidelity',
+  'fidelity investments', 'paypal', 'servicenow', 'salesforce', 'adobe', 'intuit', 'uber', 'ola',
+  'atlassian', 'vmware', 'nutanix', 'palo alto networks', 'fortinet', 'crowdstrike', 'freshworks',
+  'zoho', 'zoho corporation', 'target', 'walmart', 'walmart global tech', 'lowes', 'optum',
+  'unitedhealth', 'unitedhealth group', 'cerner', 'epic systems', 'societe generale', 'bnp paribas',
+  'ubs', 'credit suisse', 'schneider electric', 'honeywell', 'general electric', 'ge', 'philips',
+  'hitachi', 'sony', 'rakuten', 'mercedes-benz', 'mercedes benz', 'bmw', 'volvo', 'ford',
+  'genpact', 'conduent', 'mphasis', 'birlasoft', 'zensar', 'cyient', 'kpit', 'sonata software',
+  'hexaware', 'persistent systems', 'coforge', 'niit', 'firstsource', 'exl', 'indegene', 'eclerx',
+  'infobeans', 'eizen', 'aziro', 'indium software', 'otomeyt', 'opey assuredefence'
+]);
+
+/**
+ * Pre-Application Company Intel & Headcount Inspector
+ * Inspects company profile on page to ensure it meets minimum 200+ employees and filters out early-stage startups.
+ */
+async function inspectCompanySizeAndProfile(page, jobItem, filterConfig = {}) {
+  const minRequiredEmployees = typeof filterConfig.minCompanyEmployees === 'number'
+    ? filterConfig.minCompanyEmployees
+    : 200;
+  const excludeStartups = filterConfig.excludeStartups !== false;
+
+  const rawCompanyName = (jobItem.company || '').toLowerCase().trim();
+  const normalizedComp = normalizeCompanyName(rawCompanyName);
+
+  // 1. Whitelist Check for known Enterprise / MNC brands
+  if (
+    KNOWN_ENTERPRISE_COMPANIES.has(rawCompanyName) ||
+    (normalizedComp && KNOWN_ENTERPRISE_COMPANIES.has(normalizedComp)) ||
+    Array.from(KNOWN_ENTERPRISE_COMPANIES).some(brand => rawCompanyName.includes(brand))
+  ) {
+    return {
+      eligible: true,
+      size: '200+ (Established Enterprise / MNC)',
+      isStartup: false,
+      reason: `Company "${jobItem.company}" is a recognized mid/large enterprise with 200+ employees.`
+    };
+  }
+
+  // 2. DOM Inspection on the Job / Employer Page
+  try {
+    const domIntel = await page.evaluate(() => {
+      const pageText = document.body ? (document.body.innerText || '') : '';
+
+      // Scrape About Company and Company details containers
+      const compContainers = Array.from(document.querySelectorAll(
+        '.about-company, .company-info, .comp-info, .styles_company-info-container, .overview, .ambitionbox, [class*="aboutCompany"], [class*="companyOverview"], [class*="company-info"], div.job-desc, div.other-details'
+      ));
+      const compSnippet = compContainers.map(c => c.innerText || '').join('\n');
+      const combinedIntelText = (compSnippet + '\n' + pageText.slice(0, 5000)).toLowerCase();
+
+      // Badges / Tags
+      const tags = Array.from(document.querySelectorAll(
+        '.tag, .chip, span[class*="tag"], span[class*="badge"], div[class*="badge"], span[class*="comp-type"], [class*="companyType"], a.reviewsCount, .rating-review-container'
+      )).map(el => (el.innerText || '').trim().toLowerCase()).filter(Boolean);
+
+      // Review count parsing (e.g., "1.4k Reviews", "320 Reviews")
+      let reviewCount = 0;
+      const reviewMatch = combinedIntelText.match(/([0-9.,]+)\s*k?\s*reviews?/i) ||
+                          tags.find(t => t.includes('review'))?.match(/([0-9.,]+)\s*k?/);
+      if (reviewMatch) {
+        const numStr = reviewMatch[1].replace(/,/g, '');
+        if (reviewMatch[0].includes('k')) {
+          reviewCount = Math.round(parseFloat(numStr) * 1000);
+        } else {
+          reviewCount = parseInt(numStr, 10) || 0;
+        }
+      }
+
+      // Check for explicit employee size patterns (e.g., "500 - 1000 Employees", "10,000+ Employees", "201-500", "51-200", "1-50")
+      let parsedMinEmployees = null;
+      let parsedMaxEmployees = null;
+      let sizeSnippet = '';
+
+      const rangeMatch = combinedIntelText.match(/\b([0-9,]+)\s*(?:-|to)\s*([0-9,]+)\s*employees\b/i) ||
+                         combinedIntelText.match(/\b([0-9,]+)\s*(?:-|to)\s*([0-9,]+)\s*(?:people|staff|members)\b/i);
+      if (rangeMatch) {
+        parsedMinEmployees = parseInt(rangeMatch[1].replace(/,/g, ''), 10);
+        parsedMaxEmployees = parseInt(rangeMatch[2].replace(/,/g, ''), 10);
+        sizeSnippet = rangeMatch[0];
+      }
+
+      const plusMatch = combinedIntelText.match(/\b([0-9,]+)\+\s*employees\b/i) ||
+                        combinedIntelText.match(/\b([0-9,]+)\+\s*people\b/i);
+      if (plusMatch && !parsedMinEmployees) {
+        parsedMinEmployees = parseInt(plusMatch[1].replace(/,/g, ''), 10);
+        parsedMaxEmployees = parsedMinEmployees * 5;
+        sizeSnippet = plusMatch[0];
+      }
+
+      const kPlusMatch = combinedIntelText.match(/\b([0-9.]+)\s*k\+\s*employees\b/i);
+      if (kPlusMatch && !parsedMinEmployees) {
+        parsedMinEmployees = Math.round(parseFloat(kPlusMatch[1]) * 1000);
+        parsedMaxEmployees = parsedMinEmployees * 2;
+        sizeSnippet = kPlusMatch[0];
+      }
+
+      const isMncOrCorporate = combinedIntelText.includes('foreign mnc') ||
+                               combinedIntelText.includes('corporate') ||
+                               combinedIntelText.includes('fortune 500') ||
+                               combinedIntelText.includes('indian mnc') ||
+                               combinedIntelText.includes('enterprise') ||
+                               combinedIntelText.includes('public company') ||
+                               tags.some(t => t.includes('mnc') || t.includes('corporate') || t.includes('enterprise') || t.includes('fortune'));
+
+      const isStartupExplicit = tags.some(t => t === 'startup' || t.includes('early stage') || t.includes('seed funded') || t.includes('series a')) ||
+                                combinedIntelText.includes('early-stage startup') ||
+                                combinedIntelText.includes('seed-funded startup') ||
+                                combinedIntelText.includes('bootstrapped startup') ||
+                                combinedIntelText.includes('stealth startup') ||
+                                combinedIntelText.includes('fast-growing startup with 10-');
+
+      return {
+        parsedMinEmployees,
+        parsedMaxEmployees,
+        sizeSnippet,
+        reviewCount,
+        isMncOrCorporate,
+        isStartupExplicit,
+        tags: tags.slice(0, 10)
+      };
+    });
+
+    console.log(`[COMPANY_INTEL] "${jobItem.company}": Size=${domIntel.sizeSnippet || 'Unspecified'}, Reviews=${domIntel.reviewCount}, MNC/Corp=${domIntel.isMncOrCorporate}, Startup=${domIntel.isStartupExplicit}`);
+
+    // Check 1: Explicit max employees < minRequiredEmployees (e.g. "1-50 Employees" -> max 50 < 200)
+    if (domIntel.parsedMaxEmployees && domIntel.parsedMaxEmployees < minRequiredEmployees) {
+      return {
+        eligible: false,
+        size: `< ${minRequiredEmployees} (${domIntel.sizeSnippet})`,
+        isStartup: true,
+        reason: `Company size "${domIntel.sizeSnippet}" is strictly below required ${minRequiredEmployees}+ employees.`
+      };
+    }
+
+    // Check 2: Explicit Startup flag when excludeStartups is enabled and company is not a verified 200+ employer
+    if (excludeStartups && domIntel.isStartupExplicit && (!domIntel.parsedMinEmployees || domIntel.parsedMinEmployees < minRequiredEmployees) && domIntel.reviewCount < 100) {
+      return {
+        eligible: false,
+        size: 'Startup (< 200 Employees)',
+        isStartup: true,
+        reason: `Company is marked as an early-stage startup and does not have verified ${minRequiredEmployees}+ employee headcount.`
+      };
+    }
+
+    // Check 3: Verified 200+ employees or MNC / Corporate badge or high review count (> 100 reviews)
+    if (
+      (domIntel.parsedMinEmployees && domIntel.parsedMinEmployees >= minRequiredEmployees) ||
+      (domIntel.parsedMaxEmployees && domIntel.parsedMaxEmployees >= minRequiredEmployees) ||
+      domIntel.isMncOrCorporate ||
+      domIntel.reviewCount >= 100
+    ) {
+      const detectedBadge = domIntel.sizeSnippet || (domIntel.isMncOrCorporate ? 'Corporate / MNC (200+)' : `${domIntel.reviewCount}+ Reviews (200+)`);
+      return {
+        eligible: true,
+        size: detectedBadge,
+        isStartup: false,
+        reason: `Company verified with ${detectedBadge}.`
+      };
+    }
+
+    // Check 4: Unspecified / Standard Corporate Listing
+    return {
+      eligible: true,
+      size: '200+ (Standard Employer)',
+      isStartup: false,
+      reason: 'No startup flags or sub-200 employee restrictions found.'
+    };
+  } catch (err) {
+    console.warn(`[COMPANY_INTEL_WARN] Could not inspect DOM intel for ${jobItem.company}:`, err.message);
+    return {
+      eligible: true,
+      size: 'Unknown (Presumed 200+)',
+      isStartup: false,
+      reason: 'Company inspection passed with default safety.'
+    };
+  }
+}
+
 let activeApplyJobState = {
   running: false,
   progress: { current: 0, total: 0, currentJob: '', status: 'idle' }
@@ -2285,6 +2476,18 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         continue;
       }
 
+      // Check Company Profile & Minimum 200+ Employee Threshold
+      const companyEval = await inspectCompanySizeAndProfile(page, jobItem, filterConfig);
+      if (!companyEval.eligible) {
+        console.log(`[COMPANY_SIZE_FILTER] ⛔ Skipping "${jobItem.jobTitle}" at "${jobItem.company}" - ${companyEval.reason}`);
+        updateQueueItemState(userKey, jobItem.jobId, {
+          state: ApplicationState.SKIPPED,
+          stage: `Skipped - ${companyEval.reason}`,
+          failureStage: 'Company Headcount / Startup Filter'
+        });
+        continue;
+      }
+
       // Locate Apply Button & Positively Verify Easy Apply vs External ATS Site
       const applyBtnData = await page.evaluate(() => {
         const buttons = Array.from(document.querySelectorAll('button, a'));
@@ -2856,6 +3059,25 @@ async function executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedRe
     return { success: true, isVerified: true, record, message: 'Job was already applied on Naukri and has been verified!' };
   }
 
+  // 1.5 Inspect Company Profile & Verify Minimum 200+ Employees
+  const filterConfig = getFilterConfig(userKey);
+  const companyEval = await inspectCompanySizeAndProfile(page, jobItem, filterConfig);
+  if (!companyEval.eligible) {
+    console.log(`[COMPANY_SIZE_FILTER] ⛔ Skipping "${jobItem.jobTitle}" at "${jobItem.company}" - ${companyEval.reason}`);
+    updateQueueItemState(userKey, jobItem.jobId, {
+      state: ApplicationState.SKIPPED,
+      stage: `Skipped - ${companyEval.reason}`,
+      failureStage: 'Company Headcount / Startup Filter'
+    });
+    return {
+      success: false,
+      skipped: true,
+      reason: companyEval.reason,
+      companySize: companyEval.size,
+      isVerified: false
+    };
+  }
+
   // 2. Click Apply button
   await page.evaluate(() => {
     const buttons = Array.from(document.querySelectorAll('button, a'));
@@ -3332,5 +3554,7 @@ module.exports = {
   getNaukriCompanyApplicationSummary,
   getNaukriCompanyApplicationSummaryAsync,
   getNaukriExternalJobs,
-  recordExternalCompanyJob
+  recordExternalCompanyJob,
+  inspectCompanySizeAndProfile,
+  KNOWN_ENTERPRISE_COMPANIES
 };

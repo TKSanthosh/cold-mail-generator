@@ -5186,6 +5186,42 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                     />
                   </div>
                 </div>
+
+                {/* Min Company Size (Headcount Threshold) */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    🏢 Min Company Size (Employees):
+                  </label>
+                  <select
+                    value={filterConfig.minCompanyEmployees || 200}
+                    onChange={(e) => setFilterConfig({ ...filterConfig, minCompanyEmployees: parseInt(e.target.value, 10) || 200 })}
+                    className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3 py-1.5 text-xs font-semibold focus:outline-none"
+                  >
+                    <option value="200">200+ Employees (Mid-Sized & Enterprises)</option>
+                    <option value="500">500+ Employees (Large Enterprises & MNCs)</option>
+                    <option value="1000">1,000+ Employees (Global Enterprises / Fortune 500)</option>
+                    <option value="50">50+ Employees (Growth Stage)</option>
+                    <option value="0">All Sizes (Include Early Startups)</option>
+                  </select>
+                </div>
+
+                {/* Exclude Startups Checkbox */}
+                <div className="flex flex-col justify-center">
+                  <label className="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    🚫 Startup Screening:
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer mt-1">
+                    <input
+                      type="checkbox"
+                      checked={filterConfig.excludeStartups !== false}
+                      onChange={(e) => setFilterConfig({ ...filterConfig, excludeStartups: e.target.checked })}
+                      className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                    />
+                    <span className="text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Exclude Startups (&lt; 200 employees)
+                    </span>
+                  </label>
+                </div>
               </div>
 
               {/* Target Job Titles Chips */}
