@@ -461,6 +461,67 @@ async function supabaseGetNaukriConfig(userKey) {
   }
 }
 
+/**
+ * Q&A MEMORY DATABASE (Per-User / Supabase Persistent)
+ */
+async function supabaseSaveQaDatabase(userKey, items) {
+  if (!isSupabaseConfigured() || !userKey || !Array.isArray(items)) return false;
+  try {
+    // 1. Try dedicated qa_database table
+    const payload = {
+      user_key: userKey,
+      qa_data: items,
+      updated_at: new Date().toISOString()
+    };
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/qa_database`, {
+      method: 'POST',
+      headers: {
+        ...getHeaders(),
+        'Prefer': 'resolution=merge-duplicates,return=minimal'
+      },
+      body: JSON.stringify(payload)
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      return true;
+    }
+
+    // 2. Fallback: Save in naukri_config under qaDatabase
+    await supabaseSaveNaukriConfig(userKey, { qaDatabase: items });
+    return true;
+  } catch (e) {
+    console.warn('[SUPABASE] saveQaDatabase error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetQaDatabase(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return null;
+  try {
+    // 1. Try dedicated qa_database table
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/qa_database?user_key=eq.${encodeURIComponent(userKey)}&select=qa_data`, {
+      headers: getHeaders()
+    }).catch(() => null);
+
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data[0] && Array.isArray(data[0].qa_data)) {
+        return data[0].qa_data;
+      }
+    }
+
+    // 2. Fallback: Check naukri_config
+    const conf = await supabaseGetNaukriConfig(userKey);
+    if (conf && Array.isArray(conf.qaDatabase)) {
+      return conf.qaDatabase;
+    }
+    return null;
+  } catch (e) {
+    console.warn('[SUPABASE] getQaDatabase error:', e.message);
+    return null;
+  }
+}
+
 async function supabaseAppendNaukriHistory(userKey, record) {
   if (!isSupabaseConfigured()) return false;
   try {

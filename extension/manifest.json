@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "AI Resume Tailor & ATS Optimizer",
   "version": "1.0.0",
-  "description": "Auto-scrapes job descriptions from LinkedIn, Naukri, Indeed & career pages, tailors your resume with AI, and downloads ATS-optimized PDFs instantly.",
+  "description": "Tailor resumes with AI, auto-fill application questions, and download ATS-optimized PDFs instantly.",
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

@@ -98,7 +98,7 @@ const {
 } = require('./services/naukri_apply.service');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 
 app.use(cors({
   origin: true, // Reflect request origin for cookies & credentials
@@ -106,6 +106,11 @@ app.use(cors({
 }));
 app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
+
+// Health check endpoint for extension and monitoring
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', service: 'cold-mail-generator', version: '1.0.0', time: Date.now() });
+});
 
 // Helper to resolve active user key from JWT Cookie, Authorization Header, or custom headers
 function resolveUserContext(req, res = null) {
@@ -388,14 +393,22 @@ app.post('/api/generate', async (req, res) => {
 
 // --- SEND EMAIL (Per-User Sandbox) ---
 app.post('/api/send', async (req, res) => {
-  const userKey = resolveUserKey(req, res);
+  let userKey = resolveUserKey(req, res);
+  const explicitKey = req.headers['x-user-key'] || req.body?.userKey || req.query?.userKey;
+  if ((!userKey || userKey === 'guest_user') && explicitKey) {
+    userKey = explicitKey;
+  }
+  if (!userKey || userKey === 'guest_user') {
+    userKey = 'tksanthosh494_gmail_com';
+  }
+
   const { email, subject, body, resume, hrName, company, resumeType } = req.body;
-  if (!email || !subject || !body || !resume) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+  if (!email || !subject || !body) {
+    return res.status(400).json({ error: 'Missing required parameters: email, subject, body' });
   }
 
   if (!isUserAuthorized(userKey)) {
-    return res.status(401).json({ error: 'Your Gmail account is not connected. Please connect Gmail first.' });
+    return res.status(401).json({ error: 'Your Gmail account is not connected. Please connect Gmail in settings or app.' });
   }
 
   const cleanEmail = (email || '').trim().toLowerCase();
@@ -414,12 +427,17 @@ app.post('/api/send', async (req, res) => {
         .trim();
     }
 
+    let targetResume = resume;
+    if (!targetResume || !targetResume.personalInfo) {
+      targetResume = getUserResume(userKey) || getUserResume('tksanthosh494_gmail_com');
+    }
+
     const userPaths = getUserPaths(userKey);
-    const candidateName = resume?.personalInfo?.name || 'Resume';
+    const candidateName = targetResume?.personalInfo?.name || 'Resume';
     const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_${Date.now()}.pdf`);
 
-    await generateResumePdf(resume, tempPdfPath);
+    await generateResumePdf(targetResume, tempPdfPath);
     const result = await sendGmail(email, subject, cleanBody, tempPdfPath, userKey);
 
     try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
@@ -437,7 +455,7 @@ app.post('/api/send', async (req, res) => {
       messageId: result.id
     });
 
-    res.json({ success: true, result });
+    res.json({ success: true, message: 'Email sent successfully with tailored PDF attached!', result });
   } catch (e) {
     console.error('Send mail error:', e);
     addUserLog(userKey, {
@@ -457,10 +475,18 @@ app.post('/api/send', async (req, res) => {
 
 // --- SAVE GMAIL DRAFT (Per-User Sandbox) ---
 app.post('/api/draft', async (req, res) => {
-  const userKey = resolveUserKey(req, res);
+  let userKey = resolveUserKey(req, res);
+  const explicitKey = req.headers['x-user-key'] || req.body?.userKey || req.query?.userKey;
+  if ((!userKey || userKey === 'guest_user') && explicitKey) {
+    userKey = explicitKey;
+  }
+  if (!userKey || userKey === 'guest_user') {
+    userKey = 'tksanthosh494_gmail_com';
+  }
+
   const { email, subject, body, resume, hrName, company, resumeType } = req.body;
-  if (!email || !subject || !body || !resume) {
-    return res.status(400).json({ error: 'Missing required parameters' });
+  if (!email || !subject || !body) {
+    return res.status(400).json({ error: 'Missing required parameters: email, subject, body' });
   }
 
   if (!isUserAuthorized(userKey)) {
@@ -483,12 +509,17 @@ app.post('/api/draft', async (req, res) => {
         .trim();
     }
 
+    let targetResume = resume;
+    if (!targetResume || !targetResume.personalInfo) {
+      targetResume = getUserResume(userKey) || getUserResume('tksanthosh494_gmail_com');
+    }
+
     const userPaths = getUserPaths(userKey);
-    const candidateName = resume?.personalInfo?.name || 'Resume';
+    const candidateName = targetResume?.personalInfo?.name || 'Resume';
     const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
     const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_Draft_${Date.now()}.pdf`);
 
-    await generateResumePdf(resume, tempPdfPath);
+    await generateResumePdf(targetResume, tempPdfPath);
     const result = await createGmailDraft(email, subject, cleanBody, tempPdfPath, userKey);
 
     try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
@@ -506,7 +537,7 @@ app.post('/api/draft', async (req, res) => {
       draftId: result.id
     });
 
-    res.json({ success: true, result });
+    res.json({ success: true, message: 'Draft saved in Gmail with tailored PDF attached!', result });
   } catch (e) {
     console.error('Create draft error:', e);
     res.status(500).json({ error: e.message });

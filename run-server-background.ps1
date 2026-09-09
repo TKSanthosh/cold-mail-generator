@@ -29,6 +29,7 @@ try {
 
 # 3. Launch Node.js server in the background
 $logFile = Join-Path $projectRoot "server_background.log"
+$errLogFile = Join-Path $projectRoot "server_background_err.log"
 $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
 Add-Content -Path $logFile -Value "`n=== Starting AI Resume Server at $timestamp ==="
 
@@ -36,7 +37,7 @@ Start-Process -FilePath "node" `
               -ArgumentList "server/src/index.js" `
               -WorkingDirectory $projectRoot `
               -RedirectStandardOutput $logFile `
-              -RedirectStandardError $logFile `
+              -RedirectStandardError $errLogFile `
               -WindowStyle Hidden
 
 # 4. Wait briefly and verify startup
