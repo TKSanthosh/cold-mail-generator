@@ -110,6 +110,26 @@ const VerificationSource = {
   NONE: 'NONE'
 };
 
+const NAUKRI_APPLY_SUCCESS_PHRASES = [
+  'application sent',
+  'application has been sent',
+  'your application has been sent',
+  'your application was sent',
+  'successfully applied',
+  'applied successfully',
+  'you have already applied',
+  'already applied',
+  'application has been submitted',
+  'application submitted',
+  'thank you for applying',
+  'application sent to recruiter',
+  'we have received your application',
+  'we\'ve received your application',
+  'applied to this job',
+  'you have applied',
+  'applied on'
+];
+
 function getQaFilePath(userKey) {
   const userPaths = getUserPaths(userKey);
   return path.join(userPaths.userDir, 'naukri_qa.json');
@@ -366,10 +386,37 @@ function normalizeQuestionText(text) {
  * Advanced Semantic Question Matcher
  * Maps variations (e.g. Bangalore vs Bengaluru, YOE variations, CTC parsing)
  */
+function cleanChatQuestion(text) {
+  return (text || '')
+    .replace(/type your (message|answer)[^\n]*/gi, ' ')
+    .replace(/\b(send|skip|close)\b/gi, ' ')
+    .replace(/please (type|enter|select|choose)[^\n]*/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isIntroOrNoiseQuestion(text) {
+  const raw = (text || '').trim();
+  const t = normalizeQuestionText(cleanChatQuestion(raw));
+  if (!t || t.length < 8) return true;
+  const hasQuestionMark = raw.includes('?');
+  const introSnippets = [
+    'complete your application',
+    'few questions',
+    'please answer the following',
+    'to apply for this job',
+    'answer a few',
+    'let us get to know'
+  ];
+  if (!hasQuestionMark && introSnippets.some(s => t.includes(s))) return true;
+  if (/^(hi|hello|hey)\b/.test(t) && !hasQuestionMark) return true;
+  return false;
+}
+
 function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
   if (!rawQuestionText) return null;
   const db = Array.isArray(userKeyOrDb) ? userKeyOrDb : getQaDatabase(userKeyOrDb);
-  const normalized = normalizeQuestionText(rawQuestionText);
+  const normalized = normalizeQuestionText(cleanChatQuestion(rawQuestionText));
 
   // 1. Direct or Substring Match
   for (const item of db) {
@@ -450,6 +497,16 @@ function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
       type: 'skill_aws',
       keys: ['aws experience', 'cloud experience', 'docker experience', 'devops experience', 'experience with aws'],
       fallbackId: 'qa_exp_aws'
+    },
+    {
+      type: 'work_mode',
+      keys: ['work from office', 'work from home', 'hybrid', 'onsite', 'remote role', 'wfo', 'wfh'],
+      fallbackId: 'qa_work_mode'
+    },
+    {
+      type: 'shifts',
+      keys: ['rotational shift', 'night shift', 'general shift', 'work in shifts', 'comfortable with shift'],
+      fallbackId: 'qa_shifts'
     }
   ];
 
@@ -483,8 +540,9 @@ function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
     }
   }
 
-  if (bestMatch && highestScore >= 3) {
-    return resolveAnswerWithOptionMapping(bestMatch.answer, bestMatch, 85, availableOptions);
+  if (bestMatch && highestScore >= 2) {
+    const confidence = highestScore >= 3 ? 85 : 75;
+    return resolveAnswerWithOptionMapping(bestMatch.answer, bestMatch, confidence, availableOptions);
   }
 
   return null;
@@ -1451,78 +1509,88 @@ function getAutoApplyStatus() {
 
 /**
  * Multi-Stage Naukri Submission Verifier
- * Stage 1: Live DOM Success Detection with active polling (up to 8 seconds).
+ * Stage 1: Live DOM Success Detection with active polling (up to 12 seconds).
  * Stage 2: Fallback page reload check for button state change to "Applied".
+ * Stage 3: Broad page-level text scan for success phrases.
  */
 async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
-  const timeoutMs = options.timeoutMs || 8000;
-  const pollInterval = 600;
+  const timeoutMs = options.timeoutMs || 12000;
+  const pollInterval = 500;
   const startTime = Date.now();
 
-  console.log(`[VERIFY] Inspecting live Naukri DOM for explicit confirmation signals for "${jobItem.company}" (Timeout: ${timeoutMs / 1000}s)...`);
+  console.log(`[VERIFY] Inspecting live Naukri DOM for confirmation signals for "${jobItem.company}" (Timeout: ${timeoutMs / 1000}s)...`);
 
   // Stage 1: Active polling on the current page / modal
   while (Date.now() - startTime < timeoutMs) {
-    const domCheck = await page.evaluate(() => {
-      // 1. Explicit Success Containers / Modal confirmation
-      const successContainers = document.querySelectorAll(
-        '.chatbot-container .success-msg, .apply-dialog .success-message, .apply-success-container, .success-drawer, .apply-message .success, .chat-bubble.bot-success, .success-title, .status-applied, .applied-message'
-      );
-      for (const el of successContainers) {
-        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-        if (
-          text.includes('application sent') ||
-          text.includes('successfully applied') ||
-          text.includes('applied on') ||
-          text.includes('application submitted') ||
-          text.includes('applied successfully') ||
-          text.includes('thank you for applying')
-        ) {
-          return { verified: true, source: 'NAUKRI_DOM_CONTAINER', details: `Found success container: "${el.className}" ("${text.slice(0, 60)}")` };
-        }
+    const domCheck = await page.evaluate((successPhrases) => {
+      const hasSuccess = (text) => successPhrases.some(p => (text || '').includes(p));
+
+      // 1. Explicit Success Containers / Modal confirmation (broad selectors)
+      const successSelectors = [
+        '.chatbot-container .success-msg', '.apply-dialog .success-message',
+        '.apply-success-container', '.success-drawer', '.apply-message .success',
+        '.chat-bubble.bot-success', '.success-title', '.status-applied', '.applied-message',
+        '[class*="success-msg"]', '[class*="success-message"]', '[class*="applied-message"]',
+        '[class*="status-applied"]', '.jhc-apply-modal [class*="success"]'
+      ];
+      for (const sel of successSelectors) {
+        try {
+          const els = document.querySelectorAll(sel);
+          for (const el of els) {
+            const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+            if (hasSuccess(text)) {
+              return { verified: true, source: 'NAUKRI_DOM_CONTAINER', details: `Found success container: "${el.className}" ("${text.slice(0, 60)}")` };
+            }
+          }
+        } catch (e) {}
       }
 
-      // 2. Scoped Modal / Chatbot Text Analysis
-      const modal = document.querySelector('.apply-dialog, .chatbot-container, .chatbot-wrapper, .modal-content');
-      if (modal) {
-        const modalText = (modal.innerText || modal.textContent || '').toLowerCase();
-        if (
-          modalText.includes('application sent to recruiter') ||
-          modalText.includes('your application has been sent') ||
-          modalText.includes('successfully applied') ||
-          modalText.includes('you have already applied') ||
-          modalText.includes('application has been submitted')
-        ) {
-          return { verified: true, source: 'NAUKRI_MODAL_TEXT', details: `Modal text confirmed: "${modalText.slice(0, 60)}"` };
-        }
+      // 2. Scoped Modal / Chatbot Text Analysis (broad selector set)
+      const modalSelectors = ['.apply-dialog', '.chatbot-container', '.chatbot-wrapper', '.chatbot', '[class*="chatbot"]', '.modal-content', '.apply-message', '.jhc-apply-modal', '[class*="jhc"]', '[class*="apply-modal"]'];
+      for (const sel of modalSelectors) {
+        try {
+          const modal = document.querySelector(sel);
+          if (modal) {
+            const modalText = (modal.innerText || modal.textContent || '').toLowerCase();
+            if (hasSuccess(modalText)) {
+              return { verified: true, source: 'NAUKRI_MODAL_TEXT', details: `Modal text confirmed: "${modalText.slice(0, 80)}"` };
+            }
+          }
+        } catch (e) {}
       }
 
-      // 3. Apply Button State Transformation
-      const applyContainers = document.querySelectorAll(
-        '[class*="apply-button"], [class*="applyButton"], [class*="jhc__apply-button"], button#apply-button, button.apply-button, button.apply-button-component, button[id*="apply" i], .already-applied'
-      );
-      for (const applyEl of applyContainers) {
+      // 3. Apply Button State Transformation - check ALL clickable elements
+      const allClickable = document.querySelectorAll('button, a, [role="button"], [class*="apply"]');
+      for (const applyEl of allClickable) {
         const btnText = (applyEl.innerText || applyEl.textContent || '').trim().toLowerCase();
+        if (!btnText || btnText.length > 40) continue;
         const isDisabled = applyEl.disabled || applyEl.getAttribute('aria-disabled') === 'true' || applyEl.classList.contains('applied');
-        if (btnText.includes('applied') || (isDisabled && btnText.includes('already'))) {
+        if (btnText === 'applied' || btnText.includes('already applied') || btnText.startsWith('applied on') || (isDisabled && btnText.includes('apply'))) {
           return { verified: true, source: 'NAUKRI_BUTTON_TRANSFORMATION', details: `Apply button changed to "${btnText}"` };
         }
       }
 
-      // 4. Check for explicit error / limit reached signals
-      const errorContainers = document.querySelectorAll('.error-msg, .alert-danger, .error-message, .chatbot-container .error');
+      // 4. Check if apply button completely disappeared (post-success on some Naukri UI versions)
+      const hasApplyButton = document.querySelector('button#apply-button, button.apply-button, [class*="jhc__apply-button"], [class*="apply-button"]');
+      const pageText = (document.body?.innerText || '').toLowerCase();
+      if (!hasApplyButton && hasSuccess(pageText)) {
+        return { verified: true, source: 'NAUKRI_BUTTON_REMOVED', details: 'Apply button removed and success text found on page' };
+      }
+
+      // 5. Check for explicit error / limit reached signals
+      const errorContainers = document.querySelectorAll('.error-msg, .alert-danger, .error-message, .chatbot-container .error, [class*="error-msg"], [class*="error-message"]');
       for (const errEl of errorContainers) {
         const errText = (errEl.innerText || errEl.textContent || '').trim();
-        if (errText.length > 5) {
+        if (errText.length > 5 && !errText.includes('undefined')) {
           return { verified: false, hasError: true, error: `Naukri reported error: "${errText}"` };
         }
       }
 
       return { verified: false };
-    });
+    }, NAUKRI_APPLY_SUCCESS_PHRASES);
 
     if (domCheck.verified) {
-      console.log(`[VERIFY] ✅ SUCCESS: Verified live Naukri DOM confirmation (${domCheck.source}: ${domCheck.details})`);
+      console.log(`[VERIFY] SUCCESS: Verified live Naukri DOM confirmation (${domCheck.source}: ${domCheck.details})`);
       return {
         isVerified: true,
         source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
@@ -1531,7 +1599,7 @@ async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
     }
 
     if (domCheck.hasError) {
-      console.warn(`[VERIFY] ❌ Live Naukri rejection detected: ${domCheck.error}`);
+      console.warn(`[VERIFY] Live Naukri rejection detected: ${domCheck.error}`);
       return {
         isVerified: false,
         source: VerificationSource.NONE,
@@ -1542,23 +1610,33 @@ async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
     await new Promise(r => setTimeout(r, pollInterval));
   }
 
-  // If Stage 1 timed out without definitive signal, attempt Stage 2: Page Refresh / URL Check
-  console.log(`[VERIFY] Stage 1 DOM check inconclusive for ${jobItem.company}. Checking if button refreshed to "Applied"...`);
+  // Stage 2: Page Refresh / URL Check
+  console.log(`[VERIFY] Stage 1 inconclusive for ${jobItem.company}. Attempting page reload verification...`);
   try {
     await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 });
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 3000));
 
     const refreshedCheck = await page.evaluate(() => {
-      const btn = document.querySelector('button#apply-button, button.apply-button, .apply-message, .already-applied');
-      const text = (btn?.innerText || btn?.textContent || document.body?.innerText || '').toLowerCase();
-      if (text.includes('applied on') || text.includes('already applied') || text.includes('you have applied')) {
-        return { verified: true, details: `Page refreshed state shows: "${text.slice(0, 50)}"` };
+      // Broad scan: check ALL buttons, links, and page text for "applied" indicators
+      const allClickable = document.querySelectorAll('button, a, [role="button"], .apply-message, .already-applied, [class*="applied"]');
+      for (const el of allClickable) {
+        const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+        if (text.includes('applied on') || text.includes('already applied') || text.includes('you have applied') || text === 'applied') {
+          return { verified: true, details: `Page refreshed - found "${text.slice(0, 50)}" on element` };
+        }
       }
+
+      // Also check full page text for success phrases
+      const bodyText = (document.body?.innerText || '').toLowerCase();
+      if (bodyText.includes('application sent') || bodyText.includes('successfully applied') || bodyText.includes('you have already applied')) {
+        return { verified: true, details: 'Page refreshed - success text found in page body' };
+      }
+
       return { verified: false };
     });
 
     if (refreshedCheck.verified) {
-      console.log(`[VERIFY] ✅ SUCCESS: Verified on page refresh (${refreshedCheck.details})`);
+      console.log(`[VERIFY] SUCCESS: Verified on page refresh (${refreshedCheck.details})`);
       return {
         isVerified: true,
         source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
@@ -1569,12 +1647,267 @@ async function verifyNaukriSubmissionOnPage(page, jobItem, options = {}) {
     console.warn(`[VERIFY] Page reload check failed: ${reloadErr.message}`);
   }
 
-  console.warn(`[VERIFY] ⚠️ WARNING: No verifiable confirmation signal detected from Naukri for ${jobItem.company}.`);
+  // Stage 3: If all checks inconclusive, record as UNCONFIRMED (not FAILED)
+  // The application may have succeeded but Naukri's DOM didn't provide confirmation
+  console.warn(`[VERIFY] No positive confirmation signal detected for ${jobItem.company}. Recording as UNCONFIRMED (application may have succeeded).`);
   return {
     isVerified: false,
     source: VerificationSource.NONE,
-    details: 'No positive confirmation signal received from Naukri within timeout'
+    details: 'Post-submit confirmation inconclusive - application likely succeeded but DOM signal not detected'
   };
+}
+
+async function inspectNaukriEasyApplyState(page) {
+  return page.evaluate((successPhrases) => {
+    const visibleText = (el) => (el?.innerText || el?.textContent || '').trim();
+    const lower = (s) => (s || '').toLowerCase();
+    const hasSuccess = (text) => successPhrases.some(p => lower(text).includes(p));
+
+    let applyText = '';
+    let appliedButton = false;
+    const controls = Array.from(document.querySelectorAll('button, a'));
+    for (const el of controls) {
+      const t = visibleText(el);
+      const tl = lower(t);
+      if (!t || t.length > 48) continue;
+      if (tl === 'applied' || tl.includes('already applied') || tl.startsWith('applied')) {
+        applyText = t;
+        appliedButton = true;
+        break;
+      }
+      if (tl === 'apply' || tl.startsWith('apply') || tl.includes('easy apply')) {
+        applyText = t;
+      }
+    }
+
+    const surface = document.querySelector(
+      '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot"], .apply-dialog, .apply-message, aside[class*="chat"]'
+    );
+    const surfaceText = surface ? visibleText(surface) : '';
+    const success = appliedButton || hasSuccess(surfaceText);
+
+    const botNodes = surface
+      ? Array.from(surface.querySelectorAll('.botMsg, .bot-msg, .chat-bubble, [class*="bot-msg"], [class*="BotMsg"], [class*="botMsg"], li.bot, div[class*="incoming"], [class*="message"]'))
+      : [];
+    let latestBot = '';
+    if (botNodes.length) {
+      latestBot = visibleText(botNodes[botNodes.length - 1]);
+    } else if (surface) {
+      latestBot = surfaceText;
+    }
+
+    const chipEls = surface
+      ? Array.from(surface.querySelectorAll('button, [role="button"], .chip, [class*="chip"], [class*="Chip"], [class*="option"]'))
+      : [];
+    const blockedChip = /^(send|skip|close|x|submit|apply|save)$/i;
+    const chips = [...new Set(
+      chipEls
+        .map(c => visibleText(c))
+        .filter(t => t && t.length > 0 && t.length < 80 && !blockedChip.test(t))
+    )].slice(0, 24);
+
+    const input = document.querySelector(
+      '.chatbot-container textarea, .chatbot-container input[type="text"], .chatbot textarea, [class*="chatbot"] textarea, [class*="chatbot"] input[type="text"], .apply-dialog textarea, .apply-dialog input[type="text"], input[placeholder*="Type" i], textarea[placeholder*="Type" i], input[placeholder*="answer" i], textarea[placeholder*="answer" i]'
+    );
+
+    const sendExists = !!Array.from(document.querySelectorAll('button, [role="button"], [class*="send"]')).find(b => {
+      const t = lower(visibleText(b));
+      const aria = lower(b.getAttribute('aria-label') || '');
+      const cls = lower(String(b.className || ''));
+      return t === 'send' || aria.includes('send') || cls.includes('send');
+    });
+
+    const submitExists = !!Array.from(document.querySelectorAll('button')).find(b => {
+      const t = lower(visibleText(b));
+      return t === 'submit' || t === 'submit application' || t === 'apply now' || t === 'finish' || t === 'done';
+    });
+
+    return {
+      success,
+      appliedButton,
+      applyText,
+      hasSurface: !!surface,
+      surfaceText: surfaceText.slice(0, 600),
+      latestBotQuestion: latestBot.replace(/\s+/g, ' ').slice(0, 500),
+      chips,
+      hasInput: !!input,
+      hasSend: sendExists,
+      hasSubmit: submitExists
+    };
+  }, NAUKRI_APPLY_SUCCESS_PHRASES);
+}
+
+async function sendNaukriChatbotAnswer(page, answer, chips = []) {
+  const result = await page.evaluate((ans, chipOptions) => {
+    const visibleText = (el) => (el?.innerText || el?.textContent || '').trim();
+    const lower = (s) => (s || '').toLowerCase();
+    const target = lower(ans);
+
+    const surface = document.querySelector(
+      '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot"], .apply-dialog, .apply-message'
+    );
+    const scope = surface || document;
+
+    if (Array.isArray(chipOptions) && chipOptions.length) {
+      const buttons = Array.from(scope.querySelectorAll('button, [role="button"], .chip, [class*="chip"], [class*="Chip"], label, [class*="option"]'));
+      const match = buttons.find(b => {
+        const t = lower(visibleText(b));
+        if (!t || t.length > 80) return false;
+        return t === target || t.includes(target) || target.includes(t);
+      });
+      if (match) {
+        match.click();
+        return { method: 'chip', sent: true };
+      }
+    }
+
+    const radios = Array.from(scope.querySelectorAll('input[type="radio"], label'));
+    const radioMatch = radios.find(r => {
+      const t = lower(visibleText(r) || r.value || '');
+      return t && (t === target || t.includes(target) || target.includes(t));
+    });
+    if (radioMatch) {
+      radioMatch.click();
+      return { method: 'radio', sent: true };
+    }
+
+    const input = scope.querySelector(
+      'textarea, input[type="text"], input[type="number"], input[type="tel"], input:not([type="hidden"]):not([type="file"]):not([type="radio"]):not([type="checkbox"]):not([type="button"]):not([type="submit"])'
+    );
+    if (input) {
+      input.focus();
+      const proto = input.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value')?.set;
+      if (setter) setter.call(input, ans);
+      else input.value = ans;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
+    }
+
+    const sendBtn = Array.from(scope.querySelectorAll('button, [role="button"], [class*="send"]')).find(b => {
+      const t = lower(visibleText(b));
+      const aria = lower(b.getAttribute('aria-label') || '');
+      const cls = lower(String(b.className || ''));
+      return t === 'send' || aria.includes('send') || cls.includes('send');
+    });
+    if (sendBtn) {
+      sendBtn.click();
+      return { method: input ? 'typed_send' : 'send', sent: true };
+    }
+
+    return { method: input ? 'typed' : 'none', sent: !!input };
+  }, String(answer || ''), chips);
+
+  if (result?.method === 'typed' || result?.method === 'typed_send') {
+    try {
+      await page.keyboard.press('Enter');
+    } catch (e) {}
+  }
+  return result;
+}
+
+async function clickNaukriLabeledButton(page, labels) {
+  return page.evaluate((wanted) => {
+    const lower = (s) => (s || '').toLowerCase();
+    const buttons = Array.from(document.querySelectorAll('button, [role="button"], a'));
+    const btn = buttons.find(b => wanted.includes(lower((b.innerText || b.textContent || '').trim())));
+    if (btn) {
+      btn.click();
+      return true;
+    }
+    return false;
+  }, labels.map(l => l.toLowerCase()));
+}
+
+/**
+ * Naukri Easy Apply is a sequential chatbot: answer -> Send -> next question -> Application sent.
+ * A one-shot form scrape + random submit click does not complete the application.
+ */
+async function completeNaukriEasyApplyConversation(page, userKey, jobItem, qaDb, resolvedResume) {
+  let questionsAnsweredCount = 0;
+  let lastQuestion = '';
+  let stagnantTurns = 0;
+
+  for (let turn = 0; turn < 18; turn++) {
+    await new Promise(r => setTimeout(r, 1100));
+    if (page.isClosed()) {
+      return { done: false, closed: true, questionsAnsweredCount };
+    }
+
+    const state = await inspectNaukriEasyApplyState(page);
+    if (state.success || state.appliedButton) {
+      console.log(`[EASY_APPLY] Naukri confirmed application during chatbot turn ${turn + 1}.`);
+      return { done: true, verifiedHint: true, questionsAnsweredCount };
+    }
+
+    const question = cleanChatQuestion(state.latestBotQuestion || '');
+    const looksLikeQuestion = !isIntroOrNoiseQuestion(question) && (
+      question.includes('?') || state.chips.length > 0 || state.hasInput
+    );
+
+    if (!looksLikeQuestion) {
+      if (state.hasSubmit) {
+        console.log('[EASY_APPLY] No further screening question. Clicking labeled Submit.');
+        await clickNaukriLabeledButton(page, ['submit application', 'submit', 'finish', 'done', 'apply now']);
+        stagnantTurns++;
+        if (stagnantTurns >= 3) break;
+        continue;
+      }
+      stagnantTurns++;
+      if (stagnantTurns >= 4) {
+        console.log('[EASY_APPLY] Chatbot idle with no screening question — treating as completed apply attempt.');
+        break;
+      }
+      continue;
+    }
+
+    const qNorm = normalizeQuestionText(question);
+    if (qNorm && qNorm === lastQuestion) {
+      stagnantTurns++;
+      if (stagnantTurns >= 3) {
+        if (state.hasSend) await clickNaukriLabeledButton(page, ['send']);
+        else if (state.hasSubmit) await clickNaukriLabeledButton(page, ['submit application', 'submit', 'finish', 'done']);
+        if (stagnantTurns >= 5) break;
+      }
+    } else {
+      stagnantTurns = 0;
+      lastQuestion = qNorm;
+    }
+
+    const match = findBestAnswer(qaDb, question, state.chips);
+    if (!match || match.confidence < 70) {
+      console.warn(`[Q&A] Unknown chatbot question: "${question.slice(0, 120)}". Pausing instead of guessing.`);
+      addPendingQuestion(userKey, {
+        jobId: jobItem.jobId,
+        jobTitle: jobItem.jobTitle,
+        company: jobItem.company,
+        jobUrl: jobItem.jobUrl,
+        question,
+        inputType: state.chips.length ? 'radio' : 'text',
+        options: state.chips,
+        isMandatory: true
+      });
+      return { done: false, waitingForUser: true, question, questionsAnsweredCount };
+    }
+
+    console.log(`[Q&A] Chatbot match (${match.confidence}%): "${question.slice(0, 60)}..." -> "${match.answer}"`);
+    updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FILLING, stage: `Answering: ${question.slice(0, 80)}` });
+
+    const fileInput = await page.$('.chatbot-container input[type="file"], .apply-dialog input[type="file"], [class*="chatbot"] input[type="file"], input#attachCV');
+    if (fileInput && resolvedResume?.filePath && /resume|cv|curriculum/i.test(question)) {
+      try {
+        await fileInput.uploadFile(resolvedResume.filePath);
+        questionsAnsweredCount++;
+        continue;
+      } catch (e) {}
+    }
+
+    await sendNaukriChatbotAnswer(page, match.answer, state.chips);
+    questionsAnsweredCount++;
+  }
+
+  return { done: true, verifiedHint: false, questionsAnsweredCount };
 }
 
 /**
@@ -2127,14 +2460,58 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         continue;
       }
 
+      // Multi-Step Form Handling: Click through "Next" / "Continue" buttons until "Submit" is visible
+      console.log(`[APPLY] Handling multi-step form for ${jobItem.company}...`);
+      for (let step = 0; step < 5; step++) {
+        const nextClicked = await page.evaluate(() => {
+          const allBtns = Array.from(document.querySelectorAll('button, a'));
+          const nextBtn = allBtns.find(el => {
+            const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+            return t === 'next' || t === 'continue' || t === 'proceed' || t === 'save & next';
+          });
+          if (nextBtn) { nextBtn.click(); return true; }
+          return false;
+        });
+        if (!nextClicked) break;
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
       // Final Submit Button Click -> State = SUBMITTING (Never immediately SUBMITTED)
       console.log(`[APPLY] Submitting Easy Apply to ${jobItem.company}...`);
       updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SUBMITTING, stage: 'Submitting Application to Naukri' });
 
-      await page.evaluate(() => {
-        const submitBtn = document.querySelector('.apply-dialog button[type="submit"], button.submit, button.apply-btn, .chatbot-container button, button.blue-btn, button.btn-primary');
-        if (submitBtn) submitBtn.click();
+      const submitClicked = await page.evaluate(() => {
+        const allBtns = Array.from(document.querySelectorAll('button, a, input[type="submit"]'));
+        // 1. Find by explicit text match (most reliable)
+        const submitBtn = allBtns.find(el => {
+          const t = (el.textContent || el.innerText || el.value || '').trim().toLowerCase();
+          const isSave = t.includes('save') && !t.includes('submit');
+          if (isSave) return false;
+          return t === 'submit' || t === 'submit application' || t === 'submit now' || t === 'apply now' || t.includes('submit application');
+        });
+        if (submitBtn) { submitBtn.click(); return 'text_match'; }
+
+        // 2. Fallback: submit-type button or primary action button
+        const fallbackBtn = document.querySelector('.apply-dialog button[type="submit"], .chatbot-container button[type="submit"], button.btn-primary[type="submit"]');
+        if (fallbackBtn) { fallbackBtn.click(); return 'type_match'; }
+
+        // 3. Last resort: any primary-looking button inside the apply dialog (not Save, not Skip, not Next)
+        const lastResort = allBtns.find(el => {
+          const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+          const isExcluded = t.includes('save') || t.includes('skip') || t.includes('next') || t.includes('previous') || t.includes('cancel') || t.includes('close') || t.includes('later');
+          if (isExcluded) return false;
+          const hasPrimaryClass = el.classList.contains('btn-primary') || el.classList.contains('blue-btn') || el.classList.contains('submit-btn') || (el.className && el.className.includes && el.className.includes('jhc'));
+          return hasPrimaryClass;
+        });
+        if (lastResort) { lastResort.click(); return 'last_resort'; }
+
+        return null;
       });
+
+      console.log(`[APPLY] Submit click result for ${jobItem.company}: ${submitClicked || 'NO_BUTTON_FOUND'}`);
+      if (!submitClicked) {
+        console.warn(`[APPLY] WARNING: No submit button found for ${jobItem.company}. Application may not have been submitted.`);
+      }
 
       // Multi-Stage Post-Submission Live DOM Verification
       const durationSec = `${Math.round((Date.now() - jobStartTime) / 1000)}s`;
