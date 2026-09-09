@@ -3868,7 +3868,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
       // 2. Submit live application on Naukri
       if (instantApplyJob && instantApplyJob.jobUrl) {
-        const res = await apiFetch('/api/naukri/apply/retry-instant', {
+        showToast('💾 Screening answers saved to DB! Dispatching application...', 'info');
+        setInstantApplyModalOpen(false);
+
+        apiFetch('/api/naukri/apply/retry-instant', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -3876,15 +3879,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             jobUrl: instantApplyJob.jobUrl,
             userAnswers: itemsToSave
           })
-        });
-        const data = await res.json();
-        if (data.success) {
-          showToast(`⚡ ${data.message || 'Answers saved to DB & Application submitted live on Naukri!'}`, 'success');
-          setInstantApplyModalOpen(false);
+        }).then(async res => {
+          const data = await res.json();
+          if (data.success && data.verified) {
+            showToast(`⚡ ${data.message || 'Application submitted and verified live on Naukri!'}`, 'success');
+          } else if (data.success) {
+            showToast(`ℹ️ ${data.message || 'Application submitted on Naukri!'}`, 'info');
+          } else {
+            showToast(`⚠️ ${data.error || data.message || 'Application retry completed'}`, 'warning');
+          }
           fetchQaAndAppliedJobs();
-        } else {
-          showToast(`⚠️ Answers saved to DB! ${data.error || data.message || 'Instant apply finished'}`, 'warning');
-        }
+        }).catch(err => {
+          showToast(`⚠️ Application running in background: ${err.message}`, 'info');
+        });
       } else {
         showToast(`✅ ${itemsToSave.length} screening answer(s) saved to DB! Automation will use them for all matching jobs!`, 'success');
         setInstantApplyModalOpen(false);
@@ -3894,6 +3901,28 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       showToast(`❌ Failed to submit Q&A: ${err.message}`, 'error');
     } finally {
       setIsApplyingInstant(false);
+    }
+  };
+
+  const [isRetryingUnconfirmed, setIsRetryingUnconfirmed] = useState(false);
+
+  const retryAllUnconfirmedJobs = async () => {
+    setIsRetryingUnconfirmed(true);
+    try {
+      const res = await apiFetch('/api/naukri/apply/retry-all-unconfirmed', {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(`⚡ ${data.message || 'Started background apply for all unconfirmed jobs!'}`, 'success');
+        fetchQaAndAppliedJobs();
+      } else {
+        showToast(`⚠️ ${data.error || data.message || 'Failed to start batch apply'}`, 'warning');
+      }
+    } catch (err) {
+      showToast(`❌ Error triggering batch apply: ${err.message}`, 'error');
+    } finally {
+      setIsRetryingUnconfirmed(false);
     }
   };
 
@@ -5748,6 +5777,21 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             >
               ⚠️ Unconfirmed ({appliedCompanies.filter(c => c.totalApplied === 0).length})
             </button>
+            {appliedCompanies.some(c => c.totalApplied === 0) && (
+              <button
+                onClick={retryAllUnconfirmedJobs}
+                disabled={isRetryingUnconfirmed || isAutoApplying}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 shadow-sm transition-all cursor-pointer ml-1"
+                title="Automatically attempt live application for all unconfirmed jobs in background"
+              >
+                {isRetryingUnconfirmed ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+                )}
+                <span>⚡ Apply All Unconfirmed</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -6027,6 +6071,21 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             >
               ⚠️ Unconfirmed ({appliedJobs.filter(a => a.status === 'SUBMISSION_UNCONFIRMED' || a.verificationStatus === 'UNVERIFIED').length})
             </button>
+            {appliedJobs.some(a => a.status === 'SUBMISSION_UNCONFIRMED' || a.verificationStatus === 'UNVERIFIED') && (
+              <button
+                onClick={retryAllUnconfirmedJobs}
+                disabled={isRetryingUnconfirmed || isAutoApplying}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold text-white bg-amber-600 hover:bg-amber-700 disabled:bg-amber-400 shadow-sm transition-all cursor-pointer ml-1"
+                title="Automatically attempt live application for all unconfirmed jobs in background"
+              >
+                {isRetryingUnconfirmed ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Zap className="w-3.5 h-3.5 text-amber-200 fill-amber-200" />
+                )}
+                <span>⚡ Apply All Unconfirmed</span>
+              </button>
+            )}
             <button
               onClick={() => { setHistoryFilter('failed'); setHistoryPage(1); }}
               className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${

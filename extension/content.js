@@ -12,6 +12,9 @@
   let floatingModal = null;
 
   // --- SITE PAUSE / STOP CONTROL ENGINE ---
+  // We keep a synchronous in-memory flag so all checks are instant (no async race conditions).
+  let __sitePausedCache = false;
+
   function getDomainFromUrl(url) {
     try {
       return new URL(url || window.location.href).hostname.toLowerCase();
@@ -20,17 +23,58 @@
     }
   }
 
-  async function isSitePaused() {
-    return new Promise(resolve => {
-      const domain = getDomainFromUrl();
-      chrome.storage.sync.get({ pausedSites: [] }, (res) => {
-        const list = res.pausedSites || [];
-        const paused = list.some(d => d.toLowerCase() === domain);
-        resolve(paused);
-      });
+  /** Synchronous check – O(1), no async, no race conditions */
+  function isSitePaused() {
+    return __sitePausedCache;
+  }
+
+  /** Nuke EVERY piece of extension UI from the current page DOM completely */
+  function nukeAllExtensionUi() {
+    // Kill floating FAB button
+    const fab = document.getElementById('air-floating-trigger');
+    if (fab) fab.remove();
+    floatingBtn = null;
+
+    // Kill the resume optimizer modal
+    const modal = document.getElementById('air-modal-container');
+    if (modal) modal.remove();
+    floatingModal = null;
+
+    // Kill Q&A popover toast
+    const qa = document.getElementById('air-qa-popover');
+    if (qa) qa.remove();
+    if (typeof activeQaToast !== 'undefined') activeQaToast = null;
+
+    // Kill the auto-prompt banner (job detected banner)
+    const banner = document.getElementById('air-auto-toast');
+    if (banner) banner.remove();
+
+    // Kill any Q&A feedback badges
+    document.querySelectorAll('.air-qa-feedback').forEach(el => el.remove());
+
+    // Kill any stale extension overlays
+    document.querySelectorAll('.air-modal-wrap, .air-toast-banner, .air-qa-popover').forEach(el => el.remove());
+  }
+
+  /** Apply paused state – nuke UI and update flag */
+  function applyPauseState(paused) {
+    __sitePausedCache = paused;
+    if (paused) {
+      nukeAllExtensionUi();
+    }
+  }
+
+  /** Boot: load paused state from storage synchronously-ish on page load */
+  function loadPausedStateFromStorage() {
+    const domain = getDomainFromUrl();
+    chrome.storage.sync.get({ pausedSites: [] }, (res) => {
+      const list = res.pausedSites || [];
+      const paused = list.some(d => d.toLowerCase() === domain);
+      applyPauseState(paused);
     });
   }
 
+  /** Toggle the paused state for this site */
   async function toggleSitePause() {
     const domain = getDomainFromUrl();
     return new Promise(resolve => {
@@ -46,6 +90,7 @@
           nowPaused = true;
         }
         chrome.storage.sync.set({ pausedSites: list }, () => {
+          applyPauseState(nowPaused);
           resolve({ paused: nowPaused, domain });
         });
       });
@@ -579,7 +624,7 @@
 
   async function renderFloatingButtonState() {
     if (!floatingBtn) return;
-    const paused = await isSitePaused();
+    const paused = isSitePaused();
     if (paused) {
       floatingBtn.classList.add('air-fab-paused');
       floatingBtn.title = 'Extension paused for this site. Click to Resume.';
@@ -616,7 +661,7 @@
 
     floatingBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const paused = await isSitePaused();
+      const paused = isSitePaused();
       if (paused) {
         const { domain } = await toggleSitePause();
         showQaFeedbackBadge(`▶️ Extension Resumed for ${domain}!`);
@@ -962,7 +1007,7 @@
 
   async function showJobPromptPopup(data) {
     if (!data || !data.jd) return;
-    if (await isSitePaused()) return;
+    if (isSitePaused()) return;
 
     const pageKey = 'air_prompted_' + window.location.pathname + '_' + (data.role || '').slice(0, 15);
     if (sessionStorage.getItem(pageKey) === 'dismissed') {
@@ -1383,7 +1428,7 @@
   }
 
   async function showQaMemoryToast(inputEl, qaItem) {
-    if (await isSitePaused()) return;
+    if (isSitePaused()) return;
     if (!inputEl || !qaItem || !qaItem.answer) return;
 
     const currentVal = (inputEl.value || '').trim();
@@ -1509,7 +1554,7 @@
     syncQaMemory();
 
     document.addEventListener('focusin', async (e) => {
-      if (await isSitePaused()) return;
+      if (isSitePaused()) return;
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
@@ -1523,7 +1568,7 @@
     });
 
     document.addEventListener('change', async (e) => {
-      if (await isSitePaused()) return;
+      if (isSitePaused()) return;
       const el = e.target;
       if (el && (el.tagName === 'INPUT' || el.tagName === 'SELECT' || el.tagName === 'TEXTAREA')) {
         const qText = getQuestionTextForInput(el);
@@ -1540,7 +1585,7 @@
     });
 
     document.addEventListener('submit', async (e) => {
-      if (await isSitePaused()) return;
+      if (isSitePaused()) return;
       const form = e.target;
       if (form && form.querySelectorAll) {
         const inputs = form.querySelectorAll('input, select, textarea');

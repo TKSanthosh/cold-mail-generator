@@ -28,21 +28,39 @@ const activeOtpSessions = new Map();
 const userLocks = new Map();
 const LOCK_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes auto-release for crash recovery
 
-async function isUserLockedAsync(userKey = 'default_user') {
+function shouldForceServerHeadless() {
+  return Boolean(
+    process.env.RENDER ||
+    process.env.RENDER_EXTERNAL_URL ||
+    process.env.K_SERVICE ||
+    process.env.RAILWAY_ENVIRONMENT ||
+    process.env.NAUKRI_FORCE_HEADLESS === 'true'
+  );
+}
+
+async function getUserLockInfoAsync(userKey = 'default_user') {
   if (isSupabaseConfigured()) {
     try {
-      const dbLocked = await supabaseIsLocked(userKey);
-      if (dbLocked) return true;
+      const conf = await supabaseGetNaukriConfig(userKey);
+      const lock = conf?.lock;
+      if (lock?.expiresAt && new Date(lock.expiresAt) > new Date()) {
+        return { locked: true, owner: lock.owner || null, expiresAt: lock.expiresAt };
+      }
     } catch (e) {}
   }
   if (userLocks.has(userKey)) {
     const lock = userLocks.get(userKey);
     if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
-      return true;
+      return { locked: true, owner: lock.owner || null, expiresAt: null };
     }
     userLocks.delete(userKey);
   }
-  return false;
+  return { locked: false, owner: null, expiresAt: null };
+}
+
+async function isUserLockedAsync(userKey = 'default_user') {
+  const info = await getUserLockInfoAsync(userKey);
+  return info.locked;
 }
 
 function isUserLocked(userKey = 'default_user') {
@@ -96,9 +114,13 @@ async function releaseUserLockAsync(userKey = 'default_user', owner = null) {
     } catch (e) {}
   }
   if (userLocks.has(userKey)) {
-    userLocks.delete(userKey);
-    logStructured('LOCK', `Released automation lock for user "${userKey}"`);
+    const lock = userLocks.get(userKey);
+    if (!owner || !lock.owner || lock.owner === owner) {
+      userLocks.delete(userKey);
+      logStructured('LOCK', `Released automation lock for user "${userKey}"`);
+    }
   }
+  schedulePendingBoostKick(userKey);
   return true;
 }
 

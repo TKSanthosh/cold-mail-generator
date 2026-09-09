@@ -93,7 +93,8 @@ const {
   getAutoApplyStatus,
   getNaukriCompanyApplicationSummary,
   getNaukriExternalJobs,
-  retryAndApplySingleJobInstantAsync
+  retryAndApplySingleJobInstantAsync,
+  applyAllUnconfirmedJobsAsync
 } = require('./services/naukri_apply.service');
 
 const app = express();
@@ -1589,6 +1590,22 @@ app.post('/api/naukri/apply/retry-instant', async (req, res) => {
   try {
     const result = await retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, userAnswers });
     res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/apply/retry-all-unconfirmed', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    // Run asynchronously in background so client request never times out
+    applyAllUnconfirmedJobsAsync(userKey).catch(err => {
+      console.error(`[BATCH UNCONFIRMED ERROR for ${userKey}]`, err.message);
+    });
+    res.json({
+      success: true,
+      message: 'Background application worker started for all unconfirmed jobs! Live progress will update in the table.'
+    });
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
