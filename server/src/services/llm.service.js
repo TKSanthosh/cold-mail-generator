@@ -120,7 +120,7 @@ I’m reaching out regarding Software Developer opportunities at ${company}. You
 
 I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
 
-**Resume:** Attached (1-Page ATS PDF)
+**Resume:** Attached
 **LinkedIn:** ${linkedin}
 **GitHub:** ${github}
 
@@ -175,7 +175,7 @@ I’m reaching out regarding Software Developer opportunities at ${company}. You
 
 I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
 
-**Resume:** Attached (1-Page ATS PDF)
+**Resume:** Attached
 **LinkedIn:** ${candidateLinkedin}
 **GitHub:** ${candidateGithub}
 
@@ -313,9 +313,20 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
 
   // 6. Ensure links are present in the body
   if (!bodyWithoutGreetings.includes('**LinkedIn:**') && !bodyWithoutGreetings.includes('linkedin.com')) {
-    const linksBlock = `**Resume:** Attached (1-Page ATS PDF)\n**LinkedIn:** ${linkedin}\n**GitHub:** ${github}`;
+    const linksBlock = `**Resume:** Attached\n**LinkedIn:** ${linkedin}\n**GitHub:** ${github}`;
     bodyWithoutGreetings = bodyWithoutGreetings + '\n\n' + linksBlock;
   }
+
+  // Sanitize any remaining ATS PDF mentions in the body
+  bodyWithoutGreetings = bodyWithoutGreetings
+    .replace(/\(1-Page ATS PDF\)/gi, '')
+    .replace(/\(ATS PDF\)/gi, '')
+    .replace(/\(ATS-Friendly PDF\)/gi, '')
+    .replace(/\(ATS friendly PDF\)/gi, '')
+    .replace(/\s+/g, ' ')
+    .replace(/Attached\s*\(\s*\)/gi, 'Attached')
+    .replace(/\n\s+\n/g, '\n\n')
+    .trim();
 
   const finalBody = `${finalGreeting}\n\n${bodyWithoutGreetings}\n\n${cleanSignature}`.trim();
 

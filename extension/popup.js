@@ -452,7 +452,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 I came across the ${role} opening at ${company} and wanted to reach out directly. With 4+ years of software development experience specializing in full-stack engineering (React.js, Node.js, Express, databases, and microservices), I am confident I can make an immediate impact on your engineering initiatives.
 
-I have tailored my 1-page ATS resume specifically for the ${role} position and attached it for your review.
+I have attached my resume for the ${role} position for your review.
 
 I would welcome the opportunity to discuss how my technical background aligns with ${company}'s goals.
 
