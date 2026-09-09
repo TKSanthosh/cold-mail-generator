@@ -67,33 +67,45 @@
   /** Boot: load paused state from storage synchronously-ish on page load */
   function loadPausedStateFromStorage() {
     const domain = getDomainFromUrl();
-    chrome.storage.sync.get({ pausedSites: [] }, (res) => {
-      const list = res.pausedSites || [];
-      const paused = list.some(d => d.toLowerCase() === domain);
-      applyPauseState(paused);
-    });
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync && typeof chrome.storage.sync.get === 'function') {
+      try {
+        chrome.storage.sync.get({ pausedSites: [] }, (res) => {
+          const list = res ? (res.pausedSites || []) : [];
+          const paused = list.some(d => d.toLowerCase() === domain);
+          applyPauseState(paused);
+        });
+      } catch (_) {}
+    }
   }
 
   /** Toggle the paused state for this site */
   async function toggleSitePause() {
     const domain = getDomainFromUrl();
     return new Promise(resolve => {
-      chrome.storage.sync.get({ pausedSites: [] }, (res) => {
-        let list = res.pausedSites || [];
-        const idx = list.findIndex(d => d.toLowerCase() === domain);
-        let nowPaused = false;
-        if (idx >= 0) {
-          list.splice(idx, 1);
-          nowPaused = false;
-        } else {
-          list.push(domain);
-          nowPaused = true;
+      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync && typeof chrome.storage.sync.get === 'function') {
+        try {
+          chrome.storage.sync.get({ pausedSites: [] }, (res) => {
+            let list = res ? (res.pausedSites || []) : [];
+            const idx = list.findIndex(d => d.toLowerCase() === domain);
+            let nowPaused = false;
+            if (idx >= 0) {
+              list.splice(idx, 1);
+              nowPaused = false;
+            } else {
+              list.push(domain);
+              nowPaused = true;
+            }
+            chrome.storage.sync.set({ pausedSites: list }, () => {
+              applyPauseState(nowPaused);
+              resolve({ paused: nowPaused, domain });
+            });
+          });
+        } catch (_) {
+          resolve({ paused: false, domain });
         }
-        chrome.storage.sync.set({ pausedSites: list }, () => {
-          applyPauseState(nowPaused);
-          resolve({ paused: nowPaused, domain });
-        });
-      });
+      } else {
+        resolve({ paused: false, domain });
+      }
     });
   }
 
@@ -1311,55 +1323,46 @@
   }
 
   // --- MESSAGE LISTENER FROM POPUP & BACKGROUND ---
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'SITE_PAUSE_UPDATED') {
-      renderFloatingButtonState();
-      sendResponse({ success: true });
-      return true;
-    }
+  if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage && typeof chrome.runtime.onMessage.addListener === 'function') {
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'SITE_PAUSE_UPDATED') {
+        renderFloatingButtonState();
+        sendResponse({ success: true });
+        return true;
+      }
 
-    if (request.action === 'GET_PAGE_JD') {
-      const data = scrapeJobData(true) || {};
-      sendResponse({
-        success: true,
-        data: {
+      if (request.action === 'GET_PAGE_JD') {
+        const data = scrapeJobData(true) || {};
+        sendResponse({
+          success: true,
+          data: {
+            role: data.role || '',
+            company: data.company || '',
+            jd: data.jd || '',
+            source: data.source || '',
+            url: window.location.href
+          }
+        });
+        return true;
+      }
+
+      if (request.action === 'PROCESS_SELECTED_JD') {
+        const data = scrapeJobData(true) || {};
+        openModalWithData({
           role: data.role || '',
           company: data.company || '',
-          jd: data.jd || '',
-          source: data.source || '',
-          url: window.location.href
-        }
-      });
-      return true;
-    }
+          jd: request.selectedText || data.jd || ''
+        });
+        sendResponse({ success: true });
+        return true;
+      }
 
-    if (request.action === 'PROCESS_SELECTED_JD') {
-      const data = scrapeJobData(true) || {};
-      openModalWithData({
-        role: data.role || '',
-        company: data.company || '',
-        jd: request.selectedText || data.jd || ''
-      });
-      sendResponse({ success: true });
-      return true;
-    }
-
-    if (request.action === 'TRIGGER_TAILOR_ON_PAGE') {
-      openModalWithData();
-      sendResponse({ success: true });
-      return true;
-    }
-  });
-
-  // Run on page load
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-      initDetector();
-      initQaTracker();
+      if (request.action === 'TRIGGER_TAILOR_ON_PAGE') {
+        openModalWithData();
+        sendResponse({ success: true });
+        return true;
+      }
     });
-  } else {
-    initDetector();
-    initQaTracker();
   }
 
   // --- SMART Q&A FORM TRACKER & SUPABASE AUTO-PREFILL / AUTO-RECORD ENGINE ---
@@ -1462,8 +1465,30 @@
   function getQuestionTextForInput(inputEl) {
     if (!inputEl) return '';
 
+    const isChoice = inputEl.type === 'radio' || inputEl.type === 'checkbox';
+
+    // 0. For Radios / Checkboxes: look at the group's fieldset or parent container heading first
+    if (isChoice) {
+      const fieldset = inputEl.closest('fieldset');
+      if (fieldset) {
+        const legend = fieldset.querySelector('legend');
+        if (legend && cleanText(legend.innerText)) return cleanText(legend.innerText);
+      }
+      const container = inputEl.closest('.form-group, .input-group, .field, .application-question, [data-automation-id*="formField"], div');
+      if (container) {
+        const parentLabel = inputEl.closest('label');
+        const headings = container.querySelectorAll('label, legend, h1, h2, h3, h4, h5, h6, .question, [class*="label"], [class*="question"]');
+        for (const h of headings) {
+          if (h !== parentLabel && !h.contains(inputEl)) {
+            const t = cleanText(h.innerText);
+            if (t.length > 2 && t.length < 250) return t;
+          }
+        }
+      }
+    }
+
     // 1. Label for ID
-    if (inputEl.id) {
+    if (inputEl.id && !isChoice) {
       try {
         const labelEl = document.querySelector(`label[for="${CSS.escape(inputEl.id)}"]`);
         if (labelEl && cleanText(labelEl.innerText)) return cleanText(labelEl.innerText);
@@ -1472,7 +1497,7 @@
 
     // 2. Parent label
     const parentLabel = inputEl.closest('label');
-    if (parentLabel && cleanText(parentLabel.innerText)) return cleanText(parentLabel.innerText);
+    if (parentLabel && cleanText(parentLabel.innerText) && !isChoice) return cleanText(parentLabel.innerText);
 
     // 3. ARIA labelledby
     const ariaLabelledby = inputEl.getAttribute('aria-labelledby');
@@ -1904,5 +1929,16 @@
         }
       }
     });
+  }
+
+  // Run on page load after all functions and variables are declared
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      initDetector();
+      initQaTracker();
+    });
+  } else {
+    initDetector();
+    initQaTracker();
   }
 })();
