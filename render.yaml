@@ -1,9 +1,9 @@
 services:
   - type: web
-    name: cold-mail-generator
+    name: ai-resume-tailor-backend
     runtime: node
     plan: free
-    buildCommand: npm install --prefix server && npm install --prefix client --include=dev && npm run build --prefix client && node server/install-browser.js
+    buildCommand: npm install --prefix server
     startCommand: node server/src/index.js
     envVars:
       - key: NODE_ENV
