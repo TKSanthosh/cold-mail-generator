@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 24/7 Keep-Alive Anti-Sleep Heartbeat Service for Render & Cloud Hosts
  * 
  * Render Free Tier puts web services to sleep after 15 minutes of inbound HTTP inactivity.
@@ -20,6 +20,10 @@ function getAppUrl(port = 5001) {
   }
   if (process.env.APP_URL) {
     return process.env.APP_URL.replace(/\/$/, '');
+  }
+  // In production cloud environments, default to the live Render endpoint
+  if (process.env.NODE_ENV === 'production' || process.env.RENDER) {
+    return 'https://ai-resume-tailor-backend-gldn.onrender.com';
   }
   return `http://localhost:${port}`;
 }
@@ -58,11 +62,11 @@ function initKeepAliveService(port = 5001) {
     pingSelf(targetUrl);
   }, 15000);
 
-  // Recurring ping every 5 minutes (300,000ms) - strictly under Render's 15-min timeout
+  // Recurring ping every 4 minutes (240,000ms) - strictly under Render's 15-min timeout
   keepAliveTimer = setInterval(() => {
     const currentUrl = getAppUrl(port);
     pingSelf(currentUrl);
-  }, 5 * 60 * 1000);
+  }, 4 * 60 * 1000);
 }
 
 function getKeepAliveStatus(port = 5001) {

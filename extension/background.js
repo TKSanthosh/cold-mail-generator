@@ -2,7 +2,7 @@
 
 const DEFAULT_SETTINGS = {
   serverUrl: 'http://localhost:5001',
-  renderUrl: 'https://ai-resume-tailor-backend.onrender.com',
+  renderUrl: 'https://ai-resume-tailor-backend-gldn.onrender.com',
   userKey: 'tksanthosh494_gmail_com',
   autoShowWidget: true,
   autoDownloadPdf: false,
@@ -152,6 +152,7 @@ async function resolveLiveServerUrl(preferredUrl) {
   const cloudCandidates = [
     preferredUrl,
     settings.renderUrl,
+    'https://ai-resume-tailor-backend-gldn.onrender.com',
     'https://ai-resume-tailor-backend.onrender.com',
     'https://cold-mail-generator.onrender.com'
   ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
