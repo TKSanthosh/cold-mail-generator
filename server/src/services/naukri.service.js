@@ -120,7 +120,6 @@ async function releaseUserLockAsync(userKey = 'default_user', owner = null) {
       logStructured('LOCK', `Released automation lock for user "${userKey}"`);
     }
   }
-  schedulePendingBoostKick(userKey);
   return true;
 }
 
