@@ -3215,15 +3215,20 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user') {
       args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
     });
 
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    const resolvedResume = await resolveUserResumeFile(userKey);
+    let page = null;
 
-    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-    if (!restoreResult.hasSession) {
-      throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
+    async function ensureActivePage() {
+      if (page) {
+        try { await page.close(); } catch (e) {}
+      }
+      page = await browser.newPage();
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      await restoreAndInjectNaukriSession(page, userKey);
+      return page;
     }
 
-    const resolvedResume = await resolveUserResumeFile(userKey);
+    page = await ensureActivePage();
 
     for (const job of unconfirmed) {
       if (!job.jobUrl) continue;
@@ -3231,6 +3236,10 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user') {
       console.log(`[UNCONFIRMED_BATCH] (${processedCount}/${unconfirmed.length}) Applying to: "${job.jobTitle}" at "${job.company}" (${job.jobUrl})...`);
 
       try {
+        if (!page || page.isClosed()) {
+          page = await ensureActivePage();
+        }
+
         await page.goto(job.jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
         await new Promise(r => setTimeout(r, 2000));
 
@@ -3246,12 +3255,15 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user') {
         const result = await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume);
         if (result.isVerified) {
           verifiedCount++;
+          console.log(`[UNCONFIRMED_BATCH] ✅ SUBMITTED & VERIFIED: "${job.jobTitle}" at "${job.company}"!`);
         }
       } catch (jobErr) {
         console.warn(`[UNCONFIRMED_BATCH] Error on job ${job.company}: ${jobErr.message}`);
+        // Reset page on navigation/frame errors to prevent cascading failures
+        page = await ensureActivePage().catch(() => null);
       }
 
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 1500));
     }
 
     return {
