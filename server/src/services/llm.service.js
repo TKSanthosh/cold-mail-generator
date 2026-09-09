@@ -104,16 +104,16 @@ function generateDeterministicFallbackEmail(cleanHrName, company, jd, candidateI
   const linkedin = candidateInfo?.linkedin || 'https://linkedin.com/in/santhosh-tk';
   const github = candidateInfo?.github || 'https://github.com/TKSanthosh';
 
-  const subject = `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
+  const subject = `Software Developer | 4+ Years | React / Node.js / MERN | Interested in ${company}`;
   
   const body = `Hi ${cleanHrName},
 
-I’m ${name}, a Software Developer with 3.5 years of experience in Full Stack engineering (React.js, Node.js, Express, MySQL, MongoDB, AWS), currently building high-throughput web applications and microservices.
+I’m ${name}, a Software Developer with 4+ years of experience in Full Stack engineering (React.js, Node.js, Express, MySQL, MongoDB, AWS), currently building high-throughput web applications and microservices.
 
 I’m reaching out regarding Software Developer opportunities at ${company}. Your team's engineering work caught my attention, and I believe my background could be a strong fit for your team.
 
 **What I bring:**
-• 3.5 years of hands-on experience building high-performance Node.js, Express & React applications
+• 4+ years of hands-on experience building high-performance Node.js, Express & React applications
 • Proven track record reducing API response latency by ~20% and cutting production issues by ~30%
 • Strong expertise in relational & NoSQL databases (MySQL, MongoDB) and REST API system design
 • Production deployment and infrastructure experience with AWS, Docker, and CI/CD pipelines
@@ -158,17 +158,17 @@ async function generateColdEmail(hrName, company, jd, resumeData, companyIntel) 
 
 STRICT SUBJECT FORMAT:
 Subject: [Role] | [X Years] | [Key Tech] | Interested in [Company]
-(Example: Subject: Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company})
+(Example: Subject: Software Developer | 4+ Years | React / Node.js / MERN | Interested in ${company})
 
 STRICT BODY TEMPLATE:
 Hi ${cleanHrName},
 
-I’m ${candidateName}, a Software Developer with 3+ years of experience in [Key Tech / Full Stack], currently working on [one-line description of current work/domain].
+I’m ${candidateName}, a Software Developer with 4+ years of experience in [Key Tech / Full Stack], currently working on [one-line description of current work/domain].
 
 I’m reaching out regarding Software Developer opportunities at ${company}. Your team’s work in [specific product/team/technology] caught my attention, and I believe my experience could be relevant.
 
 **What I bring:**
-• 3+ years of experience with [core technology stack]
+• 4+ years of experience with [core technology stack]
 • Built/owned [important project or high-throughput system]
 • [Strong measurable achievement, e.g. reduced API latency by 20% / cut production issues by 30%]
 • Experience with [cloud/microservices/databases/system design]
@@ -193,7 +193,7 @@ RULES:
   let userPrompt = `Target Recruiter: ${cleanHrName}
 Target Company: ${company}
 Candidate Name: ${candidateName}
-Total Experience: 3+ years (full-stack & backend engineering)
+Total Experience: 4+ years (full-stack & backend engineering)
 Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, REST APIs
 Notable Achievements: Reduced API response times by ~20% and cut production issues by ~30% at Sify Technologies; built clinical platforms at IQVIA.
 `;
@@ -236,7 +236,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
     try {
       const cleanJson = text.replace(/```json/gi, '').replace(/```/g, '').trim();
       const obj = JSON.parse(cleanJson);
-      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
+      const subject = obj.subject ? obj.subject.replace(/^Subject:\s*/i, '').trim() : `Software Developer | 4+ Years | React / Node.js / MERN | Interested in ${company}`;
       
       const paragraphs = [
         obj.greeting || `Hi ${hrName || 'Hiring Team'},`,
@@ -275,7 +275,7 @@ function sanitizeAndExtractEmail(raw, hrName, company, candidateInfo) {
   }
 
   if (!subject) {
-    subject = `Software Developer | 3+ Years | React / Node.js / MERN | Interested in ${company}`;
+    subject = `Software Developer | 4+ Years | React / Node.js / MERN | Interested in ${company}`;
   }
 
   // If subject line is still embedded anywhere in text, remove it

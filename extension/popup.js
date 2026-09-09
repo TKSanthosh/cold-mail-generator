@@ -447,10 +447,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     const company = inputCompany.value.trim() || 'your team';
     const candidateName = 'Santhosh T K';
 
-    emailSubject.value = `${role} | 3+ Years Experience | Interested in ${company}`;
+    emailSubject.value = `${role} | 4+ Years Experience | Interested in ${company}`;
     emailBody.value = `Hi Hiring Team,
 
-I came across the ${role} opening at ${company} and wanted to reach out directly. With 3.5+ years of software development experience specializing in full-stack engineering (React.js, Node.js, Express, databases, and microservices), I am confident I can make an immediate impact on your engineering initiatives.
+I came across the ${role} opening at ${company} and wanted to reach out directly. With 4+ years of software development experience specializing in full-stack engineering (React.js, Node.js, Express, databases, and microservices), I am confident I can make an immediate impact on your engineering initiatives.
 
 I have tailored my 1-page ATS resume specifically for the ${role} position and attached it for your review.
 

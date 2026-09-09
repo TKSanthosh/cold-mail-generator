@@ -609,10 +609,10 @@ function inferAnswerFromProfile(questionText, availableOptions = []) {
   // 5. Total Experience
   if (normQ.includes('total experience') || normQ.includes('years of experience') || normQ.includes('overall experience')) {
     if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const expOpt = availableOptions.find(o => o.includes('3') || o.includes('2-4') || o.includes('3-5') || o.includes('3+'));
+      const expOpt = availableOptions.find(o => o.includes('4') || o.includes('4+') || o.includes('3-5') || o.includes('4-6') || o.includes('3+'));
       if (expOpt) return { answer: expOpt, matchedItem: { answer: expOpt }, confidence: 90, rawAnswer: expOpt };
     }
-    return { answer: '3 Years', matchedItem: { answer: '3 Years' }, confidence: 90, rawAnswer: '3 Years' };
+    return { answer: '4+ Years', matchedItem: { answer: '4+ Years' }, confidence: 90, rawAnswer: '4+ Years' };
   }
 
   // 6. Work Shifts & Work Mode
