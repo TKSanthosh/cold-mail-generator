@@ -94,7 +94,11 @@ const {
   getNaukriCompanyApplicationSummary,
   getNaukriExternalJobs,
   retryAndApplySingleJobInstantAsync,
-  applyAllUnconfirmedJobsAsync
+  applyAllUnconfirmedJobsAsync,
+  startNaukriInteractiveApplySessionAsync,
+  submitNaukriSessionAnswerAsync,
+  getNaukriInteractiveSessionStatus,
+  cancelNaukriInteractiveSession
 } = require('./services/naukri_apply.service');
 
 const app = express();
@@ -1638,6 +1642,53 @@ app.post('/api/naukri/apply/retry-all-unconfirmed', async (req, res) => {
       success: true,
       message: 'Background application worker started for all unconfirmed jobs! Live progress will update in the table.'
     });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/session/start', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { jobId, jobUrl, company, jobTitle } = req.body;
+  if (!jobUrl) {
+    return res.status(400).json({ success: false, error: 'jobUrl is required to start a live application session' });
+  }
+  try {
+    const result = await startNaukriInteractiveApplySessionAsync(userKey, { jobId, jobUrl, company, jobTitle });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get('/api/naukri/session/status/:sessionId', (req, res) => {
+  const { sessionId } = req.params;
+  const status = getNaukriInteractiveSessionStatus(sessionId);
+  res.json({ success: true, ...status });
+});
+
+app.post('/api/naukri/session/answer', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { sessionId, answer } = req.body;
+  if (!sessionId || answer === undefined) {
+    return res.status(400).json({ success: false, error: 'sessionId and answer are required' });
+  }
+  try {
+    const result = await submitNaukriSessionAnswerAsync(userKey, { sessionId, answer });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/session/cancel', async (req, res) => {
+  const { sessionId } = req.body;
+  if (!sessionId) {
+    return res.status(400).json({ success: false, error: 'sessionId is required' });
+  }
+  try {
+    const result = await cancelNaukriInteractiveSession(sessionId);
+    res.json(result);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }

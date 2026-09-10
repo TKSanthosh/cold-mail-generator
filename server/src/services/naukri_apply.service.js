@@ -2082,7 +2082,7 @@ async function sendNaukriChatbotAnswer(page, answer, chips = []) {
     const targetDigits = cleanNum(ans);
 
     const surface = document.querySelector(
-      '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot"], .apply-dialog, .apply-message'
+      '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog, .apply-message'
     );
     const scope = surface || document;
 
@@ -2109,15 +2109,13 @@ async function sendNaukriChatbotAnswer(page, answer, chips = []) {
       }
 
       // Check if a "Save" / "Send" / "Submit" button needs clicking after choosing option
-      setTimeout(() => {
-        const confirmBtn = Array.from(scope.querySelectorAll('button, [role="button"]')).find(b => {
-          const bt = lower(visibleText(b));
-          return bt === 'save' || bt === 'send' || bt === 'next' || bt === 'continue' || bt === 'submit';
-        });
-        if (confirmBtn) confirmBtn.click();
-      }, 300);
+      const confirmBtn = Array.from(scope.querySelectorAll('button, [role="button"], div[class*="button" i]')).find(b => {
+        const bt = lower(visibleText(b));
+        return bt === 'save' || bt === 'send' || bt === 'next' || bt === 'continue' || bt === 'submit';
+      });
+      if (confirmBtn) confirmBtn.click();
 
-      return { method: 'option_click', sent: true };
+      return { method: 'option_click', sent: true, clickedConfirm: !!confirmBtn };
     }
 
     // 2. Textarea / Text Input fallback
@@ -2135,11 +2133,11 @@ async function sendNaukriChatbotAnswer(page, answer, chips = []) {
       input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
     }
 
-    const sendBtn = Array.from(scope.querySelectorAll('button, [role="button"], [class*="send"]')).find(b => {
+    const sendBtn = Array.from(scope.querySelectorAll('button, [role="button"], [class*="send"], [class*="save"]')).find(b => {
       const t = lower(visibleText(b));
       const aria = lower(b.getAttribute('aria-label') || '');
       const cls = lower(String(b.className || ''));
-      return t === 'send' || aria.includes('send') || cls.includes('send');
+      return t === 'save' || t === 'send' || t === 'submit' || t === 'next' || t === 'continue' || aria.includes('send') || cls.includes('send') || cls.includes('save');
     });
     if (sendBtn) {
       sendBtn.click();
@@ -2148,6 +2146,20 @@ async function sendNaukriChatbotAnswer(page, answer, chips = []) {
 
     return { method: input ? 'typed' : 'none', sent: !!input };
   }, String(answer || ''), chips);
+
+  // If confirm button wasn't clicked in evaluate or was asynchronous, click explicitly from Puppeteer page
+  if (result?.method === 'option_click' && !result?.clickedConfirm) {
+    await new Promise(r => setTimeout(r, 200));
+    await page.evaluate(() => {
+      const surface = document.querySelector('.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog');
+      const scope = surface || document;
+      const confirmBtn = Array.from(scope.querySelectorAll('button, [role="button"], div[class*="button" i]')).find(b => {
+        const bt = (b?.innerText || b?.textContent || '').trim().toLowerCase();
+        return bt === 'save' || bt === 'send' || bt === 'next' || bt === 'continue' || bt === 'submit';
+      });
+      if (confirmBtn) confirmBtn.click();
+    });
+  }
 
   if (result?.method === 'typed' || result?.method === 'typed_send') {
     try {
@@ -3586,6 +3598,560 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnsw
   }
 }
 
+/**
+ * ============================================================================
+ * REAL-TIME NAUKRI DOM QUESTION DETECTOR & INTERACTIVE SESSION MANAGER
+ * Zero hardcoded questions. Zero guess policy. True live DOM source of truth.
+ * ============================================================================
+ */
+
+// Active In-Memory Application Browser Sessions (sessionId -> SessionObject)
+const activeApplicationSessions = new Map();
+
+// Session Auto-Cleanup Timeout (10 minutes idle)
+const SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+
+function cleanupStaleApplicationSessions() {
+  const now = Date.now();
+  for (const [sessionId, session] of activeApplicationSessions.entries()) {
+    if (now - (session.lastActivity || session.createdAt) > SESSION_IDLE_TIMEOUT_MS) {
+      console.log(`[SESSION] Cleaning up idle session: ${sessionId}`);
+      try {
+        if (session.browser) session.browser.close().catch(() => {});
+      } catch (e) {}
+      activeApplicationSessions.delete(sessionId);
+    }
+  }
+}
+setInterval(cleanupStaleApplicationSessions, 60000).unref();
+
+/**
+ * Real-Time DOM Question Extractor
+ * Scans page and all frames for active application drawer, modal, and question turns.
+ * Strictly extracts real questions and options from live DOM. No static fallbacks.
+ */
+async function extractCurrentNaukriQuestionFromDom(page, jobItem = {}) {
+  const jobIdentifier = jobItem?.jobId || jobItem?.id || 'unknown_job';
+  const url = page.url ? page.url() : '';
+
+  const frames = typeof page.frames === 'function' ? page.frames() : [page];
+  let bestResult = null;
+
+  for (let fIdx = 0; fIdx < frames.length; fIdx++) {
+    const frame = frames[fIdx];
+    try {
+      const frameInfo = typeof frame.name === 'function' ? frame.name() || `frame_${fIdx}` : 'main';
+      const extracted = await frame.evaluate((successPhrases, fName) => {
+        const visibleText = (el) => (el?.innerText || el?.textContent || '').trim();
+        const lower = (s) => (s || '').toLowerCase();
+
+        // 1. Check if application already submitted or confirmed
+        const controls = Array.from(document.querySelectorAll('button, a, span, div'));
+        const isApplied = controls.some(el => {
+          const t = lower(visibleText(el));
+          return t === 'applied' || t.includes('already applied') || t.startsWith('applied');
+        });
+
+        const surface = document.querySelector(
+          '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog, .apply-message, aside[class*="chat" i], div[role="dialog"]'
+        );
+
+        const surfaceText = surface ? visibleText(surface) : '';
+        const hasSuccessPhrase = successPhrases.some(p => lower(surfaceText).includes(p));
+
+        if (isApplied || hasSuccessPhrase) {
+          return {
+            isComplete: true,
+            isVerified: true,
+            stage: isApplied ? 'ALREADY_APPLIED' : 'SUCCESS_CONFIRMATION',
+            message: 'Application confirmed on Naukri DOM'
+          };
+        }
+
+        if (!surface) {
+          return null;
+        }
+
+        // 2. Extract latest bot question
+        const botNodes = Array.from(surface.querySelectorAll(
+          '.botMsg, .bot-msg, .chat-bubble, [class*="bot-msg" i], [class*="BotMsg" i], [class*="botMsg" i], li.bot, div[class*="incoming" i], div[class*="incomingMsg" i], [class*="message" i]:not([class*="user" i]):not([class*="outgoing" i]), div[class*="question" i]'
+        ));
+
+        let rawQuestion = '';
+        if (botNodes.length > 0) {
+          rawQuestion = visibleText(botNodes[botNodes.length - 1]);
+        } else {
+          const candidates = Array.from(surface.querySelectorAll('h1, h2, h3, h4, h5, h6, p, label, .title, [class*="title" i]'))
+            .map(c => visibleText(c))
+            .filter(t => t.length > 5 && t.length < 300 && (t.includes('?') || /notice|experience|ctc|salary|relocate|location|skill|years|degree/i.test(t)));
+          if (candidates.length > 0) {
+            rawQuestion = candidates[candidates.length - 1];
+          }
+        }
+
+        const cleanQ = rawQuestion.replace(/[\r\n]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+        // 3. Extract Options & Determine Field Type
+        const optionEls = Array.from(surface.querySelectorAll(
+          'label, input[type="radio"], [class*="radio" i], [role="radio"], .chip, [class*="chip" i], [class*="Chip" i], [class*="choice" i], [class*="option" i], li'
+        ));
+
+        const blockedOptionPattern = /^(send|skip|skip this question|close|x|submit|apply|save|cancel|continue|next)$/i;
+        const rawOptions = [];
+        const seenOptions = new Set();
+
+        optionEls.forEach(el => {
+          let text = visibleText(el) || el.getAttribute('value') || '';
+          text = text.replace(/^[○●•\s]+/, '').trim();
+          if (text && text.length > 0 && text.length < 80 && !blockedOptionPattern.test(text)) {
+            const lowerText = text.toLowerCase();
+            if (!seenOptions.has(lowerText)) {
+              seenOptions.add(lowerText);
+              rawOptions.push(text);
+            }
+          }
+        });
+
+        const checkboxInputs = surface.querySelectorAll('input[type="checkbox"], [role="checkbox"]');
+        const textInputs = surface.querySelectorAll(
+          'textarea, input[type="text"], input[type="number"], input[type="tel"], input[placeholder*="Type" i], textarea[placeholder*="Type" i], input[placeholder*="answer" i], textarea[placeholder*="answer" i]'
+        );
+
+        let fieldType = 'text';
+        if (rawOptions.length > 0) {
+          if (checkboxInputs.length > 0) {
+            fieldType = 'multiple_choice';
+          } else {
+            fieldType = 'single_choice';
+          }
+        } else if (textInputs.length > 0) {
+          fieldType = 'text';
+        }
+
+        const hasActiveInput = rawOptions.length > 0 || textInputs.length > 0;
+        if (!cleanQ && !hasActiveInput) {
+          return null;
+        }
+
+        return {
+          isComplete: false,
+          question: cleanQ || 'Recruiter Screening Question',
+          type: fieldType,
+          options: rawOptions,
+          isMandatory: cleanQ.includes('*') || !!surface.querySelector('.mandatory, .required, [required]'),
+          frameName: fName,
+          containerClass: surface.className || 'chatbot-surface',
+          hasInput: textInputs.length > 0,
+          hasOptions: rawOptions.length > 0
+        };
+      }, NAUKRI_APPLY_SUCCESS_PHRASES, frameInfo);
+
+      if (extracted) {
+        bestResult = extracted;
+        break;
+      }
+    } catch (err) {}
+  }
+
+  if (!bestResult) {
+    console.log(`[NAUKRI_QUESTION_DETECTION] No active question detected on live DOM for ${jobIdentifier}.`);
+    return {
+      found: false,
+      isComplete: false,
+      state: 'NO_QUESTIONS_DETECTED',
+      message: 'No questions detected from the current Naukri application UI.'
+    };
+  }
+
+  if (bestResult.isComplete) {
+    return {
+      found: false,
+      isComplete: true,
+      isVerified: bestResult.isVerified,
+      stage: bestResult.stage,
+      message: bestResult.message
+    };
+  }
+
+  // Structured Debug Logging as required
+  console.log(`[NAUKRI_QUESTION_DETECTED]`, JSON.stringify({
+    url,
+    jobIdentifier,
+    state: 'QUESTION_RENDERED',
+    detectedQuestion: bestResult.question,
+    detectedOptions: bestResult.options,
+    detectedType: bestResult.type,
+    frame: bestResult.frameName,
+    container: bestResult.containerClass
+  }, null, 2));
+
+  return {
+    found: true,
+    isComplete: false,
+    source: 'naukri',
+    jobId: jobIdentifier,
+    company: jobItem?.company || '',
+    jobTitle: jobItem?.jobTitle || '',
+    questionId: `nq_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    question: bestResult.question,
+    type: bestResult.type,
+    options: bestResult.options,
+    isMandatory: bestResult.isMandatory
+  };
+}
+
+/**
+ * Starts or connects to an interactive Naukri application session for a specific job.
+ * Launches browser, clicks Apply, waits for drawer/dialog, detects the REAL question,
+ * and leaves the session running so user can answer from frontend.
+ */
+async function startNaukriInteractiveApplySessionAsync(userKey = 'default_user', { jobId, jobUrl, company, jobTitle }) {
+  if (!jobUrl) {
+    throw new Error('Target job URL is required to start live application session.');
+  }
+
+  const {
+    findBrowserExecutable,
+    restoreAndInjectNaukriSession,
+    acquireUserLockAsync,
+    releaseUserLockAsync
+  } = require('./naukri.service');
+
+  // If a session is already active for this job, return its current state
+  for (const [sId, session] of activeApplicationSessions.entries()) {
+    if (session.jobItem?.jobId === jobId || session.jobItem?.jobUrl === jobUrl) {
+      if (session.currentQuestion) {
+        return {
+          success: true,
+          sessionId: sId,
+          question: session.currentQuestion,
+          isComplete: false,
+          turn: session.turn || 1,
+          message: 'Connected to existing live application session.'
+        };
+      }
+    }
+  }
+
+  await acquireUserLockAsync(userKey, 'interactive_apply', 300);
+
+  let browser = null;
+  try {
+    const browserPath = findBrowserExecutable();
+    browser = await puppeteer.launch({
+      headless: 'new',
+      executablePath: browserPath || undefined,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    });
+
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+    if (!restoreResult.hasSession) {
+      throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
+    }
+
+    const jobItem = {
+      jobId: jobId || `job_${Date.now()}`,
+      jobUrl,
+      jobTitle: jobTitle || 'Target Role',
+      company: company || 'Naukri Employer'
+    };
+
+    console.log(`[LIVE_SESSION] Navigating to ${jobItem.jobUrl}...`);
+    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await new Promise(r => setTimeout(r, 2000));
+
+    // Check if already applied
+    const isAlreadyApplied = await page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll('button, a'));
+      return btns.some(b => {
+        const t = (b.innerText || '').toLowerCase().trim();
+        return t === 'applied' || t.includes('already applied');
+      });
+    });
+
+    if (isAlreadyApplied) {
+      confirmNaukriApplicationSubmission(
+        userKey,
+        jobItem,
+        {
+          status: VerificationStatus.VERIFIED,
+          source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+          details: 'Job page shows "Applied" status on Naukri',
+          verifiedAt: new Date().toISOString()
+        }
+      );
+      await browser.close();
+      await releaseUserLockAsync(userKey, 'interactive_apply');
+      return {
+        success: true,
+        isComplete: true,
+        isVerified: true,
+        message: 'Already verified as applied on Naukri.'
+      };
+    }
+
+    // Click Apply button
+    console.log(`[LIVE_SESSION] Clicking Apply button for ${jobItem.company}...`);
+    await page.evaluate(() => {
+      const buttons = Array.from(document.querySelectorAll('button, a'));
+      const btn = buttons.find(el => {
+        const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+        if (t.includes('save') && !t.includes('apply')) return false;
+        if (t.includes('company site')) return false;
+        return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button') || (el.className && el.className.includes && el.className.includes('jhc__apply-button'));
+      });
+      if (btn) {
+        btn.click();
+      } else {
+        const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i], button.apply-btn, .apply-message button, button.waves-effect');
+        if (fallback) fallback.click();
+      }
+    });
+
+    // Wait for drawer to render
+    await new Promise(r => setTimeout(r, 3000));
+
+    // Extract REAL question from live DOM
+    const questionData = await extractCurrentNaukriQuestionFromDom(page, jobItem);
+
+    if (questionData.isComplete) {
+      const verification = await verifyNaukriSubmissionOnPage(page, jobItem);
+      confirmNaukriApplicationSubmission(
+        userKey,
+        jobItem,
+        {
+          status: VerificationStatus.VERIFIED,
+          source: verification.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+          details: verification.details || 'Application confirmed on live DOM',
+          verifiedAt: new Date().toISOString()
+        }
+      );
+      await browser.close();
+      await releaseUserLockAsync(userKey, 'interactive_apply');
+      return {
+        success: true,
+        isComplete: true,
+        isVerified: true,
+        message: 'Application submitted and verified live on Naukri!'
+      };
+    }
+
+    if (questionData.found) {
+      // Register active session
+      const sessionId = `session_${jobItem.jobId}_${Date.now()}`;
+      activeApplicationSessions.set(sessionId, {
+        sessionId,
+        userKey,
+        jobItem,
+        browser,
+        page,
+        currentQuestion: questionData,
+        turn: 1,
+        createdAt: Date.now(),
+        lastActivity: Date.now()
+      });
+
+      // Save real question to pending list for tracking
+      addPendingQuestion(userKey, {
+        jobId: jobItem.jobId,
+        jobTitle: jobItem.jobTitle,
+        company: jobItem.company,
+        jobUrl: jobItem.jobUrl,
+        question: questionData.question,
+        inputType: questionData.type,
+        options: questionData.options,
+        isMandatory: questionData.isMandatory
+      });
+
+      await releaseUserLockAsync(userKey, 'interactive_apply');
+
+      return {
+        success: true,
+        sessionId,
+        question: questionData,
+        isComplete: false,
+        turn: 1,
+        message: 'Real Naukri question detected from live application drawer.'
+      };
+    }
+
+    // No questions detected on DOM
+    await releaseUserLockAsync(userKey, 'interactive_apply');
+    return {
+      success: true,
+      found: false,
+      isComplete: false,
+      message: 'No questions detected from the current Naukri application UI.'
+    };
+  } catch (err) {
+    if (browser) {
+      try { await browser.close(); } catch (e) {}
+    }
+    await releaseUserLockAsync(userKey, 'interactive_apply');
+    throw err;
+  }
+}
+
+/**
+ * Submits user's selected/typed answer into the active running Naukri browser session.
+ * Injects answer into the same page, clicks Save/Send, waits for next turn,
+ * and detects next REAL question or completion.
+ */
+async function submitNaukriSessionAnswerAsync(userKey = 'default_user', { sessionId, answer }) {
+  if (!sessionId) throw new Error('Session ID is required');
+  const session = activeApplicationSessions.get(sessionId);
+
+  if (!session || !session.page || session.page.isClosed()) {
+    throw new Error('Active browser application session has expired or was closed. Please click Inspect & Apply Live again.');
+  }
+
+  session.lastActivity = Date.now();
+  const currentQ = session.currentQuestion;
+
+  // 1. Permanently save answer to DB so user never has to re-enter it
+  if (currentQ && currentQ.question) {
+    await saveQaItemAsync(userKey, {
+      question: currentQ.question.trim(),
+      answer: String(answer).trim(),
+      category: 'Recruiter Screening'
+    }).catch(() => {});
+  }
+
+  console.log(`[LIVE_SESSION] Injecting answer "${answer}" for question: "${currentQ?.question?.slice(0, 60)}"...`);
+
+  // 2. Inject answer into the SAME running Naukri browser session
+  const chips = currentQ?.options || [];
+  const sendRes = await sendNaukriChatbotAnswer(session.page, answer, chips);
+  console.log(`[LIVE_SESSION] Injection method: ${sendRes?.method}`);
+
+  // 3. Wait for DOM transition and next turn
+  await new Promise(r => setTimeout(r, 2800));
+
+  if (session.page.isClosed()) {
+    activeApplicationSessions.delete(sessionId);
+    return {
+      success: false,
+      isComplete: true,
+      message: 'Page was closed during application'
+    };
+  }
+
+  // 4. Check for next question or completion
+  const nextQ = await extractCurrentNaukriQuestionFromDom(session.page, session.jobItem);
+
+  if (nextQ.isComplete) {
+    console.log(`[LIVE_SESSION] Application successfully completed on Naukri!`);
+    const verification = await verifyNaukriSubmissionOnPage(session.page, session.jobItem);
+    confirmNaukriApplicationSubmission(
+      userKey,
+      session.jobItem,
+      {
+        status: VerificationStatus.VERIFIED,
+        source: verification.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+        details: verification.details || 'Application confirmed on live DOM',
+        verifiedAt: new Date().toISOString()
+      }
+    );
+
+    try { await session.browser.close(); } catch (e) {}
+    activeApplicationSessions.delete(sessionId);
+
+    return {
+      success: true,
+      sessionId,
+      isComplete: true,
+      isVerified: true,
+      message: 'Application submitted and verified live on Naukri!'
+    };
+  }
+
+  if (nextQ.found) {
+    session.turn = (session.turn || 1) + 1;
+    session.currentQuestion = nextQ;
+
+    // Also update pending question in DB
+    addPendingQuestion(userKey, {
+      jobId: session.jobItem.jobId,
+      jobTitle: session.jobItem.jobTitle,
+      company: session.jobItem.company,
+      jobUrl: session.jobItem.jobUrl,
+      question: nextQ.question,
+      inputType: nextQ.type,
+      options: nextQ.options,
+      isMandatory: nextQ.isMandatory
+    });
+
+    return {
+      success: true,
+      sessionId,
+      question: nextQ,
+      isComplete: false,
+      turn: session.turn,
+      message: 'Next real Naukri question detected.'
+    };
+  }
+
+  // If no new question detected, check if submit button or completion is pending
+  const finalCheck = await verifyNaukriSubmissionOnPage(session.page, session.jobItem);
+  if (finalCheck.isVerified) {
+    confirmNaukriApplicationSubmission(
+      userKey,
+      session.jobItem,
+      {
+        status: VerificationStatus.VERIFIED,
+        source: finalCheck.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+        details: finalCheck.details,
+        verifiedAt: new Date().toISOString()
+      }
+    );
+    try { await session.browser.close(); } catch (e) {}
+    activeApplicationSessions.delete(sessionId);
+    return {
+      success: true,
+      sessionId,
+      isComplete: true,
+      isVerified: true,
+      message: 'Application verified and completed!'
+    };
+  }
+
+  return {
+    success: true,
+    sessionId,
+    found: false,
+    isComplete: false,
+    message: 'Answer sent. Waiting for Naukri to render next turn or confirmation...'
+  };
+}
+
+function getNaukriInteractiveSessionStatus(sessionId) {
+  const session = activeApplicationSessions.get(sessionId);
+  if (!session) return { active: false };
+  return {
+    active: true,
+    sessionId,
+    jobItem: session.jobItem,
+    currentQuestion: session.currentQuestion,
+    turn: session.turn,
+    lastActivity: session.lastActivity
+  };
+}
+
+async function cancelNaukriInteractiveSession(sessionId) {
+  const session = activeApplicationSessions.get(sessionId);
+  if (session) {
+    try {
+      if (session.browser) await session.browser.close().catch(() => {});
+    } catch (e) {}
+    activeApplicationSessions.delete(sessionId);
+    return { success: true };
+  }
+  return { success: false, message: 'Session not found' };
+}
+
 module.exports = {
   ApplicationState,
   DEFAULT_QA_ITEMS,
@@ -3640,5 +4206,11 @@ module.exports = {
   getNaukriExternalJobs,
   recordExternalCompanyJob,
   inspectCompanySizeAndProfile,
-  KNOWN_ENTERPRISE_COMPANIES
+  KNOWN_ENTERPRISE_COMPANIES,
+  extractCurrentNaukriQuestionFromDom,
+  startNaukriInteractiveApplySessionAsync,
+  submitNaukriSessionAnswerAsync,
+  getNaukriInteractiveSessionStatus,
+  cancelNaukriInteractiveSession
 };
+

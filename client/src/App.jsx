@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ListChecks, CheckSquare, X, Zap, RotateCw, Building2 } from 'lucide-react';
+import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ListChecks, CheckSquare, X, Zap, RotateCw, Building2, Bot, Play } from 'lucide-react';
 
 const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
 
@@ -3730,6 +3730,9 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [instantApplyJob, setInstantApplyJob] = useState(null);
   const [instantApplyQuestions, setInstantApplyQuestions] = useState([]);
   const [isApplyingInstant, setIsApplyingInstant] = useState(false);
+  const [activeSessionId, setActiveSessionId] = useState(null);
+  const [isInspectingLive, setIsInspectingLive] = useState(false);
+  const [liveSessionStatusMsg, setLiveSessionStatusMsg] = useState('');
 
   const updateQuestionAnswer = (qId, newAnswer) => {
     setInstantApplyQuestions(prev =>
@@ -3737,55 +3740,156 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     );
   };
 
-  const buildDefaultQuestions = () => {
-    return [
-      {
-        id: 'std_exp',
-        question: 'How many years of total experience do you have?',
-        answer: '4 Years',
-        category: 'Experience',
-        options: ['3 Years', '3.5 Years', '4 Years', '4.5 Years', '5+ Years']
-      },
-      {
-        id: 'std_notice',
-        question: 'What is your official notice period / availability?',
-        answer: '15 Days or less',
-        category: 'Availability',
-        options: ['Immediate / Serving', '15 Days or less', '30 Days', '45 Days', '60 Days']
-      },
-      {
-        id: 'std_c_ctc',
-        question: 'What is your Current CTC (in LPA)?',
-        answer: '10.78 LPA',
-        category: 'Compensation',
-        options: ['8 LPA', '10.78 LPA', '12 LPA', '14 LPA']
-      },
-      {
-        id: 'std_e_ctc',
-        question: 'What is your Expected CTC (in LPA)?',
-        answer: '18 LPA',
-        category: 'Compensation',
-        options: ['15 LPA', '16 LPA', '18 LPA', '20 LPA', '22 LPA']
-      },
-      {
-        id: 'std_loc',
-        question: 'What is your preferred work location?',
-        answer: 'Bangalore / Remote',
-        category: 'Location',
-        options: ['Bangalore', 'Remote', 'Bangalore / Remote', 'Hybrid']
-      },
-      {
-        id: 'std_relocate',
-        question: 'Are you willing to relocate to Bangalore / Bengaluru?',
-        answer: 'Yes',
-        category: 'Location',
-        options: ['Yes', 'No', 'Already in Bangalore']
+  const handleInspectAndApplyLive = async (targetJob) => {
+    const job = targetJob || instantApplyJob;
+    if (!job || !job.jobUrl) {
+      return showToast('Job posting URL is required to inspect live Naukri application', 'error');
+    }
+
+    setIsInspectingLive(true);
+    setLiveSessionStatusMsg('Launching browser session & opening Naukri application drawer...');
+
+    try {
+      const res = await apiFetch('/api/naukri/session/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: job.jobId || job.id,
+          jobUrl: job.jobUrl,
+          company: job.company,
+          jobTitle: job.jobTitle
+        })
+      });
+
+      if (!res.success) {
+        setLiveSessionStatusMsg('');
+        setIsInspectingLive(false);
+        return showToast(res.error || res.message || 'Failed to start live session', 'error');
       }
-    ];
+
+      if (res.isComplete) {
+        setIsInspectingLive(false);
+        setLiveSessionStatusMsg('');
+        showToast(res.message || '✅ Application verified and confirmed on Naukri!', 'success');
+        setInstantApplyModalOpen(false);
+        loadAppliedJobs();
+        loadAppliedCompanies();
+        return;
+      }
+
+      if (res.sessionId) {
+        setActiveSessionId(res.sessionId);
+      }
+
+      if (res.question && res.question.question) {
+        const q = res.question;
+        const dbMatch = (qaItems || []).find(item => item.question && item.question.toLowerCase() === q.question.toLowerCase());
+        const initialAns = dbMatch?.answer || (Array.isArray(q.options) && q.options.length > 0 ? q.options[0] : '');
+
+        setInstantApplyQuestions([{
+          id: q.questionId || `nq_${Date.now()}`,
+          jobId: job.jobId || job.id,
+          company: job.company,
+          jobTitle: job.jobTitle,
+          jobUrl: job.jobUrl,
+          question: q.question,
+          type: q.type || 'single_choice',
+          options: q.options || [],
+          answer: initialAns,
+          category: 'Recruiter Screening',
+          source: 'naukri',
+          turn: res.turn || 1
+        }]);
+
+        setLiveSessionStatusMsg(`Turn ${res.turn || 1}: Real question extracted from live Naukri drawer!`);
+        showToast(`⚡ Real question extracted from Naukri for ${job.company}: "${q.question.slice(0, 45)}..."`, 'info');
+      } else {
+        setInstantApplyQuestions([]);
+        setLiveSessionStatusMsg('No questions detected from current Naukri application UI.');
+        showToast('No questions detected from current Naukri application UI.', 'info');
+      }
+    } catch (err) {
+      setLiveSessionStatusMsg(`Connection error: ${err.message}`);
+      showToast(err.message, 'error');
+    } finally {
+      setIsInspectingLive(false);
+    }
+  };
+
+  const submitLiveAnswer = async (qItem) => {
+    if (!activeSessionId) {
+      return submitInstantApply();
+    }
+
+    setIsApplyingInstant(true);
+    setLiveSessionStatusMsg(`Injecting answer into Naukri live session...`);
+
+    try {
+      const res = await apiFetch('/api/naukri/session/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: activeSessionId,
+          answer: qItem.answer
+        })
+      });
+
+      if (!res.success) {
+        setLiveSessionStatusMsg('');
+        setIsApplyingInstant(false);
+        return showToast(res.error || res.message || 'Error submitting answer to live session', 'error');
+      }
+
+      if (res.isComplete) {
+        setIsApplyingInstant(false);
+        setLiveSessionStatusMsg('');
+        setActiveSessionId(null);
+        showToast(res.message || '✅ Application verified and completed on Naukri!', 'success');
+        setInstantApplyModalOpen(false);
+        loadAppliedJobs();
+        loadAppliedCompanies();
+        return;
+      }
+
+      if (res.question && res.question.question) {
+        const nextQ = res.question;
+        const dbMatch = (qaItems || []).find(item => item.question && item.question.toLowerCase() === nextQ.question.toLowerCase());
+        const initialAns = dbMatch?.answer || (Array.isArray(nextQ.options) && nextQ.options.length > 0 ? nextQ.options[0] : '');
+
+        setInstantApplyQuestions([{
+          id: nextQ.questionId || `nq_${Date.now()}`,
+          jobId: instantApplyJob?.jobId || instantApplyJob?.id,
+          company: instantApplyJob?.company,
+          jobTitle: instantApplyJob?.jobTitle,
+          jobUrl: instantApplyJob?.jobUrl,
+          question: nextQ.question,
+          type: nextQ.type || 'single_choice',
+          options: nextQ.options || [],
+          answer: initialAns,
+          category: 'Recruiter Screening',
+          source: 'naukri',
+          turn: res.turn || 2
+        }]);
+
+        setLiveSessionStatusMsg(`Turn ${res.turn || 2}: Next real question detected!`);
+        showToast(`⚡ Next question on Naukri: "${nextQ.question.slice(0, 45)}..."`, 'info');
+      } else {
+        setLiveSessionStatusMsg('Answer injected. Waiting for next turn or confirmation on Naukri...');
+        showToast(res.message || 'Answer injected into Naukri session.', 'info');
+      }
+    } catch (err) {
+      setLiveSessionStatusMsg(`Error: ${err.message}`);
+      showToast(err.message, 'error');
+    } finally {
+      setIsApplyingInstant(false);
+    }
   };
 
   const handleOpenInstantApply = (jobOrCompanyItem) => {
     if (!jobOrCompanyItem) return;
+
+    setActiveSessionId(null);
+    setLiveSessionStatusMsg('');
 
     // Normalize into jobItem structure
     const isCompanyRecord = Boolean(jobOrCompanyItem.roles && Array.isArray(jobOrCompanyItem.applications));
@@ -3825,9 +3929,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             company: normalizedJob.company || p.company,
             jobTitle: normalizedJob.jobTitle || p.jobTitle,
             question: qText,
-            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : ''),
             category: p.category || 'Recruiter Screening',
-            options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
+            options: Array.isArray(p.options) ? p.options : [],
+            source: 'naukri'
           });
           seen.add(qText.toLowerCase());
         }
@@ -3845,26 +3950,16 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           company: normalizedJob.company || p.company,
           jobTitle: normalizedJob.jobTitle || p.jobTitle,
           question: qText,
-          answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+          answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : ''),
           category: p.category || 'Recruiter Screening',
-          options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
+          options: Array.isArray(p.options) ? p.options : [],
+          source: 'naukri'
         });
         seen.add(qText.toLowerCase());
       }
     }
 
-    // 3. Prepend standard profile screening questions
-    const defaultQs = buildDefaultQuestions();
-    for (const sq of defaultQs) {
-      if (!seen.has(sq.question.toLowerCase())) {
-        const dbItem = (qaItems || []).find(q => q.id === sq.id || (q.question && q.question.toLowerCase() === sq.question.toLowerCase()));
-        if (dbItem && dbItem.answer) {
-          sq.answer = dbItem.answer;
-        }
-        questionsList.push(sq);
-      }
-    }
-
+    // ZERO DEFAULT QUESTIONS - only real detected questions
     setInstantApplyQuestions(questionsList);
     setInstantApplyModalOpen(true);
   };
@@ -3930,15 +4025,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       });
     }
 
-    // Build cumulated questions grouped per role
+    // Build cumulated questions grouped per role (ONLY real detected questions)
     const cumulatedQuestions = [];
     let qCounter = 1;
 
     for (const group of roleGroups) {
-      const defaultQs = buildDefaultQuestions();
       const seenQText = new Set();
 
-      // First add specific pending questions for this role
+      // ONLY add real pending questions for this role
       for (const p of group.pendingQuestions) {
         const qText = (p.question || '').trim();
         if (qText && !seenQText.has(qText.toLowerCase())) {
@@ -3951,33 +4045,15 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             jobUrl: group.jobUrl,
             jobId: group.jobId,
             question: qText,
-            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : ''),
             category: p.category || 'Recruiter Screening',
-            options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No'],
-            unconfirmedReason: group.unconfirmedReason
+            options: Array.isArray(p.options) ? p.options : [],
+            unconfirmedReason: group.unconfirmedReason,
+            source: 'naukri'
           });
         }
       }
-
-      // Then add core questions for this role (pre-filled from DB)
-      for (const sq of defaultQs) {
-        if (!seenQText.has(sq.question.toLowerCase())) {
-          seenQText.add(sq.question.toLowerCase());
-          const dbItem = (qaItems || []).find(q => q.id === sq.id || (q.question && q.question.toLowerCase() === sq.question.toLowerCase()));
-          cumulatedQuestions.push({
-            id: `cq_${qCounter++}`,
-            company: group.company,
-            jobTitle: group.jobTitle,
-            jobUrl: group.jobUrl,
-            jobId: group.jobId,
-            question: sq.question,
-            answer: dbItem?.answer || sq.answer,
-            category: sq.category,
-            options: sq.options,
-            unconfirmedReason: group.unconfirmedReason
-          });
-        }
-      }
+      // ZERO DEFAULT QUESTIONS ADDED HERE!
     }
 
     setInstantApplyJob({
@@ -6435,10 +6511,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                             type="button"
                             onClick={() => handleOpenInstantApply(app)}
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow transition-all cursor-pointer"
-                            title="Fill required screening answers & apply instantly on Naukri"
+                            title={app.pendingQuestions?.length > 0 ? "Review detected questions & submit" : "Inspect live Naukri drawer and apply"}
                           >
-                            <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                            <span>⚡ Answer & Apply Instantly</span>
+                            {app.pendingQuestions?.length > 0 ? (
+                              <>
+                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                                <span>⚡ Answer Qs ({app.pendingQuestions.length})</span>
+                              </>
+                            ) : (
+                              <>
+                                <Play className="w-3.5 h-3.5 text-emerald-300 fill-emerald-300" />
+                                <span>🚀 Inspect & Apply Live</span>
+                              </>
+                            )}
                           </button>
                         ) : (
                           <span className="text-[11px] text-slate-400 font-mono">—</span>
@@ -6501,164 +6586,225 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </div>
             </div>
 
-            {/* Top Quick-Fill Bar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/60">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
-                <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
-                  {instantApplyJob?.isBatchAll ? `Cumulated Screening Hub for ${instantApplyJob.roleCount || 1} Role(s)` : `${instantApplyJob.company} • ${instantApplyJob.jobTitle}`}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={quickFillAllQuestions}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer"
-                title="Populate candidate standard answers (4 YOE, 15 Days Notice, 10.78 LPA C-CTC, 18 LPA E-CTC, Bangalore) across all questions"
-              >
-                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                <span>⚡ 1-Click Auto-Fill Candidate Profile</span>
-              </button>
-            </div>
-
-            {/* Role-Grouped Questions Display */}
-            <div className="flex flex-col gap-6 my-1">
-              {Object.values(
-                instantApplyQuestions.reduce((acc, q) => {
-                  const groupKey = `${q.company || instantApplyJob.company || 'Company'}__${q.jobTitle || instantApplyJob.jobTitle || 'Role'}`;
-                  if (!acc[groupKey]) {
-                    acc[groupKey] = {
-                      company: q.company || instantApplyJob.company,
-                      jobTitle: q.jobTitle || instantApplyJob.jobTitle,
-                      jobUrl: q.jobUrl || instantApplyJob.jobUrl,
-                      unconfirmedReason: q.unconfirmedReason || instantApplyJob.unconfirmedReason,
-                      questions: []
-                    };
-                  }
-                  acc[groupKey].questions.push(q);
-                  return acc;
-                }, {})
-              ).map((group, gIdx) => (
-                <div key={gIdx} className="bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 sm:p-5 flex flex-col gap-4 shadow-xs">
-                  {/* Role Header */}
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-lg">
-                        <Building2 className="w-4 h-4" />
-                      </span>
-                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
-                        {group.company} <span className="text-slate-400 font-normal">•</span> <span className="text-indigo-600 dark:text-indigo-400">{group.jobTitle}</span>
-                      </h4>
-                      <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
-                        ⚠️ Screening Questions
-                      </span>
-                    </div>
-                    {group.jobUrl && (
-                      <a
-                        href={group.jobUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 font-semibold"
-                        title="Open posting directly on Naukri"
-                      >
-                        <span>View Job on Naukri</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
-                    )}
-                  </div>
-
-                  {group.unconfirmedReason && (
-                    <div className="bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
-                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                      <span><strong>Requirement:</strong> {group.unconfirmedReason}</span>
-                    </div>
-                  )}
-
-                  {/* Role Questions */}
-                  <div className="flex flex-col gap-3.5">
-                    {group.questions.map((q, qIdx) => (
-                      <div key={q.id || qIdx} className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col gap-2 shadow-2xs">
-                        <div className="flex justify-between items-start gap-2">
-                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                            <span className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">Q{qIdx + 1}.</span>
-                            <span>{q.question}</span>
-                          </span>
-                          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold px-2 py-0.5 rounded shrink-0">
-                            {q.category || 'Screening'}
-                          </span>
-                        </div>
-
-                        {/* Interactive Option Chips */}
-                        {Array.isArray(q.options) && q.options.length > 0 && (
-                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                            <span className="text-[10px] text-slate-400 font-extrabold uppercase mr-1">Select Answer:</span>
-                            {q.options.map((opt, optIdx) => {
-                              const isSelected = String(q.answer).trim().toLowerCase() === String(opt).trim().toLowerCase();
-                              return (
-                                <button
-                                  key={optIdx}
-                                  type="button"
-                                  onClick={() => updateQuestionAnswer(q.id, opt)}
-                                  className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
-                                    isSelected
-                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                      : 'bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-slate-200 dark:border-slate-700'
-                                  }`}
-                                >
-                                  {isSelected ? '✓ ' : ''}{opt}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        )}
-
-                        {/* Text Input Box */}
-                        <div className="pt-0.5">
-                          <input
-                            type="text"
-                            value={q.answer || ''}
-                            onChange={(e) => updateQuestionAnswer(q.id, e.target.value)}
-                            placeholder="Type exact answer or choose option chip above..."
-                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+            {/* Live Session Active Indicator */}
+            {activeSessionId && (
+              <div className="bg-emerald-50 dark:bg-emerald-950/40 p-2.5 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs text-emerald-900 dark:text-emerald-200 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                  <span className="font-bold">Live Naukri Browser Session Connected</span>
                 </div>
-              ))}
-            </div>
+                <span className="font-mono text-[10px] text-emerald-700 dark:text-emerald-300">Session: {activeSessionId.slice(0, 18)}...</span>
+              </div>
+            )}
+
+            {/* Zero Questions State with Live Inspect Option */}
+            {instantApplyQuestions.length === 0 ? (
+              <div className="bg-slate-50 dark:bg-slate-800/40 border border-dashed border-slate-300 dark:border-slate-700 rounded-2xl p-6 text-center flex flex-col items-center gap-3 my-2">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-950 flex items-center justify-center text-indigo-600 dark:text-indigo-400">
+                  <Bot className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-slate-900 dark:text-slate-100 mb-1">
+                    No questions detected from the current Naukri application UI
+                  </h4>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 max-w-md mx-auto">
+                    Naukri requires opening the live Easy Apply drawer in a real browser session to inspect whether this specific job asks screening questions.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleInspectAndApplyLive(instantApplyJob)}
+                  disabled={isInspectingLive}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md transition-all cursor-pointer mt-1"
+                >
+                  {isInspectingLive ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Connecting to Naukri & Opening Application Drawer...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 text-emerald-300 fill-emerald-300" />
+                      <span>🚀 Inspect & Apply on Naukri Live</span>
+                    </>
+                  )}
+                </button>
+                {liveSessionStatusMsg && (
+                  <p className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 mt-1 animate-pulse">
+                    {liveSessionStatusMsg}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Top Quick-Fill Bar */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/60">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                    <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                      {instantApplyJob?.isBatchAll ? `Cumulated Screening Hub for ${instantApplyJob.roleCount || 1} Role(s)` : `${instantApplyJob.company} • ${instantApplyJob.jobTitle}`}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={quickFillAllQuestions}
+                    className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer"
+                    title="Populate candidate standard answers across all questions"
+                  >
+                    <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                    <span>⚡ 1-Click Auto-Fill Candidate Profile</span>
+                  </button>
+                </div>
+
+                {/* Role-Grouped Questions Display */}
+                <div className="flex flex-col gap-6 my-1">
+                  {Object.values(
+                    instantApplyQuestions.reduce((acc, q) => {
+                      const groupKey = `${q.company || instantApplyJob.company || 'Company'}__${q.jobTitle || instantApplyJob.jobTitle || 'Role'}`;
+                      if (!acc[groupKey]) {
+                        acc[groupKey] = {
+                          company: q.company || instantApplyJob.company,
+                          jobTitle: q.jobTitle || instantApplyJob.jobTitle,
+                          jobUrl: q.jobUrl || instantApplyJob.jobUrl,
+                          unconfirmedReason: q.unconfirmedReason || instantApplyJob.unconfirmedReason,
+                          questions: []
+                        };
+                      }
+                      acc[groupKey].questions.push(q);
+                      return acc;
+                    }, {})
+                  ).map((group, gIdx) => (
+                    <div key={gIdx} className="bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 sm:p-5 flex flex-col gap-4 shadow-xs">
+                      {/* Role Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                            <Building2 className="w-4 h-4" />
+                          </span>
+                          <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                            {group.company} <span className="text-slate-400 font-normal">•</span> <span className="text-indigo-600 dark:text-indigo-400">{group.jobTitle}</span>
+                          </h4>
+                          <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                            ⚠️ Live Screening Question
+                          </span>
+                        </div>
+                        {group.jobUrl && (
+                          <a
+                            href={group.jobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 font-semibold"
+                            title="Open posting directly on Naukri"
+                          >
+                            <span>View Job on Naukri</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+
+                      {group.unconfirmedReason && (
+                        <div className="bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span><strong>Requirement:</strong> {group.unconfirmedReason}</span>
+                        </div>
+                      )}
+
+                      {/* Role Questions */}
+                      <div className="flex flex-col gap-3.5">
+                        {group.questions.map((q, qIdx) => (
+                          <div key={q.id || qIdx} className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col gap-2 shadow-2xs">
+                            <div className="flex justify-between items-start gap-2">
+                              <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                                <span className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">Q{qIdx + 1}.</span>
+                                <span>{q.question}</span>
+                              </span>
+                              <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold px-2 py-0.5 rounded shrink-0">
+                                {q.source === 'naukri' ? 'Naukri DOM' : (q.category || 'Screening')}
+                              </span>
+                            </div>
+
+                            {/* Interactive Option Chips */}
+                            {Array.isArray(q.options) && q.options.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                                <span className="text-[10px] text-slate-400 font-extrabold uppercase mr-1">Select Option:</span>
+                                {q.options.map((opt, optIdx) => {
+                                  const isSelected = String(q.answer).trim().toLowerCase() === String(opt).trim().toLowerCase();
+                                  return (
+                                    <button
+                                      key={optIdx}
+                                      type="button"
+                                      onClick={() => updateQuestionAnswer(q.id, opt)}
+                                      className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                                        isSelected
+                                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                          : 'bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-slate-200 dark:border-slate-700'
+                                      }`}
+                                    >
+                                      {isSelected ? '✓ ' : ''}{opt}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+
+                            {/* Text Input Box */}
+                            <div className="pt-0.5">
+                              <input
+                                type="text"
+                                value={q.answer || ''}
+                                onChange={(e) => updateQuestionAnswer(q.id, e.target.value)}
+                                placeholder="Type exact answer or choose option chip above..."
+                                className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                              />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                {instantApplyQuestions.length} Question(s) Across All Selected Roles
+                {instantApplyQuestions.length} Question(s) Displayed
               </span>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => setInstantApplyModalOpen(false)}
-                  disabled={isApplyingInstant}
+                  disabled={isApplyingInstant || isInspectingLive}
                   className="px-4 py-2 text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                 >
-                  Cancel
+                  Close
                 </button>
-                <button
-                  type="button"
-                  onClick={submitInstantApply}
-                  disabled={isApplyingInstant}
-                  className="inline-flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
-                >
-                  {isApplyingInstant ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving Answers & Applying Live on Naukri...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>{instantApplyJob?.isBatchAll ? '⚡ Save All & Apply to All Roles Live' : '⚡ Save & Apply Live Now'}</span>
-                    </>
-                  )}
-                </button>
+                {instantApplyQuestions.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (activeSessionId && instantApplyQuestions[0]) {
+                        submitLiveAnswer(instantApplyQuestions[0]);
+                      } else {
+                        submitInstantApply();
+                      }
+                    }}
+                    disabled={isApplyingInstant || isInspectingLive}
+                    className="inline-flex items-center gap-2 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
+                  >
+                    {isApplyingInstant ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span>Injecting Answer & Continuing Live Session...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
+                        <span>{activeSessionId ? '⚡ Submit Answer into Live Session' : (instantApplyJob?.isBatchAll ? '⚡ Save All & Apply to All Roles Live' : '⚡ Save & Apply Live Now')}</span>
+                      </>
+                    )}
+                  </button>
+                )}
               </div>
             </div>
           </div>
