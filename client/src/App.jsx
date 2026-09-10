@@ -3740,6 +3740,138 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     );
   };
 
+  // Batch Screening Workflow State (STAGE 1, 2, 3)
+  const [batchInspectionRunning, setBatchInspectionRunning] = useState(false);
+  const [batchInspectionStatus, setBatchInspectionStatus] = useState(null);
+  const [batchApplyRunning, setBatchApplyRunning] = useState(false);
+  const [batchApplyStatus, setBatchApplyStatus] = useState(null);
+  const [questionDashboardOpen, setQuestionDashboardOpen] = useState(false);
+  const [consolidatedQuestions, setConsolidatedQuestions] = useState([]);
+  const [batchAnswers, setBatchAnswers] = useState({});
+  const [batchScreeningMeta, setBatchScreeningMeta] = useState(null);
+  const [isSavingBatchAnswers, setIsSavingBatchAnswers] = useState(false);
+
+  // Fetch Consolidated Questions & Existing Answers from Server
+  const fetchBatchQuestions = async () => {
+    try {
+      const res = await apiFetch('/api/naukri/batch/questions');
+      const json = await res.json();
+      if (json.success && json.data) {
+        setConsolidatedQuestions(json.data.consolidatedQuestions || []);
+        setBatchAnswers(json.data.answers || {});
+        setBatchScreeningMeta(json.data);
+      }
+    } catch (e) {
+      console.warn('Failed to load batch screening questions:', e);
+    }
+  };
+
+  // Start STAGE 1 Batch Inspection
+  const handleStartBatchInspection = async (jobIds = null) => {
+    setBatchInspectionRunning(true);
+    try {
+      const res = await apiFetch('/api/naukri/batch/inspect-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ jobIds })
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(json.message || '🔍 Started batch inspection across jobs.', 'info');
+      } else {
+        setBatchInspectionRunning(false);
+        showToast(json.message || json.error || 'Failed to start batch inspection', 'error');
+      }
+    } catch (e) {
+      setBatchInspectionRunning(false);
+      showToast(e.message, 'error');
+    }
+  };
+
+  // Pause Batch Inspection
+  const handlePauseBatchInspection = async () => {
+    try {
+      const res = await apiFetch('/api/naukri/batch/inspect-pause', { method: 'POST' });
+      const json = await res.json();
+      showToast(json.message || 'Paused inspection.', 'info');
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  };
+
+  // Save Answers Once in Question Review Dashboard
+  const handleSaveBatchAnswers = async (customAnswers = null) => {
+    setIsSavingBatchAnswers(true);
+    const answersToSave = customAnswers || batchAnswers;
+    try {
+      const res = await apiFetch('/api/naukri/batch/save-answers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: answersToSave })
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(`✅ Saved answers for ${json.answersCount || Object.keys(answersToSave).length} unique question(s)!`, 'success');
+        await fetchBatchQuestions();
+      } else {
+        showToast(json.error || 'Failed to save answers', 'error');
+      }
+    } catch (e) {
+      showToast(e.message, 'error');
+    } finally {
+      setIsSavingBatchAnswers(false);
+    }
+  };
+
+  // Start STAGE 3 Batch Apply With Answers
+  const handleStartBatchApply = async (force = false) => {
+    // Validate required answers
+    const unansweredMandatory = consolidatedQuestions.filter(q =>
+      q.isMandatory && !batchAnswers[q.id] && !batchAnswers[q.normKey]
+    );
+
+    if (unansweredMandatory.length > 0 && !force) {
+      showToast(`⚠️ Please provide answers for ${unansweredMandatory.length} mandatory question(s) before applying.`, 'warning');
+      setQuestionDashboardOpen(true);
+      return;
+    }
+
+    setBatchApplyRunning(true);
+    try {
+      const res = await apiFetch('/api/naukri/batch/apply-start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ answers: batchAnswers, force })
+      });
+      const json = await res.json();
+      if (json.success) {
+        showToast(json.message || '🚀 Batch application started! Monitoring confirmations...', 'success');
+        setQuestionDashboardOpen(false);
+      } else if (json.validationError) {
+        setBatchApplyRunning(false);
+        showToast(json.message, 'warning');
+        setQuestionDashboardOpen(true);
+      } else {
+        setBatchApplyRunning(false);
+        showToast(json.message || json.error || 'Failed to start batch apply', 'error');
+      }
+    } catch (e) {
+      setBatchApplyRunning(false);
+      showToast(e.message, 'error');
+    }
+  };
+
+  // Pause Batch Apply
+  const handlePauseBatchApply = async () => {
+    try {
+      const res = await apiFetch('/api/naukri/batch/apply-pause', { method: 'POST' });
+      const json = await res.json();
+      showToast(json.message || 'Paused apply.', 'info');
+    } catch (e) {
+      showToast(e.message, 'error');
+    }
+  };
+
   const handleInspectAndApplyLive = async (targetJob) => {
     const job = targetJob || instantApplyJob;
     if (!job) return;
@@ -4103,27 +4235,19 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   };
 
   const quickFillAllQuestions = () => {
-    const defaultMap = {
-      'std_exp': '4 Years',
-      'std_notice': '15 Days or less',
-      'std_c_ctc': '10.78 LPA',
-      'std_e_ctc': '18 LPA',
-      'std_loc': 'Bangalore / Remote',
-      'std_relocate': 'Yes'
-    };
-
+    // Match real candidate answers from QA database without hardcoded fallbacks
     setInstantApplyQuestions(prev => prev.map(q => {
-      const qLower = q.question.toLowerCase();
-      if (qLower.includes('experience') || qLower.includes('yoe')) return { ...q, answer: '4 Years' };
-      if (qLower.includes('notice') || qLower.includes('joining')) return { ...q, answer: '15 Days or less' };
-      if (qLower.includes('current ctc') || qLower.includes('current salary') || qLower.includes('present ctc')) return { ...q, answer: '10.78 LPA' };
-      if (qLower.includes('expected ctc') || qLower.includes('expected salary')) return { ...q, answer: '18 LPA' };
-      if (qLower.includes('location') || qLower.includes('city')) return { ...q, answer: 'Bangalore / Remote' };
-      if (qLower.includes('relocate')) return { ...q, answer: 'Yes' };
-      if (q.options && q.options.length > 0) return { ...q, answer: q.options[0] };
+      const qLower = (q.question || '').toLowerCase();
+      const matchedQa = (qaItems || []).find(qa => {
+        const qaLower = (qa.question || '').toLowerCase();
+        return qLower.includes(qaLower) || qaLower.includes(qLower);
+      });
+      if (matchedQa && matchedQa.answer) {
+        return { ...q, answer: matchedQa.answer };
+      }
       return q;
     }));
-    showToast('⚡ Pre-filled 4 YOE, 15 Days notice, 10.78 LPA C-CTC, 18 LPA E-CTC across all roles!', 'info');
+    showToast('⚡ Matched known answers from candidate Q&A database.', 'info');
   };
 
   const submitInstantApply = async () => {
@@ -4346,6 +4470,32 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           fetchQaAndAppliedJobs();
         } catch (_) {}
       });
+
+      eventSource.addEventListener('batch_inspect_progress', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          setBatchInspectionStatus(payload);
+          setBatchInspectionRunning(payload.isRunning);
+          if (!payload.isRunning && payload.completed > 0) {
+            fetchBatchQuestions();
+            fetchQaAndAppliedJobs();
+          }
+        } catch (_) {}
+      });
+
+      eventSource.addEventListener('batch_apply_progress', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          setBatchApplyStatus(payload);
+          setBatchApplyRunning(payload.isRunning);
+          if (!payload.isRunning && payload.completed > 0) {
+            fetchQaAndAppliedJobs();
+          }
+        } catch (_) {}
+      });
+
+      // Initial fetch of batch questions
+      fetchBatchQuestions();
     } catch (_) {}
 
     return () => {
@@ -6611,7 +6761,152 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               ❌ Failed ({appliedJobs.filter(a => (a.status || '').toLowerCase().includes('failed') || a.verificationStatus === 'FAILED').length})
             </button>
           </div>
+
+          {/* Top-Level Common Batch-First Controls */}
+          <div className="flex items-center gap-2 flex-wrap pt-1 sm:pt-0">
+            <button
+              type="button"
+              onClick={() => handleStartBatchInspection()}
+              disabled={batchInspectionRunning || isAutoApplying}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 shadow-sm transition-all cursor-pointer"
+              title="Stage 1: Visit all unconfirmed/queued jobs, extract real screening questions from live Naukri DOM without submitting"
+            >
+              {batchInspectionRunning ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span>Inspecting Jobs...</span>
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5" />
+                  <span>🔍 Inspect All Jobs & Collect Questions</span>
+                </>
+              )}
+            </button>
+
+            {consolidatedQuestions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setQuestionDashboardOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-50 dark:bg-purple-950/60 hover:bg-purple-100 dark:hover:bg-purple-900 border border-purple-200 dark:border-purple-800 shadow-xs transition-all cursor-pointer"
+              >
+                <FileText className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                <span>📝 Review Questions ({consolidatedQuestions.length})</span>
+                {consolidatedQuestions.some(q => q.isMandatory && !batchAnswers[q.id] && !batchAnswers[q.normKey]) ? (
+                  <span className="w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse" title="Needs answer" />
+                ) : (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" title="All answered" />
+                )}
+              </button>
+            )}
+
+            {consolidatedQuestions.length > 0 && (
+              <button
+                type="button"
+                onClick={() => handleStartBatchApply()}
+                disabled={batchApplyRunning || isAutoApplying}
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 shadow-sm transition-all cursor-pointer"
+                title="Stage 3: Apply to all inspected roles using your saved answers"
+              >
+                {batchApplyRunning ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Applying All...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-3.5 h-3.5 text-emerald-200 fill-emerald-200" />
+                    <span>🚀 Apply All With Answers</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
         </div>
+
+        {/* Live Batch Inspection Progress Panel */}
+        {batchInspectionRunning && batchInspectionStatus && (
+          <div className="bg-indigo-50/70 dark:bg-indigo-950/40 p-3.5 rounded-xl border border-indigo-200 dark:border-indigo-800 text-xs flex flex-col gap-2 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-indigo-600 dark:text-indigo-400" />
+                <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                  Inspecting Naukri Job Applications ({batchInspectionStatus.completed || 0} / {batchInspectionStatus.total || 0})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                  {Math.round(((batchInspectionStatus.completed || 0) / (batchInspectionStatus.total || 1)) * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePauseBatchInspection}
+                  className="px-2 py-0.5 rounded text-[11px] font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Pause
+                </button>
+              </div>
+            </div>
+            <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-indigo-600 transition-all duration-300 rounded-full"
+                style={{ width: `${Math.min(100, Math.round(((batchInspectionStatus.completed || 0) / (batchInspectionStatus.total || 1)) * 100))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 flex-wrap gap-1">
+              <span>
+                {batchInspectionStatus.currentJob ? (
+                  <>Current: <strong className="text-slate-900 dark:text-white">{batchInspectionStatus.currentJob.company}</strong> — {batchInspectionStatus.currentJob.jobTitle}</>
+                ) : 'Scanning drawer & screening questions...'}
+              </span>
+              <span className="font-semibold text-purple-600 dark:text-purple-400">
+                📝 {batchInspectionStatus.uniqueQuestionsCount || consolidatedQuestions.length || 0} Unique Questions Found • ⚪ {batchInspectionStatus.noQuestionsCount || 0} Ready to Apply
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Live Batch Apply Progress Panel */}
+        {batchApplyRunning && batchApplyStatus && (
+          <div className="bg-emerald-50/70 dark:bg-emerald-950/40 p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800 text-xs flex flex-col gap-2 animate-fadeIn">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-600 dark:text-emerald-400" />
+                <span className="font-extrabold text-slate-800 dark:text-slate-100">
+                  Batch Applying With Answers ({batchApplyStatus.completed || 0} / {batchApplyStatus.total || 0})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                  {Math.round(((batchApplyStatus.completed || 0) / (batchApplyStatus.total || 1)) * 100)}%
+                </span>
+                <button
+                  type="button"
+                  onClick={handlePauseBatchApply}
+                  className="px-2 py-0.5 rounded text-[11px] font-bold bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-300 dark:border-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Pause
+                </button>
+              </div>
+            </div>
+            <div className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-emerald-600 transition-all duration-300 rounded-full"
+                style={{ width: `${Math.min(100, Math.round(((batchApplyStatus.completed || 0) / (batchApplyStatus.total || 1)) * 100))}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-slate-600 dark:text-slate-300 flex-wrap gap-1">
+              <span>
+                {batchApplyStatus.currentJob ? (
+                  <>Applying to: <strong className="text-slate-900 dark:text-white">{batchApplyStatus.currentJob.company}</strong> — {batchApplyStatus.currentJob.jobTitle}</>
+                ) : 'Processing applications...'}
+              </span>
+              <span className="font-semibold text-emerald-700 dark:text-emerald-300">
+                ✓ {batchApplyStatus.submittedCount || 0} Verified • ⚠️ {batchApplyStatus.needsAttentionCount || 0} Needs Attention • ❌ {batchApplyStatus.failedCount || 0} Failed
+              </span>
+            </div>
+          </div>
+        )}
 
         {filteredAppliedJobs.length === 0 ? (
           <div className="py-8 text-center text-slate-400 text-xs italic border border-slate-100 dark:border-slate-800 rounded-lg">
@@ -6706,25 +7001,54 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                         )}
                       </td>
                       <td className="p-3 text-right">
-                        {(isUnconfirmed || isWaiting || isFailed || isLegacy) && app.jobUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => handleOpenInstantApply(app)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow transition-all cursor-pointer"
-                            title={app.pendingQuestions?.length > 0 ? "Review detected questions & submit" : "Inspect live Naukri drawer and apply"}
-                          >
-                            {app.pendingQuestions?.length > 0 ? (
-                              <>
-                                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-                                <span>⚡ Answer Qs ({app.pendingQuestions.length})</span>
-                              </>
-                            ) : (
-                              <>
-                                <Play className="w-3.5 h-3.5 text-emerald-300 fill-emerald-300" />
-                                <span>🚀 Inspect & Apply Live</span>
-                              </>
+                        {isVerified ? (
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                            <CheckCircle className="w-3.5 h-3.5" /> Confirmed
+                          </span>
+                        ) : (isUnconfirmed || isWaiting || isFailed || isLegacy) ? (
+                          <div className="inline-flex items-center gap-1.5 justify-end">
+                            {(() => {
+                              const jId = app.jobId || app.id;
+                              const jobInfo = batchScreeningMeta?.jobQuestionsMap?.[jId];
+                              const qCount = jobInfo?.questions?.length || app.pendingQuestions?.length || 0;
+                              if (qCount > 0) {
+                                return (
+                                  <button
+                                    type="button"
+                                    onClick={() => setQuestionDashboardOpen(true)}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-bold bg-purple-50 hover:bg-purple-100 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 border border-purple-200 dark:border-purple-800 transition-colors cursor-pointer"
+                                    title="View & answer consolidated questions for this role in Question Bank"
+                                  >
+                                    <FileText className="w-3 h-3 text-purple-600 dark:text-purple-400" />
+                                    <span>{qCount} Qs in Bank</span>
+                                  </button>
+                                );
+                              }
+                              if (jobInfo?.status === 'READY_TO_APPLY') {
+                                return (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                    Ready to Apply
+                                  </span>
+                                );
+                              }
+                              return (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-medium bg-slate-100 dark:bg-slate-800 text-slate-500 border border-slate-200 dark:border-slate-700">
+                                  Pending Scan
+                                </span>
+                              );
+                            })()}
+                            {/* Secondary individual inspect debug button */}
+                            {app.jobUrl && (
+                              <button
+                                type="button"
+                                onClick={() => handleInspectAndApplyLive(app)}
+                                title="Secondary Debug: Inspect single job individually"
+                                className="p-1 text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded transition-colors cursor-pointer"
+                              >
+                                <Search className="w-3.5 h-3.5" />
+                              </button>
                             )}
-                          </button>
+                          </div>
                         ) : (
                           <span className="text-[11px] text-slate-400 font-mono">—</span>
                         )}
@@ -6745,6 +7069,236 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Dedicated Consolidated Question Review Dashboard Modal (STAGE 2) */}
+      {questionDashboardOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-3xl w-full p-6 shadow-2xl border border-purple-200 dark:border-purple-800 flex flex-col gap-4 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-200 dark:border-purple-800">
+                  <FileText className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                    <span>Batch Screening Question Bank</span>
+                    <span className="text-[10px] bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-extrabold px-2.5 py-0.5 rounded-full border border-purple-200 dark:border-purple-800">
+                      Answer Once → Apply All
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Real questions extracted directly from live Naukri DOM. Select or enter answers once to apply to all matching roles.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuestionDashboardOpen(false)}
+                className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Summary Banner */}
+            <div className="bg-gradient-to-r from-purple-50 to-indigo-50 dark:from-purple-950/30 dark:to-indigo-950/30 p-3.5 rounded-xl border border-purple-200 dark:border-purple-800 text-xs text-purple-950 dark:text-purple-200 flex items-center justify-between flex-wrap gap-2">
+              <div className="flex items-center gap-4">
+                <div>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Unique Questions: </span>
+                  <span className="font-extrabold text-purple-600 dark:text-purple-400 font-mono text-sm">{consolidatedQuestions.length}</span>
+                </div>
+                <div>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Answered: </span>
+                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400 font-mono text-sm">
+                    {consolidatedQuestions.filter(q => batchAnswers[q.id] || batchAnswers[q.normKey]).length} / {consolidatedQuestions.length}
+                  </span>
+                </div>
+                <div>
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Jobs Covered: </span>
+                  <span className="font-extrabold text-indigo-600 dark:text-indigo-400 font-mono text-sm">
+                    {batchScreeningMeta?.inspectedCount || 0}
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => handleStartBatchInspection()}
+                disabled={batchInspectionRunning}
+                className="text-xs font-bold text-purple-600 dark:text-purple-400 hover:underline flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className={`w-3 h-3 ${batchInspectionRunning ? 'animate-spin' : ''}`} />
+                <span>Re-scan Jobs</span>
+              </button>
+            </div>
+
+            {/* Questions List */}
+            {consolidatedQuestions.length === 0 ? (
+              <div className="py-12 text-center text-slate-400 text-xs border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                <p className="font-bold text-slate-600 dark:text-slate-300 mb-1">No screening questions collected yet.</p>
+                <p className="mb-4">Click "Inspect All Jobs & Collect Questions" to automatically scan unconfirmed jobs.</p>
+                <button
+                  type="button"
+                  onClick={() => { setQuestionDashboardOpen(false); handleStartBatchInspection(); }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow cursor-pointer inline-flex items-center gap-1.5"
+                >
+                  <Search className="w-3.5 h-3.5" />
+                  <span>Inspect All Jobs Now</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3.5">
+                {consolidatedQuestions.map((q, idx) => {
+                  const currentVal = batchAnswers[q.id] !== undefined ? batchAnswers[q.id] : (batchAnswers[q.normKey] || '');
+                  const isAnswered = currentVal !== undefined && currentVal !== null && String(currentVal).trim().length > 0;
+
+                  return (
+                    <div
+                      key={q.id || idx}
+                      className={`p-4 rounded-xl border transition-all ${
+                        isAnswered
+                          ? 'bg-white dark:bg-slate-800/80 border-slate-200 dark:border-slate-700'
+                          : 'bg-amber-50/50 dark:bg-amber-950/20 border-amber-300 dark:border-amber-800/80 ring-1 ring-amber-300/50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 font-bold border border-slate-200 dark:border-slate-700">
+                              Q#{idx + 1}
+                            </span>
+                            <span className="text-[10px] uppercase font-mono px-2 py-0.5 rounded-full bg-purple-100 dark:bg-purple-950 text-purple-700 dark:text-purple-300 font-bold">
+                              {q.type || 'Choice'}
+                            </span>
+                            {q.isMandatory && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-100 dark:bg-rose-950 text-rose-700 dark:text-rose-300">
+                                * Mandatory
+                              </span>
+                            )}
+                            <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                              Required by <span className="font-bold text-indigo-600 dark:text-indigo-400">{q.jobCount || q.jobIds?.length || 1}</span> role(s) ({q.companies?.slice(0, 3).join(', ')}{q.companies?.length > 3 ? ` +${q.companies.length - 3} more` : ''})
+                            </span>
+                          </div>
+                          <h4 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-snug">
+                            {q.question}
+                          </h4>
+                        </div>
+                        <div>
+                          {isAnswered ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2 py-0.5 rounded-md border border-emerald-200 dark:border-emerald-800">
+                              <CheckCircle className="w-3 h-3" /> Answered
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-950 px-2 py-0.5 rounded-md border border-amber-300 dark:border-amber-800">
+                              <AlertCircle className="w-3 h-3" /> Needs Answer
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Options / Answer Input */}
+                      <div className="mt-3">
+                        {q.options && q.options.length > 0 ? (
+                          <div className="flex flex-wrap gap-2 mb-2">
+                            {q.options.map((opt, oIdx) => {
+                              const isSelected = String(currentVal).toLowerCase() === String(opt).toLowerCase();
+                              return (
+                                <button
+                                  key={oIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    setBatchAnswers(prev => ({ ...prev, [q.id]: opt, [q.normKey]: opt }));
+                                  }}
+                                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                      : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-indigo-300'
+                                  }`}
+                                >
+                                  {isSelected ? '● ' : '○ '}
+                                  {opt}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+
+                        <div className="relative flex items-center">
+                          <input
+                            type="text"
+                            placeholder={q.options?.length > 0 ? "Or type a custom answer..." : "Type your answer for this question..."}
+                            value={currentVal || ''}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setBatchAnswers(prev => ({ ...prev, [q.id]: val, [q.normKey]: val }));
+                            }}
+                            className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 text-slate-800 dark:text-slate-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Pre-Apply Validation & Action Bar */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between flex-wrap gap-3">
+              <div>
+                {(() => {
+                  const unans = consolidatedQuestions.filter(q => q.isMandatory && !batchAnswers[q.id] && !batchAnswers[q.normKey]);
+                  if (unans.length > 0) {
+                    return (
+                      <span className="text-xs font-bold text-amber-600 dark:text-amber-400 flex items-center gap-1.5">
+                        <AlertCircle className="w-4 h-4" />
+                        <span>{unans.length} mandatory question(s) still need answers before applying</span>
+                      </span>
+                    );
+                  }
+                  if (consolidatedQuestions.length > 0) {
+                    return (
+                      <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                        <CheckCircle className="w-4 h-4" />
+                        <span>All questions answered! Ready to automate applications.</span>
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleSaveBatchAnswers()}
+                  disabled={isSavingBatchAnswers}
+                  className="px-4 py-2 text-xs font-bold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-xl transition-all cursor-pointer border border-slate-200 dark:border-slate-700"
+                >
+                  {isSavingBatchAnswers ? 'Saving...' : 'Save Answers'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStartBatchApply()}
+                  disabled={batchApplyRunning || consolidatedQuestions.length === 0}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-extrabold text-white bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 rounded-xl shadow-md hover:shadow-lg transition-all cursor-pointer"
+                >
+                  {batchApplyRunning ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Applying in Background...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 text-emerald-300 fill-emerald-300" />
+                      <span>🚀 APPLY ALL WITH ANSWERS</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Multi-Device Push Notifications Modal */}

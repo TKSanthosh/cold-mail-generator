@@ -98,7 +98,17 @@ const {
   startNaukriInteractiveApplySessionAsync,
   submitNaukriSessionAnswerAsync,
   getNaukriInteractiveSessionStatus,
-  cancelNaukriInteractiveSession
+  cancelNaukriInteractiveSession,
+  getBatchScreeningQuestionsFilePath,
+  getBatchScreeningData,
+  saveBatchScreeningData,
+  getBatchInspectionStatus,
+  pauseBatchInspection,
+  getBatchApplyStatus,
+  pauseBatchApply,
+  saveBatchScreeningAnswersAsync,
+  inspectBatchJobQuestionsAsync,
+  applyBatchWithAnswersAsync
 } = require('./services/naukri_apply.service');
 
 const app = express();
@@ -1692,6 +1702,96 @@ app.post('/api/naukri/session/cancel', async (req, res) => {
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// ==========================================
+// BATCH-FIRST SCREENING-QUESTION API ROUTES
+// ==========================================
+
+// STAGE 1: Start Batch Inspection
+app.post('/api/naukri/batch/inspect-start', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { jobIds } = req.body || {};
+  try {
+    const result = await inspectBatchJobQuestionsAsync(userKey, { jobIds });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// STAGE 1: Get Batch Inspection Status
+app.get('/api/naukri/batch/inspect-status', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const status = getBatchInspectionStatus(userKey);
+  res.json({ success: true, status });
+});
+
+// STAGE 1: Pause Batch Inspection
+app.post('/api/naukri/batch/inspect-pause', (req, res) => {
+  const result = pauseBatchInspection();
+  res.json(result);
+});
+
+// STAGE 2: Get Consolidated Unique Questions & Answers
+app.get('/api/naukri/batch/questions', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const data = getBatchScreeningData(userKey);
+  res.json({
+    success: true,
+    data: {
+      lastInspectedAt: data.lastInspectedAt,
+      totalJobs: data.totalJobs,
+      inspectedCount: data.inspectedCount,
+      questionsFoundCount: data.questionsFoundCount,
+      uniqueQuestionsCount: data.consolidatedQuestions?.length || 0,
+      noQuestionsCount: data.noQuestionsCount,
+      failedCount: data.failedCount,
+      consolidatedQuestions: data.consolidatedQuestions || [],
+      answers: data.answers || {},
+      jobQuestionsMap: data.jobQuestionsMap || {}
+    }
+  });
+});
+
+// STAGE 2: Save Answers Once For Unique Questions
+app.post('/api/naukri/batch/save-answers', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { answers } = req.body || {};
+  if (!answers || typeof answers !== 'object') {
+    return res.status(400).json({ success: false, error: 'answers object is required' });
+  }
+  try {
+    const result = await saveBatchScreeningAnswersAsync(userKey, answers);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// STAGE 3: Start Batch Apply With Answers
+app.post('/api/naukri/batch/apply-start', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { answers, jobIds, force } = req.body || {};
+  try {
+    const result = await applyBatchWithAnswersAsync(userKey, { answers, jobIds, force });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// STAGE 3: Get Batch Apply Status
+app.get('/api/naukri/batch/apply-status', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const status = getBatchApplyStatus(userKey);
+  res.json({ success: true, status });
+});
+
+// STAGE 3: Pause Batch Apply
+app.post('/api/naukri/batch/apply-pause', (req, res) => {
+  const result = pauseBatchApply();
+  res.json(result);
 });
 
 // Real-time Push Notifications SSE Stream for Frontend Web App

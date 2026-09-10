@@ -315,6 +315,7 @@ async function saveQaItemAsync(userKey, item) {
 
   const existingIdx = current.findIndex(q => q.id === id || q.question.toLowerCase() === cleanQ.toLowerCase());
   const newItem = {
+    ...item,
     id,
     question: cleanQ,
     answer: cleanA,
@@ -341,6 +342,7 @@ function saveQaItem(userKey, item) {
 
   const existingIdx = current.findIndex(q => q.id === id || q.question.toLowerCase() === cleanQ.toLowerCase());
   const newItem = {
+    ...item,
     id,
     question: cleanQ,
     answer: cleanA,
@@ -4194,6 +4196,889 @@ async function cancelNaukriInteractiveSession(sessionId) {
   return { success: false, message: 'Session not found' };
 }
 
+/**
+ * ============================================================================
+ * BATCH-FIRST SCREENING-QUESTION WORKFLOW ENGINE (STAGE 1, 2, 3)
+ * Non-destructive Stage 1 Batch Inspection -> Stage 2 Single Review -> Stage 3 Apply All
+ * Strictly reads from LIVE Naukri DOM. Zero hardcoded 4-question templates.
+ * ============================================================================
+ */
+
+function getBatchScreeningQuestionsFilePath(userKey) {
+  const userPaths = getUserPaths(userKey);
+  return path.join(userPaths.userDir, 'naukri_batch_screening_questions.json');
+}
+
+function getBatchScreeningData(userKey) {
+  const filePath = getBatchScreeningQuestionsFilePath(userKey);
+  if (fs.existsSync(filePath)) {
+    try {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (e) {}
+  }
+  return {
+    lastInspectedAt: null,
+    totalJobs: 0,
+    inspectedCount: 0,
+    questionsFoundCount: 0,
+    uniqueQuestionsCount: 0,
+    noQuestionsCount: 0,
+    failedCount: 0,
+    jobQuestionsMap: {},
+    consolidatedQuestions: [],
+    answers: {}
+  };
+}
+
+function saveBatchScreeningData(userKey, data) {
+  ensureUserSandbox(userKey);
+  const filePath = getBatchScreeningQuestionsFilePath(userKey);
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+  } catch (e) {
+    console.error('[BATCH_SCREENING] Failed to save screening data:', e.message);
+  }
+}
+
+const activeBatchInspectionState = {
+  isRunning: false,
+  isPaused: false,
+  total: 0,
+  completed: 0,
+  currentJob: null,
+  questionsFoundCount: 0,
+  uniqueQuestionsCount: 0,
+  noQuestionsCount: 0,
+  failedCount: 0,
+  startedAt: null,
+  completedAt: null,
+  error: null
+};
+
+const activeBatchApplyState = {
+  isRunning: false,
+  isPaused: false,
+  total: 0,
+  completed: 0,
+  currentJob: null,
+  submittedCount: 0,
+  failedCount: 0,
+  needsAttentionCount: 0,
+  startedAt: null,
+  completedAt: null,
+  error: null
+};
+
+function getBatchInspectionStatus(userKey) {
+  const data = getBatchScreeningData(userKey);
+  return {
+    ...activeBatchInspectionState,
+    savedData: {
+      lastInspectedAt: data.lastInspectedAt,
+      totalJobs: data.totalJobs,
+      inspectedCount: data.inspectedCount,
+      questionsFoundCount: data.questionsFoundCount,
+      uniqueQuestionsCount: data.uniqueQuestionsCount,
+      noQuestionsCount: data.noQuestionsCount,
+      consolidatedQuestionsCount: data.consolidatedQuestions?.length || 0,
+      answeredCount: Object.keys(data.answers || {}).length
+    }
+  };
+}
+
+function pauseBatchInspection() {
+  if (activeBatchInspectionState.isRunning) {
+    activeBatchInspectionState.isPaused = true;
+    return { success: true, message: 'Batch inspection pausing cleanly after current job.' };
+  }
+  return { success: false, message: 'Batch inspection is not running.' };
+}
+
+function getBatchApplyStatus(userKey) {
+  return { ...activeBatchApplyState };
+}
+
+function pauseBatchApply() {
+  if (activeBatchApplyState.isRunning) {
+    activeBatchApplyState.isPaused = true;
+    return { success: true, message: 'Batch apply pausing cleanly after current job.' };
+  }
+  return { success: false, message: 'Batch apply is not running.' };
+}
+
+function normalizeQuestionKey(text) {
+  return (text || '')
+    .toLowerCase()
+    .replace(/[*?:\-_.]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+async function saveBatchScreeningAnswersAsync(userKey, answersMap = {}) {
+  const data = getBatchScreeningData(userKey);
+  data.answers = { ...(data.answers || {}), ...(answersMap || {}) };
+  saveBatchScreeningData(userKey, data);
+
+  // Sync answers to persistent QA Database so standard auto-apply will also know them
+  for (const q of (data.consolidatedQuestions || [])) {
+    const answer = data.answers[q.id] !== undefined ? data.answers[q.id] : data.answers[q.normKey];
+    if (answer !== undefined && answer !== null && String(answer).trim()) {
+      await saveQaItemAsync(userKey, {
+        question: q.question,
+        answer: String(answer),
+        type: q.type || 'single_choice',
+        options: q.options || [],
+        confidence: 100,
+        source: 'user_batch_screening'
+      }).catch(() => {});
+    }
+  }
+
+  return { success: true, answersCount: Object.keys(data.answers).length, answers: data.answers };
+}
+
+/**
+ * STAGE 1: Controlled Batch Inspection
+ * Navigates through target unconfirmed/queued jobs, opens the Easy Apply drawer,
+ * extracts REAL questions and options from live DOM, closes drawer without submitting.
+ * Deduplicates questions into consolidated question bank.
+ */
+async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options = {}) {
+  if (activeBatchInspectionState.isRunning) {
+    return {
+      success: false,
+      message: 'Batch inspection is already running in background.',
+      status: activeBatchInspectionState
+    };
+  }
+
+  const {
+    findBrowserExecutable,
+    ensureBrowserInstalled,
+    restoreAndInjectNaukriSession,
+    acquireUserLockAsync,
+    releaseUserLockAsync
+  } = require('./naukri.service');
+
+  let notificationService = null;
+  try {
+    notificationService = require('./notification.service');
+  } catch (e) {}
+
+  // 1. Gather candidate jobs
+  let candidateJobs = [];
+  if (options.jobIds && Array.isArray(options.jobIds) && options.jobIds.length > 0) {
+    const idSet = new Set(options.jobIds);
+    const allApplied = getNaukriAppliedJobs(userKey);
+    const allQueue = getNaukriQueue(userKey);
+    const pool = [...allApplied, ...allQueue];
+    candidateJobs = pool.filter(j => idSet.has(j.jobId || j.id));
+  } else {
+    // Collect unconfirmed / failed jobs from applied history + ready jobs from queue
+    const allApplied = getNaukriAppliedJobs(userKey);
+    const unconfirmed = allApplied.filter(a =>
+      a.status === 'SUBMISSION_UNCONFIRMED' ||
+      a.verificationStatus === 'UNVERIFIED' ||
+      (a.status || '').toLowerCase().includes('failed') ||
+      a.status === 'WAITING_FOR_USER'
+    );
+
+    const queue = getNaukriQueue(userKey);
+    const queuePending = queue.filter(q =>
+      q.state !== ApplicationState.SUBMITTED &&
+      q.state !== ApplicationState.SKIPPED
+    );
+
+    candidateJobs = [...unconfirmed, ...queuePending];
+  }
+
+  // Deduplicate by URL or Job ID, and require a valid URL
+  const seenUrls = new Set();
+  candidateJobs = candidateJobs.filter(job => {
+    const url = job.jobUrl || '';
+    if (!url || !url.startsWith('http')) return false;
+    if (seenUrls.has(url)) return false;
+    seenUrls.add(url);
+    return true;
+  });
+
+  if (candidateJobs.length === 0) {
+    return {
+      success: false,
+      message: 'No eligible jobs found for batch inspection. Ensure you have unconfirmed or queued jobs with valid Naukri URLs.'
+    };
+  }
+
+  // Initialize state
+  activeBatchInspectionState.isRunning = true;
+  activeBatchInspectionState.isPaused = false;
+  activeBatchInspectionState.total = candidateJobs.length;
+  activeBatchInspectionState.completed = 0;
+  activeBatchInspectionState.questionsFoundCount = 0;
+  activeBatchInspectionState.uniqueQuestionsCount = 0;
+  activeBatchInspectionState.noQuestionsCount = 0;
+  activeBatchInspectionState.failedCount = 0;
+  activeBatchInspectionState.startedAt = new Date().toISOString();
+  activeBatchInspectionState.completedAt = null;
+  activeBatchInspectionState.error = null;
+
+  // Load existing persistent data
+  const data = getBatchScreeningData(userKey);
+  data.jobQuestionsMap = data.jobQuestionsMap || {};
+  data.consolidatedQuestions = data.consolidatedQuestions || [];
+  data.answers = data.answers || {};
+
+  // Run in background
+  (async () => {
+    let browser = null;
+    let page = null;
+    try {
+      await acquireUserLockAsync(userKey, 'batch_inspection', 1800);
+
+      const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+      const launchOptions = {
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--no-zygote',
+          '--single-process'
+        ]
+      };
+      if (browserPath) launchOptions.executablePath = browserPath;
+      browser = await puppeteer.launch(launchOptions);
+      page = await browser.newPage();
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        throw new Error('Naukri session is missing or expired. Link session in settings before inspecting.');
+      }
+
+      for (let idx = 0; idx < candidateJobs.length; idx++) {
+        if (activeBatchInspectionState.isPaused) {
+          console.log('[BATCH_INSPECT] Inspection paused by user.');
+          break;
+        }
+
+        const job = candidateJobs[idx];
+        const jId = job.jobId || job.id || `job_${Date.now()}_${idx}`;
+        const company = job.company || 'Unknown Company';
+        const jobTitle = job.jobTitle || 'Target Role';
+        const jobUrl = job.jobUrl;
+
+        activeBatchInspectionState.currentJob = {
+          jobId: jId,
+          company,
+          jobTitle,
+          index: idx + 1,
+          total: candidateJobs.length
+        };
+
+        console.log(`[BATCH_INSPECT] [${idx + 1}/${candidateJobs.length}] Inspecting: ${company} - ${jobTitle}...`);
+
+        try {
+          await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await new Promise(r => setTimeout(r, 800));
+
+          // 1. Check if already confirmed applied on Naukri DOM
+          const isAlreadyApplied = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a, span'));
+            return btns.some(b => {
+              const t = (b.innerText || b.textContent || '').toLowerCase().trim();
+              return t === 'applied' || t.includes('already applied');
+            });
+          });
+
+          if (isAlreadyApplied) {
+            confirmNaukriApplicationSubmission(userKey, job, {
+              status: VerificationStatus.VERIFIED,
+              source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+              details: 'Verified as already applied on Naukri job page',
+              verifiedAt: new Date().toISOString()
+            });
+
+            data.jobQuestionsMap[jId] = {
+              jobId: jId,
+              company,
+              jobTitle,
+              jobUrl,
+              status: 'ALREADY_APPLIED',
+              questions: []
+            };
+            activeBatchInspectionState.completed++;
+            continue;
+          }
+
+          // 2. Check if external site apply
+          const isExternalSite = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a'));
+            const hasDirectApply = btns.some(b => {
+              const t = (b.textContent || b.innerText || '').toLowerCase();
+              return t === 'apply' || t.startsWith('apply') || t.includes('easy apply');
+            });
+            const hasExternal = btns.some(b => {
+              const t = (b.textContent || b.innerText || '').toLowerCase();
+              return t.includes('company site') || t.includes('external');
+            });
+            return !hasDirectApply && hasExternal;
+          });
+
+          if (isExternalSite) {
+            recordExternalCompanyJob(userKey, { jobId: jId, company, jobTitle, jobUrl });
+            data.jobQuestionsMap[jId] = {
+              jobId: jId,
+              company,
+              jobTitle,
+              jobUrl,
+              status: 'EXTERNAL_APPLY',
+              questions: []
+            };
+            activeBatchInspectionState.completed++;
+            continue;
+          }
+
+          // 3. Click Apply / Easy Apply
+          await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button, a'));
+            const btn = buttons.find(el => {
+              const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+              if (t.includes('save') && !t.includes('apply')) return false;
+              if (t.includes('company site')) return false;
+              return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button');
+            });
+            if (btn) {
+              btn.click();
+            } else {
+              const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i], button.apply-btn');
+              if (fallback) fallback.click();
+            }
+          });
+
+          // 4. Wait for drawer / modal to appear
+          await page.waitForSelector(
+            '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog',
+            { timeout: 3500 }
+          ).catch(() => null);
+          await new Promise(r => setTimeout(r, 1200));
+
+          // 5. Extract REAL question from live DOM
+          const questionResult = await extractCurrentNaukriQuestionFromDom(page, job);
+
+          const detectedQuestions = [];
+          if (questionResult && questionResult.found && questionResult.question) {
+            detectedQuestions.push({
+              question: questionResult.question,
+              type: questionResult.type || 'single_choice',
+              options: questionResult.options || [],
+              isMandatory: !!questionResult.isMandatory
+            });
+          }
+
+          // Also check for multiple question fields if rendered in standard form
+          const extraQuestions = await page.evaluate(() => {
+            const surface = document.querySelector(
+              '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog'
+            );
+            if (!surface) return [];
+            const groups = Array.from(surface.querySelectorAll('.form-group, .custom-question, .question-wrapper, div[class*="question" i]'));
+            const results = [];
+            const blocked = /^(send|skip|close|submit|apply|save|cancel|continue|next)$/i;
+
+            groups.forEach(g => {
+              const lbl = g.querySelector('label, .label, .title, h4, h5, p');
+              const text = (lbl?.innerText || lbl?.textContent || '').replace(/[\r\n]+/g, ' ').trim();
+              if (!text || text.length < 5) return;
+
+              const opts = [];
+              g.querySelectorAll('label, input[type="radio"], .chip, [class*="chip" i], li').forEach(o => {
+                const optText = (o.innerText || o.textContent || o.getAttribute('value') || '').trim();
+                if (optText && optText.length < 80 && !blocked.test(optText) && !opts.includes(optText)) {
+                  opts.push(optText);
+                }
+              });
+
+              results.push({
+                question: text,
+                type: opts.length > 0 ? 'single_choice' : 'text',
+                options: opts,
+                isMandatory: text.includes('*') || !!g.querySelector('.mandatory, .required, [required]')
+              });
+            });
+            return results;
+          }).catch(() => []);
+
+          if (extraQuestions.length > 1) {
+            // Merge unique extra questions
+            for (const eq of extraQuestions) {
+              if (!detectedQuestions.some(dq => normalizeQuestionKey(dq.question) === normalizeQuestionKey(eq.question))) {
+                detectedQuestions.push(eq);
+              }
+            }
+          }
+
+          // 6. Deduplicate & Record into Consolidated Question Bank
+          if (detectedQuestions.length > 0) {
+            activeBatchInspectionState.questionsFoundCount++;
+
+            data.jobQuestionsMap[jId] = {
+              jobId: jId,
+              company,
+              jobTitle,
+              jobUrl,
+              status: 'QUESTIONS_FOUND',
+              questions: detectedQuestions
+            };
+
+            for (const qItem of detectedQuestions) {
+              const normKey = normalizeQuestionKey(qItem.question);
+              let existing = data.consolidatedQuestions.find(cq =>
+                cq.normKey === normKey ||
+                normalizeQuestionKey(cq.question) === normKey
+              );
+
+              if (existing) {
+                if (!existing.jobIds.includes(jId)) existing.jobIds.push(jId);
+                if (!existing.companies.includes(company)) existing.companies.push(company);
+                existing.jobCount = existing.jobIds.length;
+                if (qItem.isMandatory) existing.isMandatory = true;
+
+                // Merge options
+                const curOptionsLower = new Set(existing.options.map(o => o.toLowerCase()));
+                for (const opt of qItem.options) {
+                  if (!curOptionsLower.has(opt.toLowerCase())) {
+                    existing.options.push(opt);
+                    curOptionsLower.add(opt.toLowerCase());
+                  }
+                }
+              } else {
+                const newConsolidated = {
+                  id: `cq_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+                  question: qItem.question,
+                  normKey,
+                  type: qItem.type || 'single_choice',
+                  options: qItem.options || [],
+                  isMandatory: !!qItem.isMandatory,
+                  jobIds: [jId],
+                  companies: [company],
+                  jobCount: 1,
+                  createdAt: new Date().toISOString()
+                };
+                data.consolidatedQuestions.push(newConsolidated);
+              }
+            }
+          } else {
+            // No screening questions required for Easy Apply
+            activeBatchInspectionState.noQuestionsCount++;
+            data.jobQuestionsMap[jId] = {
+              jobId: jId,
+              company,
+              jobTitle,
+              jobUrl,
+              status: 'READY_TO_APPLY',
+              questions: []
+            };
+          }
+
+          // 7. SAFE CLOSE DRAWER / MODAL WITHOUT SUBMITTING
+          await page.evaluate(() => {
+            const closeSelectors = [
+              '.chatbot_close',
+              '.crossIcon',
+              'button.close',
+              '[class*="close" i]',
+              '[aria-label*="close" i]',
+              '.drawer__close',
+              '[class*="drawer" i] button',
+              '.apply-dialog .close'
+            ];
+            for (const sel of closeSelectors) {
+              const el = document.querySelector(sel);
+              if (el && typeof el.click === 'function') {
+                el.click();
+                return true;
+              }
+            }
+            return false;
+          }).catch(() => {});
+          await page.keyboard.press('Escape').catch(() => {});
+
+          activeBatchInspectionState.completed++;
+          activeBatchInspectionState.uniqueQuestionsCount = data.consolidatedQuestions.length;
+
+          // Save periodic progress
+          data.totalJobs = candidateJobs.length;
+          data.inspectedCount = activeBatchInspectionState.completed;
+          data.questionsFoundCount = activeBatchInspectionState.questionsFoundCount;
+          data.uniqueQuestionsCount = data.consolidatedQuestions.length;
+          data.noQuestionsCount = activeBatchInspectionState.noQuestionsCount;
+          data.lastInspectedAt = new Date().toISOString();
+          saveBatchScreeningData(userKey, data);
+
+          // Broadcast SSE progress
+          if (notificationService && typeof notificationService.broadcastToSseClients === 'function') {
+            notificationService.broadcastToSseClients(userKey, 'batch_inspect_progress', {
+              ...activeBatchInspectionState,
+              uniqueQuestionsCount: data.consolidatedQuestions.length
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 600));
+        } catch (err) {
+          console.warn(`[BATCH_INSPECT] Error inspecting ${company}:`, err.message);
+          activeBatchInspectionState.failedCount++;
+          activeBatchInspectionState.completed++;
+        }
+      }
+    } catch (fatalErr) {
+      console.error('[BATCH_INSPECT] Fatal batch inspection error:', fatalErr);
+      activeBatchInspectionState.error = fatalErr.message;
+    } finally {
+      activeBatchInspectionState.isRunning = false;
+      activeBatchInspectionState.completedAt = new Date().toISOString();
+      activeBatchInspectionState.currentJob = null;
+      if (browser) {
+        try { await browser.close(); } catch (e) {}
+      }
+      await releaseUserLockAsync(userKey, 'batch_inspection').catch(() => {});
+
+      // Final save
+      data.lastInspectedAt = new Date().toISOString();
+      saveBatchScreeningData(userKey, data);
+      console.log(`[BATCH_INSPECT] Finished! Inspected ${data.inspectedCount} jobs. Unique questions found: ${data.consolidatedQuestions.length}.`);
+    }
+  })().catch(e => console.error('[BATCH_INSPECT] Unhandled exception:', e));
+
+  return {
+    success: true,
+    message: `Batch inspection started for ${candidateJobs.length} job(s). Real questions are being collected into the Question Bank.`,
+    totalJobs: candidateJobs.length
+  };
+}
+
+/**
+ * STAGE 3: Controlled Batch Apply With Saved Answers
+ * Sequentially applies to inspected jobs using the user-provided answers.
+ * Injects answers into live DOM, advances chatbot turns, verifies confirmed submission on live DOM.
+ */
+async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}) {
+  if (activeBatchApplyState.isRunning) {
+    return {
+      success: false,
+      message: 'Batch application process is already running.',
+      status: activeBatchApplyState
+    };
+  }
+
+  const {
+    findBrowserExecutable,
+    ensureBrowserInstalled,
+    restoreAndInjectNaukriSession,
+    acquireUserLockAsync,
+    releaseUserLockAsync
+  } = require('./naukri.service');
+
+  let notificationService = null;
+  try {
+    notificationService = require('./notification.service');
+  } catch (e) {}
+
+  // Save any answers passed in options
+  if (options.answers && Object.keys(options.answers).length > 0) {
+    await saveBatchScreeningAnswersAsync(userKey, options.answers);
+  }
+
+  const data = getBatchScreeningData(userKey);
+  const answers = data.answers || {};
+
+  // Pre-Apply Validation: check for missing mandatory questions
+  const unAnsweredMandatory = [];
+  for (const q of (data.consolidatedQuestions || [])) {
+    if (q.isMandatory) {
+      const hasAnswer = answers[q.id] !== undefined || answers[q.normKey] !== undefined;
+      if (!hasAnswer) {
+        unAnsweredMandatory.push(q);
+      }
+    }
+  }
+
+  if (unAnsweredMandatory.length > 0 && !options.skipUnanswered && !options.force) {
+    return {
+      success: false,
+      validationError: true,
+      unAnsweredCount: unAnsweredMandatory.length,
+      unAnsweredMandatory,
+      message: `Please provide answers for ${unAnsweredMandatory.length} mandatory screening question(s) before applying.`
+    };
+  }
+
+  // Target jobs: jobs that have QUESTIONS_FOUND or READY_TO_APPLY
+  let targetJobs = [];
+  const mapEntries = Object.values(data.jobQuestionsMap || {});
+  if (options.jobIds && Array.isArray(options.jobIds) && options.jobIds.length > 0) {
+    const idSet = new Set(options.jobIds);
+    targetJobs = mapEntries.filter(j => idSet.has(j.jobId));
+  } else {
+    targetJobs = mapEntries.filter(j => j.status === 'QUESTIONS_FOUND' || j.status === 'READY_TO_APPLY');
+  }
+
+  if (targetJobs.length === 0) {
+    return {
+      success: false,
+      message: 'No eligible inspected jobs found ready to apply. Please run inspection first.'
+    };
+  }
+
+  activeBatchApplyState.isRunning = true;
+  activeBatchApplyState.isPaused = false;
+  activeBatchApplyState.total = targetJobs.length;
+  activeBatchApplyState.completed = 0;
+  activeBatchApplyState.submittedCount = 0;
+  activeBatchApplyState.failedCount = 0;
+  activeBatchApplyState.needsAttentionCount = 0;
+  activeBatchApplyState.startedAt = new Date().toISOString();
+  activeBatchApplyState.completedAt = null;
+  activeBatchApplyState.error = null;
+
+  (async () => {
+    let browser = null;
+    let page = null;
+    try {
+      await acquireUserLockAsync(userKey, 'batch_apply', 3600);
+
+      const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+      const launchOptions = {
+        headless: 'new',
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-gpu',
+          '--disable-software-rasterizer',
+          '--no-zygote',
+          '--single-process'
+        ]
+      };
+      if (browserPath) launchOptions.executablePath = browserPath;
+      browser = await puppeteer.launch(launchOptions);
+      page = await browser.newPage();
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        throw new Error('Naukri candidate session is missing or expired.');
+      }
+
+      for (let idx = 0; idx < targetJobs.length; idx++) {
+        if (activeBatchApplyState.isPaused) {
+          console.log('[BATCH_APPLY] Batch application paused by user.');
+          break;
+        }
+
+        const job = targetJobs[idx];
+        const jId = job.jobId;
+        const company = job.company;
+        const jobTitle = job.jobTitle;
+        const jobUrl = job.jobUrl;
+
+        activeBatchApplyState.currentJob = {
+          jobId: jId,
+          company,
+          jobTitle,
+          index: idx + 1,
+          total: targetJobs.length
+        };
+
+        console.log(`[BATCH_APPLY] [${idx + 1}/${targetJobs.length}] Applying to ${company} - ${jobTitle}...`);
+
+        try {
+          await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
+          await new Promise(r => setTimeout(r, 800));
+
+          // Check if already applied
+          const isAlreadyApplied = await page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll('button, a, span'));
+            return btns.some(b => {
+              const t = (b.innerText || b.textContent || '').toLowerCase().trim();
+              return t === 'applied' || t.includes('already applied');
+            });
+          });
+
+          if (isAlreadyApplied) {
+            confirmNaukriApplicationSubmission(userKey, job, {
+              status: VerificationStatus.VERIFIED,
+              source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+              details: 'Verified as already applied on Naukri job page',
+              verifiedAt: new Date().toISOString()
+            });
+            activeBatchApplyState.submittedCount++;
+            activeBatchApplyState.completed++;
+            continue;
+          }
+
+          // Click Apply button
+          await page.evaluate(() => {
+            const buttons = Array.from(document.querySelectorAll('button, a'));
+            const btn = buttons.find(el => {
+              const t = (el.textContent || el.innerText || '').trim().toLowerCase();
+              if (t.includes('save') && !t.includes('apply')) return false;
+              if (t.includes('company site')) return false;
+              return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button');
+            });
+            if (btn) {
+              btn.click();
+            } else {
+              const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i], button.apply-btn');
+              if (fallback) fallback.click();
+            }
+          });
+
+          // Handle sequential chatbot turns (up to 6 turns)
+          let confirmed = false;
+          for (let turn = 0; turn < 6; turn++) {
+            await new Promise(r => setTimeout(r, 1000));
+
+            // Verify if completed
+            const verification = await verifyNaukriSubmissionOnPage(page, job);
+            if (verification.isConfirmed) {
+              confirmNaukriApplicationSubmission(userKey, job, {
+                status: VerificationStatus.VERIFIED,
+                source: verification.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,
+                details: verification.details || 'Application confirmed on live DOM',
+                verifiedAt: new Date().toISOString()
+              });
+              confirmed = true;
+              break;
+            }
+
+            // Extract question
+            const qData = await extractCurrentNaukriQuestionFromDom(page, job);
+            if (qData.isComplete) {
+              confirmNaukriApplicationSubmission(userKey, job, {
+                status: VerificationStatus.VERIFIED,
+                source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+                details: 'Application submitted and verified on live DOM',
+                verifiedAt: new Date().toISOString()
+              });
+              confirmed = true;
+              break;
+            }
+
+            if (!qData.found || !qData.question) {
+              // Check fallback submit button
+              const submittedFallback = await page.evaluate(() => {
+                const btn = document.querySelector('.chatbot-container button[type="submit"], .apply-dialog button[type="submit"], button.btn-primary[type="submit"]');
+                if (btn) {
+                  btn.click();
+                  return true;
+                }
+                return false;
+              });
+              if (submittedFallback) {
+                await new Promise(r => setTimeout(r, 1500));
+                continue;
+              }
+              break;
+            }
+
+            // Find matching answer from saved user answers
+            const rawQ = qData.question;
+            const normQ = normalizeQuestionKey(rawQ);
+
+            let matchedAnswer = null;
+            // 1. Direct ID match if known
+            const cqItem = (data.consolidatedQuestions || []).find(cq =>
+              cq.normKey === normQ ||
+              normalizeQuestionKey(cq.question) === normQ
+            );
+            if (cqItem && answers[cqItem.id] !== undefined) {
+              matchedAnswer = answers[cqItem.id];
+            } else if (answers[normQ] !== undefined) {
+              matchedAnswer = answers[normQ];
+            } else {
+              // Fuzzy match across answers keys
+              for (const [k, v] of Object.entries(answers)) {
+                if (normQ.includes(k) || k.includes(normQ)) {
+                  matchedAnswer = v;
+                  break;
+                }
+              }
+            }
+
+            if (matchedAnswer !== null && matchedAnswer !== undefined) {
+              console.log(`[BATCH_APPLY] Injecting saved answer for "${rawQ.slice(0, 40)}...": "${matchedAnswer}"`);
+              await sendNaukriChatbotAnswer(page, String(matchedAnswer), qData.options || []);
+            } else {
+              // Unforeseen mandatory question with no answer
+              console.warn(`[BATCH_APPLY] Missing answer for mandatory question: "${rawQ}". Notifying user devices.`);
+              if (notificationService && typeof notificationService.broadcastMandatoryQuestionNotification === 'function') {
+                await notificationService.broadcastMandatoryQuestionNotification(userKey, {
+                  jobId: jId,
+                  jobTitle,
+                  company,
+                  jobUrl,
+                  question: rawQ,
+                  options: qData.options || [],
+                  inputType: qData.type || 'text'
+                }).catch(() => {});
+              }
+
+              updateQueueItemState(userKey, jId, {
+                state: 'NEEDS_ATTENTION',
+                reason: `Missing answer for question: ${rawQ.slice(0, 80)}`
+              });
+              activeBatchApplyState.needsAttentionCount++;
+              break;
+            }
+          }
+
+          if (confirmed) {
+            activeBatchApplyState.submittedCount++;
+          } else {
+            activeBatchApplyState.failedCount++;
+          }
+
+          activeBatchApplyState.completed++;
+
+          // Broadcast SSE progress
+          if (notificationService && typeof notificationService.broadcastToSseClients === 'function') {
+            notificationService.broadcastToSseClients(userKey, 'batch_apply_progress', {
+              ...activeBatchApplyState
+            });
+          }
+
+          await new Promise(r => setTimeout(r, 600));
+        } catch (jobErr) {
+          console.warn(`[BATCH_APPLY] Error applying to ${company}:`, jobErr.message);
+          activeBatchApplyState.failedCount++;
+          activeBatchApplyState.completed++;
+        }
+      }
+    } catch (fatalErr) {
+      console.error('[BATCH_APPLY] Fatal error in batch apply:', fatalErr);
+      activeBatchApplyState.error = fatalErr.message;
+    } finally {
+      activeBatchApplyState.isRunning = false;
+      activeBatchApplyState.completedAt = new Date().toISOString();
+      activeBatchApplyState.currentJob = null;
+      if (browser) {
+        try { await browser.close(); } catch (e) {}
+      }
+      await releaseUserLockAsync(userKey, 'batch_apply').catch(() => {});
+      console.log(`[BATCH_APPLY] Completed run. Submitted: ${activeBatchApplyState.submittedCount}, Needs Attention: ${activeBatchApplyState.needsAttentionCount}, Failed: ${activeBatchApplyState.failedCount}`);
+    }
+  })().catch(e => console.error('[BATCH_APPLY] Unhandled error:', e));
+
+  return {
+    success: true,
+    message: `Batch application started for ${targetJobs.length} eligible job(s). Monitoring live DOM confirmations.`,
+    totalJobs: targetJobs.length
+  };
+}
+
 module.exports = {
   ApplicationState,
   DEFAULT_QA_ITEMS,
@@ -4254,6 +5139,16 @@ module.exports = {
   startNaukriInteractiveApplySessionAsync,
   submitNaukriSessionAnswerAsync,
   getNaukriInteractiveSessionStatus,
-  cancelNaukriInteractiveSession
+  cancelNaukriInteractiveSession,
+  getBatchScreeningQuestionsFilePath,
+  getBatchScreeningData,
+  saveBatchScreeningData,
+  getBatchInspectionStatus,
+  pauseBatchInspection,
+  getBatchApplyStatus,
+  pauseBatchApply,
+  saveBatchScreeningAnswersAsync,
+  inspectBatchJobQuestionsAsync,
+  applyBatchWithAnswersAsync
 };
 
