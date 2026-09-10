@@ -3126,6 +3126,7 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
 async function executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, customUserAnswers = []) {
   const qaDb = await getQaDatabaseAsync(userKey);
   const jobStartTime = Date.now();
+  let questionsAnsweredCount = 0;
 
   // 1. Check if already applied on page
   const existingCheck = await page.evaluate(() => {
