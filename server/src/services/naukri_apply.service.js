@@ -745,6 +745,17 @@ function addPendingQuestion(userKey, pendingItem) {
     if (isSupabaseConfigured()) {
       supabaseSaveNaukriConfig(userKey, { pendingQuestions: current }).catch(() => {});
     }
+
+    // Broadcast push notification across all user devices immediately
+    try {
+      const { broadcastMandatoryQuestionNotification } = require('./notification.service');
+      broadcastMandatoryQuestionNotification(userKey, record).catch(err => {
+        console.warn('[NOTIFICATION_DISPATCH_WARN]', err.message);
+      });
+    } catch (notifErr) {
+      console.warn('[NOTIFICATION_REQUIRE_WARN]', notifErr.message);
+    }
+
     return record;
   }
   return null;
@@ -2500,8 +2511,11 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.STARTED, stage: 'Navigating to Job' });
 
     try {
-      await page.goto(jobItem.jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
-      await new Promise(r => setTimeout(r, 2000));
+      await page.goto(jobItem.jobUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+      await Promise.race([
+        page.waitForSelector('button, a, .chatbot-container, #apply-button', { timeout: 2500 }).catch(() => null),
+        new Promise(r => setTimeout(r, 600))
+      ]);
 
       // Inspect if session expired / redirected to login
       const currentUrl = page.url();
@@ -2662,8 +2676,8 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       }
 
       await Promise.race([
-        page.waitForNavigation({ timeout: 2000, waitUntil: 'domcontentloaded' }).catch(() => null),
-        new Promise(r => setTimeout(r, 2500))
+        page.waitForSelector('.chatbot-container, .chatbot_Drawer, .apply-dialog, .form-group', { timeout: 2000 }).catch(() => null),
+        new Promise(r => setTimeout(r, 700))
       ]);
 
       if (page.isClosed()) {
@@ -2854,7 +2868,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
           return false;
         });
         if (!nextClicked) break;
-        await new Promise(r => setTimeout(r, 1500));
+        await new Promise(r => setTimeout(r, 400));
       }
 
       // Final Submit Button Click -> State = SUBMITTING (Never immediately SUBMITTED)
@@ -2943,7 +2957,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       }
 
       // Polite pacing delay between jobs
-      await new Promise(r => setTimeout(r, 2000));
+      await new Promise(r => setTimeout(r, 600));
     } catch (jobErr) {
       console.error(`[NAUKRI APPLY ERROR] Application failed for ${jobItem.jobTitle} at ${jobItem.company}:`, jobErr.message);
 
@@ -3011,6 +3025,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
 async function runStandaloneNaukriApply(userKey = 'default_user', customOptions = {}) {
   const {
     findBrowserExecutable,
+    ensureBrowserInstalled,
     getNaukriConfigAsync,
     saveNaukriConfigAsync,
     restoreAndInjectNaukriSession,
@@ -3039,7 +3054,7 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
     };
 
     const config = await getNaukriConfigAsync(userKey);
-    let browserPath = findBrowserExecutable();
+    let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
     const launchOptions = {
       headless: customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false),
       args: [
@@ -3498,6 +3513,7 @@ async function retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, user
 async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnswers = []) {
   const {
     findBrowserExecutable,
+    ensureBrowserInstalled,
     restoreAndInjectNaukriSession,
     acquireUserLockAsync,
     releaseUserLockAsync
@@ -3533,12 +3549,21 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnsw
   let processedCount = 0;
 
   try {
-    const browserPath = findBrowserExecutable();
-    browser = await puppeteer.launch({
+    let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+    const launchOptions = {
       headless: 'new',
-      executablePath: browserPath || undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    });
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--no-zygote',
+        '--single-process'
+      ]
+    };
+    if (browserPath) launchOptions.executablePath = browserPath;
+    browser = await puppeteer.launch(launchOptions);
 
     const resolvedResume = await resolveUserResumeFile(userKey);
     let page = null;
@@ -3819,6 +3844,7 @@ async function startNaukriInteractiveApplySessionAsync(userKey = 'default_user',
 
   const {
     findBrowserExecutable,
+    ensureBrowserInstalled,
     restoreAndInjectNaukriSession,
     acquireUserLockAsync,
     releaseUserLockAsync
@@ -3844,12 +3870,21 @@ async function startNaukriInteractiveApplySessionAsync(userKey = 'default_user',
 
   let browser = null;
   try {
-    const browserPath = findBrowserExecutable();
-    browser = await puppeteer.launch({
+    let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+    const launchOptions = {
       headless: 'new',
-      executablePath: browserPath || undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    });
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--disable-software-rasterizer',
+        '--no-zygote',
+        '--single-process'
+      ]
+    };
+    if (browserPath) launchOptions.executablePath = browserPath;
+    browser = await puppeteer.launch(launchOptions);
 
     const page = await browser.newPage();
     await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');

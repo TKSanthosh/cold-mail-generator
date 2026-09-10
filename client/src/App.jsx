@@ -3759,8 +3759,12 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       if (match) resolvedUrl = match.jobUrl;
     }
 
-    if (!resolvedUrl) {
-      return showToast('Job posting URL is required to inspect live Naukri application', 'error');
+    if (!resolvedUrl || resolvedUrl === 'https://www.naukri.com/' || resolvedUrl === 'https://www.naukri.com') {
+      const cleanTitle = (job.jobTitle || 'developer').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const cleanComp = (job.company || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      resolvedUrl = cleanComp 
+        ? `https://www.naukri.com/${cleanTitle}-jobs-in-${cleanComp}` 
+        : `https://www.naukri.com/${cleanTitle}-jobs`;
     }
 
     setIsInspectingLive(true);
@@ -4193,11 +4197,159 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   };
 
   const [isRetryingUnconfirmed, setIsRetryingUnconfirmed] = useState(false);
+  const [isTurboApplying, setIsTurboApplying] = useState(false);
+  const [devicePushInfo, setDevicePushInfo] = useState(null);
+  const [showPushModal, setShowPushModal] = useState(false);
 
-  const retryAllUnconfirmedJobs = () => {
-    // Open the cumulated interactive screening modal so user can view/answer for all roles in one place!
-    handleOpenCumulatedPendingModal();
+  // Synthetic Pleasant Audio Chime using Web Audio API (cross-platform, zero asset load needed)
+  const playNotificationChime = () => {
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.setValueAtTime(880.00, ctx.currentTime + 0.12); // A5
+      gain.gain.setValueAtTime(0.25, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.6);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.6);
+    } catch (_) {}
   };
+
+  // High-Speed Turbo Apply Trigger for all unconfirmed jobs
+  const retryAllUnconfirmedJobs = async () => {
+    setIsRetryingUnconfirmed(true);
+    showToast('🚀 High-Speed Turbo Apply initiated across all unconfirmed jobs...', 'info');
+    try {
+      const res = await apiFetch('/api/naukri/apply/retry-all-unconfirmed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userAnswers: [] })
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || '✅ Background worker started for all unconfirmed jobs!', 'success');
+        fetchQaAndAppliedJobs();
+      } else {
+        showToast(data.error || 'Failed to start batch retry', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsRetryingUnconfirmed(false);
+    }
+  };
+
+  // High-Speed Turbo Apply Trigger for all jobs (discovered + unconfirmed)
+  const handleTriggerTurboApplyAll = async () => {
+    setIsTurboApplying(true);
+    showToast('⚡ Turbo Apply: Applying to all jobs as fast as possible...', 'info');
+    try {
+      const res = await apiFetch('/api/naukri/apply-all-fast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (data.success) {
+        showToast(data.message || '⚡ Turbo Apply successfully initiated!', 'success');
+        fetchQaAndAppliedJobs();
+      } else {
+        showToast(data.error || 'Failed to start Turbo Apply', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    } finally {
+      setIsTurboApplying(false);
+    }
+  };
+
+  // Fetch Push Notification & ntfy Device Config
+  const loadDevicePushConfig = async () => {
+    try {
+      const res = await apiFetch('/api/notifications');
+      const data = await res.json();
+      if (data && data.success) {
+        setDevicePushInfo(data);
+      }
+    } catch (_) {}
+  };
+
+  // Dispatch Test Push Notification to all devices
+  const sendTestDevicePush = async () => {
+    showToast('📲 Dispatching test notification to all connected devices...', 'info');
+    try {
+      const res = await apiFetch('/api/notifications/test', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        playNotificationChime();
+        showToast('✅ Test push sent to phone (ntfy.sh), browser & email!', 'success');
+      } else {
+        showToast(data.error || 'Failed to send test push', 'error');
+      }
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  // Real-time Push Notifications SSE Listener & Web Notification Handler
+  useEffect(() => {
+    if (!currentUser) return;
+
+    loadDevicePushConfig();
+
+    if ('Notification' in window && Notification.permission === 'default') {
+      try { Notification.requestPermission().catch(() => {}); } catch (_) {}
+    }
+
+    let eventSource = null;
+    try {
+      const streamUrl = `/api/notifications/stream?userKey=${encodeURIComponent(currentUser.email || currentUser.userKey || 'default_user')}`;
+      eventSource = new EventSource(streamUrl);
+
+      eventSource.addEventListener('mandatory_question', (e) => {
+        try {
+          const payload = JSON.parse(e.data);
+          playNotificationChime();
+
+          if ('Notification' in window && Notification.permission === 'granted') {
+            const n = new Notification(payload.title || '⚡ Action Needed: Naukri Question', {
+              body: `"${payload.question}"\nRole: ${payload.jobTitle || 'Role'} at ${payload.company || 'Company'}`,
+              icon: '/favicon.ico',
+              requireInteraction: true
+            });
+            n.onclick = () => {
+              window.focus();
+              handleOpenInstantApply({
+                jobId: payload.jobId,
+                jobUrl: payload.jobUrl,
+                company: payload.company,
+                jobTitle: payload.jobTitle,
+                pendingQuestions: [{
+                  question: payload.question,
+                  options: payload.options,
+                  inputType: payload.inputType
+                }]
+              });
+            };
+          }
+
+          showToast(`⚡ Mandatory Question for ${payload.company}: "${payload.question.slice(0, 50)}..."`, 'warning');
+          fetchQaAndAppliedJobs();
+        } catch (_) {}
+      });
+    } catch (_) {}
+
+    return () => {
+      if (eventSource) {
+        try { eventSource.close(); } catch (_) {}
+      }
+    };
+  }, [currentUser]);
 
   // Real-time synchronization with background worker status
   useEffect(() => {
@@ -6359,6 +6511,24 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               <ExternalLink className="w-3 h-3" /> View on Naukri
             </a>
             <button
+              type="button"
+              onClick={handleTriggerTurboApplyAll}
+              disabled={isTurboApplying || isAutoApplying}
+              className="text-xs bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white shadow-xs hover:shadow px-3 py-1 rounded-lg flex items-center gap-1.5 font-bold cursor-pointer transition-all disabled:opacity-60"
+              title="Apply to all discovered and queued jobs as fast as possible in turbo continuous mode"
+            >
+              <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
+              <span>{isTurboApplying ? 'Turbo Applying...' : '🚀 Turbo Apply All'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPushModal(true)}
+              className="text-xs bg-purple-50 dark:bg-purple-950/50 text-purple-700 dark:text-purple-300 hover:bg-purple-100 dark:hover:bg-purple-900/60 border border-purple-200 dark:border-purple-800 px-2.5 py-1 rounded-lg flex items-center gap-1.5 font-semibold cursor-pointer transition-all"
+              title="Configure instant push notifications to your mobile phone & connected devices"
+            >
+              <span>📱 Push to Devices</span>
+            </button>
+            <button
               onClick={fetchQaAndAppliedJobs}
               className="text-xs text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1 font-semibold cursor-pointer"
             >
@@ -6571,6 +6741,95 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           </div>
         )}
       </div>
+      )}
+
+      {/* Multi-Device Push Notifications Modal */}
+      {showPushModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white dark:bg-slate-900 rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-purple-200 dark:border-purple-800 flex flex-col gap-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 rounded-xl border border-purple-200 dark:border-purple-800">
+                  <Bell className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-slate-800 dark:text-slate-100">
+                    📱 Multi-Device Push Notifications
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Receive instant alerts on your phone, tablet, and browser when screening questions arise
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPushModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3.5 text-xs text-slate-600 dark:text-slate-300">
+              <div className="p-3 bg-purple-50/70 dark:bg-purple-950/30 rounded-xl border border-purple-200 dark:border-purple-800/60 space-y-1.5">
+                <div className="font-bold text-purple-900 dark:text-purple-200 flex items-center gap-1.5">
+                  <span>⚡ Instant Mobile Push via ntfy (Free & No Signup)</span>
+                </div>
+                <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+                  Subscribe to your personal topic on your phone. Any mandatory question asked by Naukri will immediately ring and vibrate your mobile phone.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <input
+                    type="text"
+                    readOnly
+                    value={devicePushInfo?.ntfyUrl || `https://ntfy.sh/${devicePushInfo?.ntfyTopic || 'coldmail-naukri-default'}`}
+                    className="flex-1 px-3 py-1.5 text-xs font-mono bg-white dark:bg-slate-900 border border-purple-300 dark:border-purple-700 rounded-lg select-all"
+                  />
+                  <a
+                    href={devicePushInfo?.ntfyUrl || `https://ntfy.sh/${devicePushInfo?.ntfyTopic || 'coldmail-naukri-default'}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-bold transition-all text-xs"
+                  >
+                    Open
+                  </a>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                  <div className="font-bold text-slate-800 dark:text-slate-200 mb-1">💻 Browser & PC Push</div>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    Desktop notifications + pleasant audio chime alert enabled for this tab.
+                  </p>
+                </div>
+                <div className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50">
+                  <div className="font-bold text-slate-800 dark:text-slate-200 mb-1">🧩 Chrome Extension</div>
+                  <p className="text-slate-500 dark:text-slate-400">
+                    Extension automatically displays native desktop notifications on new questions.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={sendTestDevicePush}
+                className="px-4 py-2 text-xs font-bold text-purple-700 dark:text-purple-300 bg-purple-100 dark:bg-purple-900/40 hover:bg-purple-200 dark:hover:bg-purple-900/70 rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <span>📲 Send Test Push to Devices</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowPushModal(false)}
+                className="px-4 py-2 text-xs font-bold text-white bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-xl transition-all cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Cumulated Screening Q&A & Instant Application Modal */}

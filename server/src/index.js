@@ -1694,6 +1694,57 @@ app.post('/api/naukri/session/cancel', async (req, res) => {
   }
 });
 
+// Real-time Push Notifications SSE Stream for Frontend Web App
+app.get('/api/notifications/stream', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  if (typeof res.flushHeaders === 'function') res.flushHeaders();
+
+  const { registerSseClient } = require('./services/notification.service');
+  registerSseClient(userKey, res);
+});
+
+// Notifications history and device push topic info
+app.get('/api/notifications', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { getUserNotificationTopic, getNotificationHistory } = require('./services/notification.service');
+  const topic = getUserNotificationTopic(userKey);
+  const history = getNotificationHistory(userKey);
+  res.json({
+    success: true,
+    userKey,
+    ntfyTopic: topic,
+    ntfyUrl: `https://ntfy.sh/${topic}`,
+    notifications: history
+  });
+});
+
+// Test Push Notification across all devices (mobile phone via ntfy.sh, browser desktop, email)
+app.post('/api/notifications/test', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const { sendTestNotification } = require('./services/notification.service');
+    const result = await sendTestNotification(userKey);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// High-Speed Turbo Apply All Trigger
+app.post('/api/naukri/apply-all-fast', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const { triggerFastApplyAll } = require('./services/naukri.service');
+    const result = await triggerFastApplyAll(userKey);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.post('/api/naukri/apply/reconcile', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const { findBrowserExecutable, getNaukriConfig, restoreAndInjectNaukriSession } = require('./services/naukri.service');

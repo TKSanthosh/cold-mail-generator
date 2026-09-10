@@ -413,3 +413,52 @@ async function handleCreateDraft(data) {
   const result = await response.json();
   return { success: true, message: result.message || 'Draft saved in Gmail!', result };
 }
+
+// ============================================================================
+// MANDATORY QUESTION NOTIFICATION ENGINE FOR CHROME EXTENSION
+// ============================================================================
+
+let lastSeenNotificationId = null;
+
+async function checkPendingQuestionNotifications() {
+  try {
+    const settings = await getStoredSettings();
+    const serverUrl = settings.serverUrl || 'http://localhost:5001';
+    const userKey = settings.userKey || 'tksanthosh494_gmail_com';
+
+    const res = await fetch(`${serverUrl}/api/notifications`, {
+      headers: { 'x-user-key': userKey }
+    });
+    if (!res.ok) return;
+
+    const data = await res.json();
+    if (data && Array.isArray(data.notifications) && data.notifications.length > 0) {
+      const latest = data.notifications[0];
+      if (latest && latest.id && latest.id !== lastSeenNotificationId) {
+        lastSeenNotificationId = latest.id;
+        
+        if (chrome.notifications && typeof chrome.notifications.create === 'function') {
+          chrome.notifications.create(latest.id, {
+            type: 'basic',
+            iconUrl: 'icons/icon128.png',
+            title: `⚡ Action Required: ${latest.company || 'Naukri'} Screening Question`,
+            message: `"${latest.question}"\nRole: ${latest.jobTitle || 'Role'}. Click to answer!`,
+            priority: 2,
+            requireInteraction: true
+          });
+        }
+      }
+    }
+  } catch (_) {}
+}
+
+setInterval(checkPendingQuestionNotifications, 20000);
+
+if (chrome.notifications && chrome.notifications.onClicked) {
+  chrome.notifications.onClicked.addListener(async () => {
+    const settings = await getStoredSettings();
+    const serverUrl = settings.serverUrl || 'http://localhost:5001';
+    chrome.tabs.create({ url: `${serverUrl}/?openPending=true` });
+  });
+}
+

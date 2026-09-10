@@ -2306,11 +2306,12 @@ async function triggerAutonomousNaukriApply(options = {}) {
 
         // 2. Discover and submit fresh matching 200+ employee jobs whenever under daily target
         if (stats.todayCount < targetDaily && !await isUserLockedAsync(userKey)) {
+          const maxJobs = options.turbo ? Math.max(100, targetDaily - stats.todayCount) : (targetDaily - stats.todayCount);
           logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Automatically applying to matching 200+ employee jobs for "${userKey}" (${stats.todayCount}/${targetDaily} submitted today)...`);
           
           await runStandaloneNaukriApply(userKey, {
             applyAllAtOnce: true,
-            maxJobsPerRun: Math.min(25, targetDaily - stats.todayCount)
+            maxJobsPerRun: Math.min(100, maxJobs)
           });
         }
 
@@ -2329,6 +2330,27 @@ async function triggerAutonomousNaukriApply(options = {}) {
   }
 }
 
+async function triggerFastApplyAll(userKey = 'default_user') {
+  const { applyAllUnconfirmedJobsAsync, runStandaloneNaukriApply } = require('./naukri_apply.service');
+  logStructured('FAST_APPLY', `[TURBO APPLY] Initiating high-speed batch application for "${userKey}"...`);
+
+  // First process unconfirmed jobs
+  const unconfirmedResult = await applyAllUnconfirmedJobsAsync(userKey).catch(e => ({ success: false, error: e.message }));
+
+  // Next run standalone apply on all remaining/discovered jobs
+  const applyResult = await runStandaloneNaukriApply(userKey, {
+    applyAllAtOnce: true,
+    maxJobsPerRun: 100
+  }).catch(e => ({ success: false, error: e.message }));
+
+  return {
+    success: true,
+    message: 'Turbo Apply initiated across all unconfirmed and queued jobs.',
+    unconfirmed: unconfirmedResult,
+    apply: applyResult
+  };
+}
+
 function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
   if (autonomousApplyTimer) clearInterval(autonomousApplyTimer);
@@ -2344,14 +2366,14 @@ function initNaukriScheduler() {
     }
   }, 30000);
 
-  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs continuously every 2 minutes whenever possible)
+  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs continuously every 30s for responsive turbo throughput)
   autonomousApplyTimer = setInterval(async () => {
     try {
-      await triggerAutonomousNaukriApply();
+      await triggerAutonomousNaukriApply({ turbo: true });
     } catch (err) {
       console.warn('[NAUKRI AUTONOMOUS WORKER TICKER WARN]', err.message);
     }
-  }, 2 * 60 * 1000);
+  }, 30 * 1000);
 
   // 3. Initial autonomous run 5 seconds after startup
   setTimeout(() => {
@@ -2936,6 +2958,7 @@ module.exports = {
   initNaukriScheduler,
   triggerNaukriUploadForActiveUsers,
   triggerAutonomousNaukriApply,
+  triggerFastApplyAll,
   checkNaukriPortfolio,
   applyNaukriMicroChanges,
   acquireUserLock,
