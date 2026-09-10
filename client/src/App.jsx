@@ -3742,7 +3742,24 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   const handleInspectAndApplyLive = async (targetJob) => {
     const job = targetJob || instantApplyJob;
-    if (!job || !job.jobUrl) {
+    if (!job) return;
+
+    // Robust jobUrl resolution from all available sources
+    let resolvedUrl = job.jobUrl || job.latestJobUrl;
+    if (!resolvedUrl && Array.isArray(job.applications)) {
+      const withUrl = job.applications.find(a => a.jobUrl);
+      if (withUrl) resolvedUrl = withUrl.jobUrl;
+    }
+    if (!resolvedUrl && Array.isArray(appliedJobs)) {
+      const match = appliedJobs.find(a => 
+        a.jobUrl && ((job.jobId && (a.jobId === job.jobId || a.id === job.jobId)) ||
+        (job.id && (a.jobId === job.id || a.id === job.id)) ||
+        (job.company && a.company?.toLowerCase() === job.company?.toLowerCase()))
+      );
+      if (match) resolvedUrl = match.jobUrl;
+    }
+
+    if (!resolvedUrl) {
       return showToast('Job posting URL is required to inspect live Naukri application', 'error');
     }
 
@@ -3755,7 +3772,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           jobId: job.jobId || job.id,
-          jobUrl: job.jobUrl,
+          jobUrl: resolvedUrl,
           company: job.company,
           jobTitle: job.jobTitle
         })
@@ -3898,13 +3915,22 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       jobId: jobOrCompanyItem.latestJobId || jobOrCompanyItem.applications?.[0]?.jobId,
       company: jobOrCompanyItem.company,
       jobTitle: jobOrCompanyItem.roles?.[0] || jobOrCompanyItem.applications?.[0]?.jobTitle || 'Target Role',
-      jobUrl: jobOrCompanyItem.latestJobUrl || jobOrCompanyItem.applications?.[0]?.jobUrl,
+      jobUrl: jobOrCompanyItem.latestJobUrl || jobOrCompanyItem.jobUrl || jobOrCompanyItem.applications?.find(a => a.jobUrl)?.jobUrl,
       unconfirmedReason: jobOrCompanyItem.latestUnconfirmedReason || jobOrCompanyItem.applications?.[0]?.verificationDetails || jobOrCompanyItem.error,
       pendingQuestions: jobOrCompanyItem.pendingQuestions || []
     } : {
       ...jobOrCompanyItem,
       unconfirmedReason: jobOrCompanyItem.verificationDetails || jobOrCompanyItem.error || jobOrCompanyItem.failureStage
     };
+
+    if (!normalizedJob.jobUrl && Array.isArray(appliedJobs)) {
+      const match = appliedJobs.find(a => 
+        a.jobUrl && ((normalizedJob.jobId && (a.jobId === normalizedJob.jobId || a.id === normalizedJob.jobId)) ||
+        (normalizedJob.id && (a.jobId === normalizedJob.id || a.id === normalizedJob.id)) ||
+        (normalizedJob.company && a.company?.toLowerCase() === normalizedJob.company?.toLowerCase()))
+      );
+      if (match) normalizedJob.jobUrl = match.jobUrl;
+    }
 
     setInstantApplyJob(normalizedJob);
     

@@ -1237,6 +1237,13 @@ function buildCompanySummaryFromApps(allApps, userKey = null) {
       }
     }
 
+    if (app.jobUrl && !entry.latestJobUrl) {
+      entry.latestJobUrl = app.jobUrl;
+    }
+    if ((app.jobId || app.id) && !entry.latestJobId) {
+      entry.latestJobId = app.jobId || app.id;
+    }
+
     if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
       entry.lastAppliedAt = app.appliedAt;
       if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
@@ -4203,6 +4210,7 @@ module.exports = {
   isConfirmedAppliedRecord,
   getNaukriCompanyApplicationSummary,
   getNaukriCompanyApplicationSummaryAsync,
+  buildCompanySummaryFromApps,
   getNaukriExternalJobs,
   recordExternalCompanyJob,
   inspectCompanySizeAndProfile,
