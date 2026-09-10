@@ -3782,28 +3782,30 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         })
       });
 
-      if (!res.success) {
+      const resData = await res.json().catch(() => ({ success: false, error: 'Invalid response from server' }));
+
+      if (!resData.success) {
         setLiveSessionStatusMsg('');
         setIsInspectingLive(false);
-        return showToast(res.error || res.message || 'Failed to start live session', 'error');
+        return showToast(resData.error || resData.message || 'Failed to start live session', 'error');
       }
 
-      if (res.isComplete) {
+      if (resData.isComplete) {
         setIsInspectingLive(false);
         setLiveSessionStatusMsg('');
-        showToast(res.message || '✅ Application verified and confirmed on Naukri!', 'success');
+        showToast(resData.message || '✅ Application verified and confirmed on Naukri!', 'success');
         setInstantApplyModalOpen(false);
         loadAppliedJobs();
         loadAppliedCompanies();
         return;
       }
 
-      if (res.sessionId) {
-        setActiveSessionId(res.sessionId);
+      if (resData.sessionId) {
+        setActiveSessionId(resData.sessionId);
       }
 
-      if (res.question && res.question.question) {
-        const q = res.question;
+      if (resData.question && resData.question.question) {
+        const q = resData.question;
         const dbMatch = (qaItems || []).find(item => item.question && item.question.toLowerCase() === q.question.toLowerCase());
         const initialAns = dbMatch?.answer || (Array.isArray(q.options) && q.options.length > 0 ? q.options[0] : '');
 
@@ -3819,10 +3821,10 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           answer: initialAns,
           category: 'Recruiter Screening',
           source: 'naukri',
-          turn: res.turn || 1
+          turn: resData.turn || 1
         }]);
 
-        setLiveSessionStatusMsg(`Turn ${res.turn || 1}: Real question extracted from live Naukri drawer!`);
+        setLiveSessionStatusMsg(`Turn ${resData.turn || 1}: Real question extracted from live Naukri drawer!`);
         showToast(`⚡ Real question extracted from Naukri for ${job.company}: "${q.question.slice(0, 45)}..."`, 'info');
       } else {
         setInstantApplyQuestions([]);
@@ -3855,25 +3857,27 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
         })
       });
 
-      if (!res.success) {
+      const resData = await res.json().catch(() => ({ success: false, error: 'Invalid response from server' }));
+
+      if (!resData.success) {
         setLiveSessionStatusMsg('');
         setIsApplyingInstant(false);
-        return showToast(res.error || res.message || 'Error submitting answer to live session', 'error');
+        return showToast(resData.error || resData.message || 'Error submitting answer to live session', 'error');
       }
 
-      if (res.isComplete) {
+      if (resData.isComplete) {
         setIsApplyingInstant(false);
         setLiveSessionStatusMsg('');
         setActiveSessionId(null);
-        showToast(res.message || '✅ Application verified and completed on Naukri!', 'success');
+        showToast(resData.message || '✅ Application verified and completed on Naukri!', 'success');
         setInstantApplyModalOpen(false);
         loadAppliedJobs();
         loadAppliedCompanies();
         return;
       }
 
-      if (res.question && res.question.question) {
-        const nextQ = res.question;
+      if (resData.question && resData.question.question) {
+        const nextQ = resData.question;
         const dbMatch = (qaItems || []).find(item => item.question && item.question.toLowerCase() === nextQ.question.toLowerCase());
         const initialAns = dbMatch?.answer || (Array.isArray(nextQ.options) && nextQ.options.length > 0 ? nextQ.options[0] : '');
 
@@ -3889,14 +3893,14 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           answer: initialAns,
           category: 'Recruiter Screening',
           source: 'naukri',
-          turn: res.turn || 2
+          turn: resData.turn || 2
         }]);
 
-        setLiveSessionStatusMsg(`Turn ${res.turn || 2}: Next real question detected!`);
+        setLiveSessionStatusMsg(`Turn ${resData.turn || 2}: Next real question detected!`);
         showToast(`⚡ Next question on Naukri: "${nextQ.question.slice(0, 45)}..."`, 'info');
       } else {
         setLiveSessionStatusMsg('Answer injected. Waiting for next turn or confirmation on Naukri...');
-        showToast(res.message || 'Answer injected into Naukri session.', 'info');
+        showToast(resData.message || 'Answer injected into Naukri session.', 'info');
       }
     } catch (err) {
       setLiveSessionStatusMsg(`Error: ${err.message}`);
