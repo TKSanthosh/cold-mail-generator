@@ -169,7 +169,7 @@ async function sendEmailNotification(userKey, payload) {
     `;
 
     const recipient = userKey.includes('@') ? userKey : 'tksanthosh494@gmail.com';
-    await sendGmail(recipient, subject, htmlBody);
+    await sendGmail(recipient, subject, htmlBody, null, userKey, 'notification.pdf', { isAlert: true });
     return { sent: true };
   } catch (err) {
     console.warn(`[EMAIL_ALERT] Notice:`, err.message);
