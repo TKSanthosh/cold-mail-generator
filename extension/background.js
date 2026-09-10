@@ -96,42 +96,44 @@ async function getStoredSettings() {
   });
 }
 
-async function checkUrlOnline(url) {
+async function checkUrlOnline(url, timeoutMs = null) {
   if (!url) return false;
+  let timer;
   try {
     const cleanUrl = url.replace(/\/+$/, '');
+    const isLocal = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
+    const timeout = timeoutMs || (isLocal ? 2000 : 8000);
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 2500);
+    timer = setTimeout(() => ctrl.abort(), timeout);
     
     // First try health check
     const resp = await fetch(`${cleanUrl}/api/health`, {
       method: 'GET',
+      headers: { 'Accept': 'application/json' },
       signal: ctrl.signal
     }).catch(() => null);
 
     if (resp && resp.ok) {
-      const data = await resp.json().catch(() => null);
-      if (data && (data.status === 'ok' || data.uptime !== undefined)) {
-        clearTimeout(timer);
-        return true;
-      }
+      if (timer) clearTimeout(timer);
+      return true;
     }
 
     // Fallback try applications endpoint
     const appResp = await fetch(`${cleanUrl}/api/applications`, {
       method: 'GET',
+      headers: { 'Accept': 'application/json' },
       signal: ctrl.signal
     }).catch(() => null);
-    clearTimeout(timer);
+
     if (appResp && appResp.ok) {
-      const data = await appResp.json().catch(() => null);
-      if (data && (Array.isArray(data) || Array.isArray(data.applications))) {
-        return true;
-      }
+      if (timer) clearTimeout(timer);
+      return true;
     }
     return false;
   } catch (e) {
     return false;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 
@@ -159,7 +161,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
     ].filter(u => u && (u.includes('localhost') || u.includes('127.0.0.1')));
 
     for (const local of localCandidates) {
-      if (await checkUrlOnline(local)) {
+      if (await checkUrlOnline(local, 1500)) {
         return local;
       }
     }
@@ -171,16 +173,15 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
     const cloudCandidates = [
       preferredUrl,
       renderUrl,
-      'https://ai-resume-tailor-backend-gldn.onrender.com',
-      'https://ai-resume-tailor-backend.onrender.com'
+      'https://ai-resume-tailor-backend-gldn.onrender.com'
     ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
 
     for (const cloud of cloudCandidates) {
-      if (await checkUrlOnline(cloud)) {
+      if (await checkUrlOnline(cloud, 8000)) {
         return cloud;
       }
     }
-    return renderUrl;
+    return preferredUrl || renderUrl;
   }
 
   // 3. AUTO MODE (Smart Failover)
@@ -195,7 +196,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   ].filter(u => u && (u.includes('localhost') || u.includes('127.0.0.1')));
 
   for (const local of localCandidates) {
-    if (await checkUrlOnline(local)) {
+    if (await checkUrlOnline(local, 1500)) {
       return local;
     }
   }
@@ -211,7 +212,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
 
   for (const cloud of cloudCandidates) {
     const clean = cloud.replace(/\/+$/, '');
-    if (await checkUrlOnline(clean)) {
+    if (await checkUrlOnline(clean, 8000)) {
       return clean;
     }
   }

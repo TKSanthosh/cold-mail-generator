@@ -266,6 +266,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   inputJd.addEventListener('input', updateCharCount);
   btnRescan.addEventListener('click', scanActiveTab);
 
+  function updateServerStatusBadge(online, detectedUrl) {
+    if (!serverStatus) return;
+    const dot = serverStatus.querySelector('.status-dot');
+    if (online) {
+      if (dot) dot.className = 'status-dot online';
+      const isLocal = detectedUrl && (detectedUrl.includes('localhost') || detectedUrl.includes('127.0.0.1'));
+      serverStatusLabel.innerText = isLocal ? 'Localhost' : 'Cloud API';
+      serverStatus.title = `Connected to ${detectedUrl} (${(currentSettings.serverMode || 'auto').toUpperCase()} mode - click for settings)`;
+    } else {
+      if (dot) dot.className = 'status-dot offline';
+      serverStatusLabel.innerText = 'Offline';
+      serverStatus.title = `Cannot reach server (${(currentSettings.serverMode || 'auto').toUpperCase()} mode). Click to open settings.`;
+    }
+  }
+
   // Status badge click -> open settings
   if (serverStatus) {
     serverStatus.addEventListener('click', () => {
@@ -280,18 +295,27 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnModeAuto.addEventListener('click', () => {
       currentSettings.serverMode = 'auto';
       setServerModeUI('auto');
+      chrome.storage.sync.set({ serverMode: 'auto' }, () => {
+        checkServerConnection();
+      });
     });
   }
   if (btnModeLocal) {
     btnModeLocal.addEventListener('click', () => {
       currentSettings.serverMode = 'local';
       setServerModeUI('local');
+      chrome.storage.sync.set({ serverMode: 'local', serverUrl: currentSettings.localUrl || 'http://localhost:5001' }, () => {
+        checkServerConnection();
+      });
     });
   }
   if (btnModeCloud) {
     btnModeCloud.addEventListener('click', () => {
       currentSettings.serverMode = 'cloud';
       setServerModeUI('cloud');
+      chrome.storage.sync.set({ serverMode: 'cloud', serverUrl: currentSettings.renderUrl || 'https://ai-resume-tailor-backend-gldn.onrender.com' }, () => {
+        checkServerConnection();
+      });
     });
   }
 
@@ -316,18 +340,51 @@ document.addEventListener('DOMContentLoaded', async () => {
     testResultBox.innerText = 'Testing connection...';
     testResultBox.classList.remove('hidden');
 
-    const url = setServerUrl.value.trim();
+    const url = setServerUrl.value.trim() || currentSettings.serverUrl;
+    const mode = currentSettings.serverMode || 'auto';
+    const cleanUrl = url.replace(/\/+$/, '');
+
+    // 1. First attempt direct fast health check from popup
+    let directSuccess = false;
+    try {
+      const isLocal = cleanUrl.includes('localhost') || cleanUrl.includes('127.0.0.1');
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), isLocal ? 2500 : 8000);
+      const resp = await fetch(`${cleanUrl}/api/health`, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: ctrl.signal
+      }).catch(() => null);
+      clearTimeout(timer);
+
+      if (resp && resp.ok) {
+        directSuccess = true;
+      }
+    } catch (_) {
+      directSuccess = false;
+    }
+
+    if (directSuccess) {
+      testResultBox.className = 'test-result success';
+      testResultBox.innerText = `✅ Successfully connected to ${cleanUrl} (${mode.toUpperCase()} mode)`;
+      updateServerStatusBadge(true, cleanUrl);
+      return;
+    }
+
+    // 2. Fallback check via background service worker
     chrome.runtime.sendMessage({
       action: 'PING_SERVER',
       serverUrl: url,
-      serverMode: currentSettings.serverMode || 'auto'
+      serverMode: mode
     }, (resp) => {
       if (resp && resp.online) {
         testResultBox.className = 'test-result success';
-        testResultBox.innerText = `✅ Successfully connected to ${resp.detectedUrl || url}`;
+        testResultBox.innerText = `✅ Successfully connected to ${resp.detectedUrl || url} (${mode.toUpperCase()} mode)`;
+        updateServerStatusBadge(true, resp.detectedUrl || url);
       } else {
         testResultBox.className = 'test-result failed';
-        testResultBox.innerText = `❌ Could not connect to ${url}. Make sure backend is accessible.`;
+        testResultBox.innerText = `❌ Could not connect to ${url}. Make sure backend is running/accessible.`;
+        updateServerStatusBadge(false, url);
       }
     });
   });
