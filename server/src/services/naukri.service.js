@@ -2275,13 +2275,38 @@ async function triggerAutonomousNaukriApply(options = {}) {
           await saveNaukriConfigAsync(userKey, config);
         }
 
-        const { getTodayAppliedStats, runStandaloneNaukriApply, getFilterConfig } = require('./naukri_apply.service');
+        const {
+          getTodayAppliedStats,
+          runStandaloneNaukriApply,
+          getFilterConfig,
+          applyAllUnconfirmedJobsAsync,
+          getNaukriAppliedJobs
+        } = require('./naukri_apply.service');
+
         const filterCfg = getFilterConfig(userKey);
-        const targetDaily = filterCfg.dailyTarget || 50;
+        const targetDaily = filterCfg.dailyTarget || 100;
         const stats = getTodayAppliedStats(userKey);
 
-        if (stats.todayCount < targetDaily) {
-          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Automatically applying to matching jobs for "${userKey}" (${stats.todayCount}/${targetDaily} submitted today)...`);
+        // 1. First, retry/verify any unconfirmed jobs whenever possible
+        const appliedJobs = getNaukriAppliedJobs(userKey);
+        const unconfirmed = appliedJobs.filter(j => 
+          j.status === 'SUBMISSION_UNCONFIRMED' || 
+          j.verificationStatus === 'UNVERIFIED' || 
+          j.verificationStatus === 'LEGACY_UNVERIFIED'
+        );
+
+        if (unconfirmed.length > 0 && !await isUserLockedAsync(userKey)) {
+          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Processing ${unconfirmed.length} unconfirmed jobs for "${userKey}"...`);
+          try {
+            await applyAllUnconfirmedJobsAsync(userKey);
+          } catch (unconfErr) {
+            console.warn(`[AUTONOMOUS UNCONFIRMED WARN for ${userKey}]`, unconfErr.message);
+          }
+        }
+
+        // 2. Discover and submit fresh matching 200+ employee jobs whenever under daily target
+        if (stats.todayCount < targetDaily && !await isUserLockedAsync(userKey)) {
+          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Automatically applying to matching 200+ employee jobs for "${userKey}" (${stats.todayCount}/${targetDaily} submitted today)...`);
           
           await runStandaloneNaukriApply(userKey, {
             applyAllAtOnce: true,
@@ -2289,7 +2314,7 @@ async function triggerAutonomousNaukriApply(options = {}) {
           });
         }
 
-        // Also perform non-destructive micro-touch on headline to keep active timestamp fresh
+        // 3. Perform non-destructive micro-touch on headline to keep candidate active timestamp fresh
         if (config.continuousPortfolioEnabled !== false) {
           try {
             await applyNaukriMicroChanges(userKey, { mode: 'touch' });
@@ -2308,7 +2333,7 @@ function initNaukriScheduler() {
   if (naukriSchedulerTimer) clearInterval(naukriSchedulerTimer);
   if (autonomousApplyTimer) clearInterval(autonomousApplyTimer);
 
-  logStructured('SCHEDULER', 'Initialized 24/7 automated uploader & autonomous Easy Apply worker across all active candidate accounts.');
+  logStructured('SCHEDULER', 'Initialized 24/7 continuous uploader & autonomous Easy Apply worker across all active candidate accounts.');
 
   // 1. Scheduled Slot Uploader Ticker (every 30s)
   naukriSchedulerTimer = setInterval(async () => {
@@ -2319,19 +2344,19 @@ function initNaukriScheduler() {
     }
   }, 30000);
 
-  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs automatically every 5 minutes)
+  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs continuously every 2 minutes whenever possible)
   autonomousApplyTimer = setInterval(async () => {
     try {
       await triggerAutonomousNaukriApply();
     } catch (err) {
       console.warn('[NAUKRI AUTONOMOUS WORKER TICKER WARN]', err.message);
     }
-  }, 5 * 60 * 1000);
+  }, 2 * 60 * 1000);
 
-  // 3. Initial autonomous check after boot (15 seconds)
+  // 3. Initial autonomous run 5 seconds after startup
   setTimeout(() => {
     triggerAutonomousNaukriApply().catch(() => {});
-  }, 15000);
+  }, 5000);
 }
 
 /**
