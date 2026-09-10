@@ -1,7 +1,9 @@
 // AI Resume Tailor & ATS Optimizer - Background Service Worker
 
 const DEFAULT_SETTINGS = {
+  serverMode: 'auto', // 'auto' | 'local' | 'cloud'
   serverUrl: 'http://localhost:5001',
+  localUrl: 'http://localhost:5001',
   renderUrl: 'https://ai-resume-tailor-backend-gldn.onrender.com',
   userKey: 'tksanthosh494_gmail_com',
   autoShowWidget: true,
@@ -53,7 +55,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   }
 
   if (request.action === 'CHECK_SERVER_HEALTH' || request.action === 'PING_SERVER') {
-    checkServerHealth(request.serverUrl)
+    checkServerHealth(request.serverUrl, request.serverMode)
       .then(res => sendResponse(res))
       .catch(err => sendResponse({ online: false, error: err.message }));
     return true;
@@ -95,6 +97,7 @@ async function getStoredSettings() {
 }
 
 async function checkUrlOnline(url) {
+  if (!url) return false;
   try {
     const cleanUrl = url.replace(/\/+$/, '');
     const ctrl = new AbortController();
@@ -108,7 +111,7 @@ async function checkUrlOnline(url) {
 
     if (resp && resp.ok) {
       const data = await resp.json().catch(() => null);
-      if (data && data.status === 'ok') {
+      if (data && (data.status === 'ok' || data.uptime !== undefined)) {
         clearTimeout(timer);
         return true;
       }
@@ -134,24 +137,73 @@ async function checkUrlOnline(url) {
 
 /**
  * Smart URL Resolver:
- * 1. ALWAYS prioritizes Localhost (localhost:5001, localhost:5000, 127.0.0.1) when running locally.
- * 2. Only if localhost is offline (e.g. running in production / on another laptop) -> falls back to Render cloud backend.
+ * Mode 'local': Forces Localhost connection (e.g. http://localhost:5001).
+ * Mode 'cloud': Forces 24/7 Cloud connection (e.g. Render backend).
+ * Mode 'auto':  Prefers Localhost if online, seamlessly falls back to Cloud backend if offline.
  */
-async function resolveLiveServerUrl(preferredUrl) {
+async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   const settings = await getStoredSettings();
+  const mode = explicitMode || settings.serverMode || 'auto';
+  const renderUrl = (settings.renderUrl || 'https://ai-resume-tailor-backend-gldn.onrender.com').replace(/\/+$/, '');
+  const localUrl = (settings.localUrl || 'http://localhost:5001').replace(/\/+$/, '');
 
-  // 1. Check local development server FIRST
-  const localCandidates = ['http://localhost:5001', 'http://127.0.0.1:5001', 'http://localhost:5000', 'http://127.0.0.1:5000'];
+  // 1. FORCED LOCAL MODE
+  if (mode === 'local') {
+    const localCandidates = [
+      preferredUrl,
+      localUrl,
+      'http://localhost:5001',
+      'http://127.0.0.1:5001',
+      'http://localhost:5000',
+      'http://127.0.0.1:5000'
+    ].filter(u => u && (u.includes('localhost') || u.includes('127.0.0.1')));
+
+    for (const local of localCandidates) {
+      if (await checkUrlOnline(local)) {
+        return local;
+      }
+    }
+    return preferredUrl || localUrl;
+  }
+
+  // 2. FORCED CLOUD MODE
+  if (mode === 'cloud') {
+    const cloudCandidates = [
+      preferredUrl,
+      renderUrl,
+      'https://ai-resume-tailor-backend-gldn.onrender.com',
+      'https://ai-resume-tailor-backend.onrender.com'
+    ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
+
+    for (const cloud of cloudCandidates) {
+      if (await checkUrlOnline(cloud)) {
+        return cloud;
+      }
+    }
+    return renderUrl;
+  }
+
+  // 3. AUTO MODE (Smart Failover)
+  // Check local development server FIRST
+  const localCandidates = [
+    preferredUrl,
+    localUrl,
+    'http://localhost:5001',
+    'http://127.0.0.1:5001',
+    'http://localhost:5000',
+    'http://127.0.0.1:5000'
+  ].filter(u => u && (u.includes('localhost') || u.includes('127.0.0.1')));
+
   for (const local of localCandidates) {
     if (await checkUrlOnline(local)) {
       return local;
     }
   }
 
-  // 2. Localhost is offline -> Use Production Cloud Backend (Render)
+  // Localhost is offline -> Use Production Cloud Backend (Render)
   const cloudCandidates = [
     preferredUrl,
-    settings.renderUrl,
+    renderUrl,
     'https://ai-resume-tailor-backend-gldn.onrender.com',
     'https://ai-resume-tailor-backend.onrender.com',
     'https://cold-mail-generator.onrender.com'
@@ -164,8 +216,7 @@ async function resolveLiveServerUrl(preferredUrl) {
     }
   }
 
-  // Default fallback to configured URL or localhost
-  return preferredUrl || 'http://localhost:5001';
+  return preferredUrl || localUrl;
 }
 
 async function handleTailorResume(data) {
@@ -234,8 +285,8 @@ async function handleDownloadPdf({ url, filename }) {
   });
 }
 
-async function checkServerHealth(serverUrl) {
-  const liveUrl = await resolveLiveServerUrl(serverUrl);
+async function checkServerHealth(serverUrl, serverMode) {
+  const liveUrl = await resolveLiveServerUrl(serverUrl, serverMode);
   const isOnline = await checkUrlOnline(liveUrl);
   return { online: isOnline, detectedUrl: liveUrl };
 }

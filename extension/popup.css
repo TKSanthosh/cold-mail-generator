@@ -101,6 +101,14 @@ body {
   border-radius: 9999px;
   font-size: 11px;
   border: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
+.status-indicator:hover {
+  background: var(--bg-card);
+  border-color: var(--border-focus);
 }
 
 .status-dot {
@@ -700,6 +708,53 @@ body {
 .settings-header p {
   font-size: 11px;
   color: var(--text-muted);
+}
+
+/* Server Mode Segmented Selector */
+.server-mode-selector {
+  display: flex;
+  background: var(--bg-main);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 4px;
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.mode-btn {
+  flex: 1;
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  padding: 6px 4px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.mode-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mode-btn.active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 4px rgba(79, 70, 229, 0.4);
+}
+
+.field-desc {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text-muted);
+  margin-top: 3px;
+  line-height: 1.3;
 }
 
 .toggle-group {

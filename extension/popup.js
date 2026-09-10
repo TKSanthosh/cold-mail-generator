@@ -43,7 +43,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   const drawerStatusBox = document.getElementById('drawer-status-box');
 
   // Settings inputs
+  const btnModeAuto = document.getElementById('btn-mode-auto');
+  const btnModeLocal = document.getElementById('btn-mode-local');
+  const btnModeCloud = document.getElementById('btn-mode-cloud');
+  const modeDesc = document.getElementById('mode-desc');
+  const groupServerUrl = document.getElementById('group-server-url');
   const setServerUrl = document.getElementById('set-server-url');
+  const urlDesc = document.getElementById('url-desc');
   const setUserKey = document.getElementById('set-user-key');
   const setAutoPilot = document.getElementById('set-auto-pilot');
   const setAutoWidget = document.getElementById('set-auto-widget');
@@ -53,7 +59,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const testResultBox = document.getElementById('test-result-box');
 
   let currentSettings = {
+    serverMode: 'auto', // 'auto' | 'local' | 'cloud'
     serverUrl: 'http://localhost:5001',
+    localUrl: 'http://localhost:5001',
+    renderUrl: 'https://ai-resume-tailor-backend-gldn.onrender.com',
     userKey: 'tksanthosh494_gmail_com',
     autoShowWidget: true,
     autoDownloadPdf: false,
@@ -64,9 +73,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   let generatedPdfFilename = '';
   let currentTailoredResumeData = null;
 
+  function setServerModeUI(mode) {
+    [btnModeAuto, btnModeLocal, btnModeCloud].forEach(btn => {
+      if (btn) btn.classList.toggle('active', btn.dataset.mode === mode);
+    });
+
+    if (mode === 'local') {
+      if (modeDesc) modeDesc.innerText = '💻 Localhost Mode: Forces connection to local server (http://localhost:5001).';
+      if (setServerUrl) setServerUrl.value = currentSettings.localUrl || 'http://localhost:5001';
+      if (urlDesc) urlDesc.innerText = 'Local server endpoint (port 5001 / 5000)';
+    } else if (mode === 'cloud') {
+      if (modeDesc) modeDesc.innerText = '☁️ Cloud Mode: Connects directly to 24/7 Render cloud backend.';
+      if (setServerUrl) setServerUrl.value = currentSettings.renderUrl || 'https://ai-resume-tailor-backend-gldn.onrender.com';
+      if (urlDesc) urlDesc.innerText = '24/7 Render Cloud API endpoint';
+    } else {
+      if (modeDesc) modeDesc.innerText = '⚡ Auto Mode: Checks localhost:5001 first, seamlessly switches to Cloud API if offline.';
+      if (setServerUrl) setServerUrl.value = currentSettings.serverUrl || 'http://localhost:5001';
+      if (urlDesc) urlDesc.innerText = 'Dynamic endpoint (auto-selected)';
+    }
+  }
+
   // Load stored settings
   chrome.storage.sync.get(currentSettings, (stored) => {
     currentSettings = { ...currentSettings, ...stored };
+    setServerModeUI(currentSettings.serverMode || 'auto');
     setServerUrl.value = currentSettings.serverUrl;
     setUserKey.value = currentSettings.userKey;
     if (setAutoPilot) setAutoPilot.checked = currentSettings.autoPilotMode !== false;
@@ -77,27 +107,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     scanActiveTab();
   });
 
-  // Check server connection with automatic port failover
+  // Check server connection with automatic port failover or mode restriction
   async function checkServerConnection() {
     chrome.runtime.sendMessage({
       action: 'CHECK_SERVER_HEALTH',
-      serverUrl: currentSettings.serverUrl
+      serverUrl: currentSettings.serverUrl,
+      serverMode: currentSettings.serverMode || 'auto'
     }, (resp) => {
       const dot = serverStatus.querySelector('.status-dot');
       if (resp && resp.online) {
         dot.className = 'status-dot online';
-        const isLocal = resp.detectedUrl && resp.detectedUrl.includes('localhost');
+        const isLocal = resp.detectedUrl && (resp.detectedUrl.includes('localhost') || resp.detectedUrl.includes('127.0.0.1'));
         serverStatusLabel.innerText = isLocal ? 'Localhost' : 'Cloud API';
-        if (resp.detectedUrl && resp.detectedUrl !== currentSettings.serverUrl) {
+        if (resp.detectedUrl && resp.detectedUrl !== currentSettings.serverUrl && currentSettings.serverMode === 'auto') {
           currentSettings.serverUrl = resp.detectedUrl;
           setServerUrl.value = resp.detectedUrl;
           chrome.storage.sync.set({ serverUrl: resp.detectedUrl });
         }
-        serverStatus.title = `Connected to ${resp.detectedUrl || currentSettings.serverUrl}`;
+        serverStatus.title = `Connected to ${resp.detectedUrl || currentSettings.serverUrl} (${currentSettings.serverMode || 'auto'} mode - click for settings)`;
       } else {
         dot.className = 'status-dot offline';
         serverStatusLabel.innerText = 'Offline';
-        serverStatus.title = `Cannot reach server at ${currentSettings.serverUrl}.`;
+        serverStatus.title = `Cannot reach server (${currentSettings.serverMode || 'auto'} mode). Click to open settings.`;
       }
     });
   }
@@ -235,6 +266,35 @@ document.addEventListener('DOMContentLoaded', async () => {
   inputJd.addEventListener('input', updateCharCount);
   btnRescan.addEventListener('click', scanActiveTab);
 
+  // Status badge click -> open settings
+  if (serverStatus) {
+    serverStatus.addEventListener('click', () => {
+      if (viewSettings.classList.contains('hidden')) {
+        btnToggleSettings.click();
+      }
+    });
+  }
+
+  // Mode button event listeners
+  if (btnModeAuto) {
+    btnModeAuto.addEventListener('click', () => {
+      currentSettings.serverMode = 'auto';
+      setServerModeUI('auto');
+    });
+  }
+  if (btnModeLocal) {
+    btnModeLocal.addEventListener('click', () => {
+      currentSettings.serverMode = 'local';
+      setServerModeUI('local');
+    });
+  }
+  if (btnModeCloud) {
+    btnModeCloud.addEventListener('click', () => {
+      currentSettings.serverMode = 'cloud';
+      setServerModeUI('cloud');
+    });
+  }
+
   // Settings toggle
   btnToggleSettings.addEventListener('click', () => {
     const isSettingsHidden = viewSettings.classList.contains('hidden');
@@ -242,6 +302,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       viewMain.classList.add('hidden');
       viewSettings.classList.remove('hidden');
       btnToggleSettings.innerText = '✕';
+      setServerModeUI(currentSettings.serverMode || 'auto');
     } else {
       viewSettings.classList.add('hidden');
       viewMain.classList.remove('hidden');
@@ -256,20 +317,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     testResultBox.classList.remove('hidden');
 
     const url = setServerUrl.value.trim();
-    chrome.runtime.sendMessage({ action: 'PING_SERVER', serverUrl: url }, (resp) => {
+    chrome.runtime.sendMessage({
+      action: 'PING_SERVER',
+      serverUrl: url,
+      serverMode: currentSettings.serverMode || 'auto'
+    }, (resp) => {
       if (resp && resp.online) {
         testResultBox.className = 'test-result success';
-        testResultBox.innerText = `✅ Successfully connected to ${url}`;
+        testResultBox.innerText = `✅ Successfully connected to ${resp.detectedUrl || url}`;
       } else {
         testResultBox.className = 'test-result failed';
-        testResultBox.innerText = `❌ Could not connect to ${url}. Make sure server is running.`;
+        testResultBox.innerText = `❌ Could not connect to ${url}. Make sure backend is accessible.`;
       }
     });
   });
 
   // Save Settings
   btnSaveSettings.addEventListener('click', () => {
-    currentSettings.serverUrl = setServerUrl.value.trim();
+    const enteredUrl = setServerUrl.value.trim();
+    currentSettings.serverUrl = enteredUrl;
+    if (currentSettings.serverMode === 'local') {
+      currentSettings.localUrl = enteredUrl;
+    } else if (currentSettings.serverMode === 'cloud') {
+      currentSettings.renderUrl = enteredUrl;
+    }
     currentSettings.userKey = setUserKey.value.trim();
     if (setAutoPilot) currentSettings.autoPilotMode = setAutoPilot.checked;
     currentSettings.autoShowWidget = setAutoWidget.checked;

@@ -178,13 +178,23 @@
       <div class="settings-card">
         <div class="settings-header">
           <h3>Extension Configuration</h3>
-          <p>Connect with your Cold Mail & Resume Generator</p>
+          <p>Connect with Localhost or Render Cloud API</p>
         </div>
 
         <div class="field-group">
-          <label for="set-server-url">Backend Server URL</label>
+          <label>Backend Connection Target</label>
+          <div class="server-mode-selector" id="server-mode-selector">
+            <button type="button" class="mode-btn active" data-mode="auto" id="btn-mode-auto" title="Automatically prefers Localhost when running, falls back to Cloud API">⚡ Auto</button>
+            <button type="button" class="mode-btn" data-mode="local" id="btn-mode-local" title="Forces connection to Localhost (port 5001)">💻 Localhost</button>
+            <button type="button" class="mode-btn" data-mode="cloud" id="btn-mode-cloud" title="Forces connection to 24/7 Render Cloud API">☁️ Cloud (Render)</button>
+          </div>
+          <span class="field-desc" id="mode-desc">⚡ Auto: Checks localhost:5001 first, falls back to Cloud API if offline.</span>
+        </div>
+
+        <div class="field-group" id="group-server-url">
+          <label for="set-server-url">Active Backend URL</label>
           <input type="text" id="set-server-url" value="http://localhost:5001" placeholder="http://localhost:5001" />
-          <span class="field-desc">Default local server running on port 5001</span>
+          <span class="field-desc" id="url-desc">Current active endpoint</span>
         </div>
 
         <div class="field-group">
