@@ -975,11 +975,12 @@
       company,
       jd
     }, (response) => {
+      const _lastErr = chrome.runtime.lastError;
       document.getElementById('air-loading').classList.add('air-hidden');
 
       if (!response || !response.success) {
         document.getElementById('air-action-box').classList.remove('air-hidden');
-        showError(response?.error || 'Failed to connect to backend server. Make sure it is running on http://localhost:5001');
+        showError(response?.error || (_lastErr ? _lastErr.message : 'Failed to connect to backend server. Make sure it is accessible.'));
         return;
       }
 
@@ -1021,6 +1022,7 @@
       url,
       filename
     }, (res) => {
+      const _dlErr = chrome.runtime.lastError;
       if (!res || !res.success) {
         const a = document.createElement('a');
         a.href = url;
@@ -1216,8 +1218,9 @@
       company: data.company || '',
       jd: data.jd || ''
     }, (resp) => {
+      const _pErr = chrome.runtime.lastError;
       if (!resp || !resp.success) {
-        showPromptError(resp?.error || 'Failed to connect to backend server on port 5001. Ensure backend is running.');
+        showPromptError(resp?.error || (_pErr ? _pErr.message : 'Failed to connect to backend server. Ensure backend is running.'));
         return;
       }
 
@@ -1360,24 +1363,28 @@
   // --- MESSAGE LISTENER FROM POPUP & BACKGROUND ---
   if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.onMessage && typeof chrome.runtime.onMessage.addListener === 'function') {
     chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (!request || !request.action) return false;
+
       if (request.action === 'SITE_PAUSE_UPDATED') {
         renderFloatingButtonState();
-        sendResponse({ success: true });
+        try { sendResponse({ success: true }); } catch (_) {}
         return true;
       }
 
       if (request.action === 'GET_PAGE_JD') {
         const data = scrapeJobData(true) || {};
-        sendResponse({
-          success: true,
-          data: {
-            role: data.role || '',
-            company: data.company || '',
-            jd: data.jd || '',
-            source: data.source || '',
-            url: window.location.href
-          }
-        });
+        try {
+          sendResponse({
+            success: true,
+            data: {
+              role: data.role || '',
+              company: data.company || '',
+              jd: data.jd || '',
+              source: data.source || '',
+              url: window.location.href
+            }
+          });
+        } catch (_) {}
         return true;
       }
 
@@ -1388,15 +1395,17 @@
           company: data.company || '',
           jd: request.selectedText || data.jd || ''
         });
-        sendResponse({ success: true });
+        try { sendResponse({ success: true }); } catch (_) {}
         return true;
       }
 
       if (request.action === 'TRIGGER_TAILOR_ON_PAGE') {
         openModalWithData();
-        sendResponse({ success: true });
+        try { sendResponse({ success: true }); } catch (_) {}
         return true;
       }
+
+      return false;
     });
   }
 
@@ -1409,6 +1418,7 @@
 
   function syncQaMemory(onComplete) {
     chrome.runtime.sendMessage({ action: 'GET_QA_ITEMS' }, (resp) => {
+      const _qaErr = chrome.runtime.lastError;
       if (resp && resp.success && Array.isArray(resp.qaItems)) {
         localQaMemory = resp.qaItems;
         console.log(`[AI Tailor Q&A] Loaded ${localQaMemory.length} questions from Supabase memory.`);
@@ -1847,6 +1857,7 @@
       question: cleanQ,
       answer: cleanA
     }, (resp) => {
+      const _saveErr = chrome.runtime.lastError;
       if (resp && resp.success) {
         showQaFeedbackBadge(`✓ Saved to Supabase: "${cleanQ.slice(0, 30)}${cleanQ.length > 30 ? '...' : ''}"`);
         syncQaMemory();

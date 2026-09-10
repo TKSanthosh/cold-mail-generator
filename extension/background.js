@@ -40,54 +40,58 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Centralized message dispatcher
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (!request || !request.action) return false;
+
   if (request.action === 'TAILOR_RESUME') {
     handleTailorResume(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true; // Keep channel open for async response
   }
 
   if (request.action === 'DOWNLOAD_PDF') {
     handleDownloadPdf(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true;
   }
 
   if (request.action === 'CHECK_SERVER_HEALTH' || request.action === 'PING_SERVER') {
     checkServerHealth(request.serverUrl, request.serverMode)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ online: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ online: false, error: err.message }); } catch (_) {} });
     return true;
   }
 
   if (request.action === 'SEND_EMAIL') {
     handleSendEmail(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true;
   }
 
   if (request.action === 'CREATE_DRAFT') {
     handleCreateDraft(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true;
   }
 
   if (request.action === 'GET_QA_ITEMS') {
     handleGetQaItems(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true;
   }
 
   if (request.action === 'SAVE_QA_ITEM') {
     handleSaveQaItem(request)
-      .then(res => sendResponse(res))
-      .catch(err => sendResponse({ success: false, error: err.message }));
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
     return true;
   }
+
+  return false;
 });
 
 async function getStoredSettings() {

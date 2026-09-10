@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       serverUrl: currentSettings.serverUrl,
       serverMode: currentSettings.serverMode || 'auto'
     }, (resp) => {
+      const _lastErr = chrome.runtime.lastError; // Consumes error to prevent unhandled runtime error
       const dot = serverStatus.querySelector('.status-dot');
       if (resp && resp.online) {
         dot.className = 'status-dot online';
@@ -165,14 +166,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
 
       chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_JD' }, (response) => {
-        if (chrome.runtime.lastError || !response || !response.data) {
+        const _scanErr = chrome.runtime.lastError;
+        if (_scanErr || !response || !response.data) {
           // If content script was not yet injected into this tab, inject dynamically
           if (chrome.scripting && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
             chrome.scripting.executeScript({
               target: { tabId: tab.id },
               files: ['content.js']
             }, () => {
-              if (chrome.runtime.lastError) {
+              const _injErr = chrome.runtime.lastError;
+              if (_injErr) {
                 labelDetectedStatus.innerText = 'Manual input mode';
                 badgeSource.innerText = 'Ready';
                 return;
@@ -180,6 +183,7 @@ document.addEventListener('DOMContentLoaded', async () => {
               // Retry after short delay
               setTimeout(() => {
                 chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_JD' }, (retryResp) => {
+                  const _retryErr = chrome.runtime.lastError;
                   if (retryResp && retryResp.data) {
                     applyJobData(retryResp.data);
                   } else {
@@ -250,7 +254,9 @@ document.addEventListener('DOMContentLoaded', async () => {
           updatePauseButtonState(`https://${activeDomain}`);
           chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0] && tabs[0].id) {
-              chrome.tabs.sendMessage(tabs[0].id, { action: 'SITE_PAUSE_UPDATED' }).catch(() => {});
+              chrome.tabs.sendMessage(tabs[0].id, { action: 'SITE_PAUSE_UPDATED' }, () => {
+                const _e = chrome.runtime.lastError;
+              });
             }
           });
         });
@@ -377,6 +383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       serverUrl: url,
       serverMode: mode
     }, (resp) => {
+      const _pingErr = chrome.runtime.lastError;
       if (resp && resp.online) {
         testResultBox.className = 'test-result success';
         testResultBox.innerText = `✅ Successfully connected to ${resp.detectedUrl || url} (${mode.toUpperCase()} mode)`;
@@ -513,11 +520,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       serverUrl: currentSettings.serverUrl,
       userKey: currentSettings.userKey
     }, (resp) => {
+      const _tErr = chrome.runtime.lastError;
       stateLoading.classList.add('hidden');
       wrapAction.classList.remove('hidden');
 
       if (!resp || !resp.success) {
-        showError(resp?.error || 'Failed to generate tailored resume. Check your server connection.');
+        showError(resp?.error || (_tErr ? _tErr.message : 'Failed to generate tailored resume. Check your server connection.'));
         return;
       }
 
@@ -554,6 +562,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       url: generatedPdfUrl,
       filename: generatedPdfFilename
     }, (res) => {
+      const _dlErr = chrome.runtime.lastError;
       if (!res || !res.success) {
         const a = document.createElement('a');
         a.href = generatedPdfUrl;
@@ -658,11 +667,12 @@ LinkedIn: https://linkedin.com/in/santhosh-tk`;
         serverUrl: currentSettings.serverUrl,
         userKey: currentSettings.userKey
       }, (resp) => {
+        const _sErr = chrome.runtime.lastError;
         btnSendEmail.disabled = false;
         if (btnDraftEmail) btnDraftEmail.disabled = false;
 
         if (!resp || !resp.success) {
-          showDrawerStatus('error', `⚠️ ${resp?.error || 'Failed to send email. Check your connection or Gmail auth.'}`);
+          showDrawerStatus('error', `⚠️ ${resp?.error || (_sErr ? _sErr.message : 'Failed to send email. Check your connection or Gmail auth.')}`);
           return;
         }
 
@@ -701,11 +711,12 @@ LinkedIn: https://linkedin.com/in/santhosh-tk`;
         serverUrl: currentSettings.serverUrl,
         userKey: currentSettings.userKey
       }, (resp) => {
+        const _dErr = chrome.runtime.lastError;
         btnSendEmail.disabled = false;
         btnDraftEmail.disabled = false;
 
         if (!resp || !resp.success) {
-          showDrawerStatus('error', `⚠️ ${resp?.error || 'Failed to create draft in Gmail.'}`);
+          showDrawerStatus('error', `⚠️ ${resp?.error || (_dErr ? _dErr.message : 'Failed to create draft in Gmail.')}`);
           return;
         }
 
