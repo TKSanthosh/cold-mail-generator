@@ -52,7 +52,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
-  if (request.action === 'CHECK_SERVER_HEALTH') {
+  if (request.action === 'CHECK_SERVER_HEALTH' || request.action === 'PING_SERVER') {
     checkServerHealth(request.serverUrl)
       .then(res => sendResponse(res))
       .catch(err => sendResponse({ online: false, error: err.message }));

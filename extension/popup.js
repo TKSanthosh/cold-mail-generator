@@ -80,23 +80,24 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Check server connection with automatic port failover
   async function checkServerConnection() {
     chrome.runtime.sendMessage({
-      action: 'PING_SERVER',
+      action: 'CHECK_SERVER_HEALTH',
       serverUrl: currentSettings.serverUrl
     }, (resp) => {
       const dot = serverStatus.querySelector('.status-dot');
       if (resp && resp.online) {
         dot.className = 'status-dot online';
-        serverStatusLabel.innerText = 'Connected';
+        const isLocal = resp.detectedUrl && resp.detectedUrl.includes('localhost');
+        serverStatusLabel.innerText = isLocal ? 'Localhost' : 'Cloud API';
         if (resp.detectedUrl && resp.detectedUrl !== currentSettings.serverUrl) {
           currentSettings.serverUrl = resp.detectedUrl;
           setServerUrl.value = resp.detectedUrl;
           chrome.storage.sync.set({ serverUrl: resp.detectedUrl });
         }
-        serverStatus.title = `Connected to ${currentSettings.serverUrl}`;
+        serverStatus.title = `Connected to ${resp.detectedUrl || currentSettings.serverUrl}`;
       } else {
         dot.className = 'status-dot offline';
         serverStatusLabel.innerText = 'Offline';
-        serverStatus.title = `Cannot reach server. Run 'node server/src/index.js' on port 5001.`;
+        serverStatus.title = `Cannot reach server at ${currentSettings.serverUrl}.`;
       }
     });
   }

@@ -685,6 +685,41 @@
     }
 
     if (data) {
+      if (!data.company || data.company.toLowerCase() === 'company') {
+        const cleanHost = host.replace(/^www\./, '').replace(/^careers?\./, '').replace(/^jobs?\./, '');
+        const base = cleanHost.split('.')[0];
+        const knownCompanies = {
+          'americanexpress': 'American Express',
+          'amex': 'American Express',
+          'microsoft': 'Microsoft',
+          'google': 'Google',
+          'amazon': 'Amazon',
+          'apple': 'Apple',
+          'meta': 'Meta',
+          'netflix': 'Netflix',
+          'oracle': 'Oracle',
+          'salesforce': 'Salesforce',
+          'adobe': 'Adobe',
+          'cisco': 'Cisco',
+          'intel': 'Intel',
+          'ibm': 'IBM',
+          'accenture': 'Accenture',
+          'tcs': 'TCS',
+          'infosys': 'Infosys',
+          'wipro': 'Wipro',
+          'cognizant': 'Cognizant',
+          'capgemini': 'Capgemini',
+          'jpmorgan': 'JPMorgan Chase',
+          'goldmansachs': 'Goldman Sachs',
+          'morganstanley': 'Morgan Stanley'
+        };
+        if (knownCompanies[base]) {
+          data.company = knownCompanies[base];
+        } else if (base && base.length > 2) {
+          data.company = base.charAt(0).toUpperCase() + base.slice(1);
+        }
+      }
+
       if (force) {
         if (data.jd && data.jd.trim().length > 20) {
           currentScrapedData = data;
