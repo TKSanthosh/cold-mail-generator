@@ -7,8 +7,16 @@ const USERS_DIR = path.join(__dirname, '../../users');
 const MASTER_RESUME_PATH = path.join(__dirname, '../../resume.json');
 const SECRET_PATH = process.env.GOOGLE_CLIENT_SECRET_PATH;
 
-if (!fs.existsSync(USERS_DIR)) {
-  fs.mkdirSync(USERS_DIR, { recursive: true });
+function getUserBaseDir() {
+  if (process.env.USE_TEST_DATABASE === 'true' || process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'test') {
+    const testDir = path.join(__dirname, '../../data/test_sandboxes');
+    if (!fs.existsSync(testDir)) fs.mkdirSync(testDir, { recursive: true });
+    return testDir;
+  }
+  if (!fs.existsSync(USERS_DIR)) {
+    fs.mkdirSync(USERS_DIR, { recursive: true });
+  }
+  return USERS_DIR;
 }
 
 function getUserKeyFromEmail(email) {
@@ -33,7 +41,8 @@ const {
 
 function getUserPaths(userKey) {
   const key = userKey || 'default_user';
-  const userDir = path.join(USERS_DIR, key);
+  const baseDir = getUserBaseDir();
+  const userDir = path.join(baseDir, key);
   const uploadsDir = path.join(userDir, 'uploads');
 
   return {

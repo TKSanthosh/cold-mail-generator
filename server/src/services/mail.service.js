@@ -135,6 +135,18 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
     if (err.message.includes('Undeliverable Email Blocked')) throw err;
   }
 
+  const { isTestModeActive, shouldMockEmails, blockDestructiveAction } = require('./safety_guard.service');
+  if (isTestModeActive() || shouldMockEmails()) {
+    blockDestructiveAction('GMAIL_SEND_EMAIL', { to: cleanTo, subject, attachmentName });
+    return {
+      id: `mock_msg_${Date.now()}`,
+      threadId: `mock_thread_${Date.now()}`,
+      labelIds: ['SENT'],
+      isMock: true,
+      status: 'BLOCKED_TEST_ACTION'
+    };
+  }
+
   let oauth2Client;
   if (userKey) {
     oauth2Client = getUserOAuthClient(userKey);

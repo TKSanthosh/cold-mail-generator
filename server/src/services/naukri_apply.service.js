@@ -4894,6 +4894,31 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
 
         console.log(`[BATCH_APPLY] [${idx + 1}/${targetJobs.length}] Applying to ${company} - ${jobTitle}...`);
 
+        const { isTestModeActive, shouldMockSubmission, blockDestructiveAction } = require('./safety_guard.service');
+        if (isTestModeActive() || shouldMockSubmission()) {
+          blockDestructiveAction('NAUKRI_LIVE_APPLICATION_SUBMIT', {
+            jobId: jId,
+            company,
+            jobTitle,
+            jobUrl
+          });
+          confirmNaukriApplicationSubmission(userKey, job, {
+            status: VerificationStatus.VERIFIED,
+            source: VerificationSource.NAUKRI_DOM_CONFIRMATION,
+            details: '[TEST_MODE] Safe mock submission completed without touching live employer job',
+            verifiedAt: new Date().toISOString()
+          });
+          activeBatchApplyState.submittedCount++;
+          activeBatchApplyState.completed++;
+          if (notificationService && typeof notificationService.broadcastToSseClients === 'function') {
+            notificationService.broadcastToSseClients(userKey, 'batch_apply_progress', {
+              ...activeBatchApplyState
+            });
+          }
+          await new Promise(r => setTimeout(r, 50));
+          continue;
+        }
+
         try {
           await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
           await new Promise(r => setTimeout(r, 800));

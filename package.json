@@ -10,8 +10,16 @@
     "start": "node server/src/index.js",
     "dev:server": "node server/src/index.js",
     "dev:client": "npm run dev --prefix client",
-    "test": "node tests/e2e_regression_suite.js",
-    "test:e2e": "node tests/e2e_regression_suite.js"
+    "test": "node tests/test_runner.js --suite=all",
+    "test:unit": "node tests/test_runner.js --suite=unit",
+    "test:integration": "node tests/test_runner.js --suite=integration",
+    "test:e2e": "node tests/test_runner.js --suite=e2e",
+    "test:naukri": "node tests/test_runner.js --suite=naukri",
+    "test:batch": "node tests/test_runner.js --suite=batch",
+    "test:security": "node tests/test_runner.js --suite=security",
+    "test:performance": "node tests/test_runner.js --suite=performance",
+    "test:all": "node tests/test_runner.js --suite=all",
+    "test:regression": "node tests/e2e_regression_suite.js"
   },
   "keywords": [
     "cold-email",

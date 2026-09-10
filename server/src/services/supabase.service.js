@@ -6,6 +6,9 @@ const SUPABASE_URL = process.env.SUPABASE_URL || 'https://gnuezthgywjfbalrcnbh.s
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_KEY || process.env.SUPABASE_ANON_KEY || 'sb_publishable_dDMl14z59IIbxq2utpKMmQ_HrISgSU9';
 
 function isSupabaseConfigured() {
+  if (process.env.TEST_MODE === 'true' || process.env.USE_TEST_DATABASE === 'true') {
+    return false;
+  }
   return Boolean(SUPABASE_URL && SUPABASE_KEY && SUPABASE_URL.startsWith('http'));
 }
 
