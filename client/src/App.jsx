@@ -5407,10 +5407,17 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 dark:text-slate-100">
                   {portfolioData?.candidateName || config.candidateName || 'Santhosh T K'}
                 </h2>
-                <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>{config.sessionStatus === 'ACTIVE' ? 'Naukri Session Active' : 'Session Linked'}</span>
-                </span>
+                {config.hasSession || config.username ? (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span>{config.sessionStatus === 'ACTIVE' ? 'Naukri Session Active' : 'Session Linked'}</span>
+                  </span>
+                ) : (
+                  <span className="text-xs px-2.5 py-0.5 rounded-full font-bold bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    <span>Session Required</span>
+                  </span>
+                )}
                 <span className="text-[11px] font-mono text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded">
                   24/7 Autonomous Background
                 </span>

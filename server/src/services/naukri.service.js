@@ -1254,6 +1254,11 @@ function getNaukriConfig(userKey = 'default_user') {
       if (!conf.username && process.env.NAUKRI_USERNAME) conf.username = process.env.NAUKRI_USERNAME;
       if (!conf.password && process.env.NAUKRI_PASSWORD) conf.password = process.env.NAUKRI_PASSWORD;
 
+      conf.hasSession = Boolean(hasActiveSession || (Array.isArray(conf.sessionCookies) && conf.sessionCookies.length > 0) || Boolean(conf.username) || Boolean(saved.hasSession));
+      if (conf.hasSession && (!conf.sessionStatus || conf.sessionStatus === 'NOT_CONFIGURED')) {
+        conf.sessionStatus = hasActiveSession ? 'ACTIVE' : 'CONFIGURED';
+      }
+
       if (!conf.nextUploadAt) {
         conf.nextUploadAt = calculateNextUploadTime(conf).toISOString();
       }
