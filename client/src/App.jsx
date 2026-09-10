@@ -3784,29 +3784,76 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     ];
   };
 
-  const handleOpenInstantApply = (jobItem) => {
-    setInstantApplyJob(jobItem);
+  const handleOpenInstantApply = (jobOrCompanyItem) => {
+    if (!jobOrCompanyItem) return;
+
+    // Normalize into jobItem structure
+    const isCompanyRecord = Boolean(jobOrCompanyItem.roles && Array.isArray(jobOrCompanyItem.applications));
+    const normalizedJob = isCompanyRecord ? {
+      id: jobOrCompanyItem.latestJobId || jobOrCompanyItem.applications?.[0]?.jobId || jobOrCompanyItem.applications?.[0]?.id,
+      jobId: jobOrCompanyItem.latestJobId || jobOrCompanyItem.applications?.[0]?.jobId,
+      company: jobOrCompanyItem.company,
+      jobTitle: jobOrCompanyItem.roles?.[0] || jobOrCompanyItem.applications?.[0]?.jobTitle || 'Target Role',
+      jobUrl: jobOrCompanyItem.latestJobUrl || jobOrCompanyItem.applications?.[0]?.jobUrl,
+      unconfirmedReason: jobOrCompanyItem.latestUnconfirmedReason || jobOrCompanyItem.applications?.[0]?.verificationDetails || jobOrCompanyItem.error,
+      pendingQuestions: jobOrCompanyItem.pendingQuestions || []
+    } : {
+      ...jobOrCompanyItem,
+      unconfirmedReason: jobOrCompanyItem.verificationDetails || jobOrCompanyItem.error || jobOrCompanyItem.failureStage
+    };
+
+    setInstantApplyJob(normalizedJob);
     
     // Find matching pending questions for this specific job or company
     const matchingPending = (pendingQuestions || []).filter(
-      p => (jobItem && p.jobId === (jobItem.id || jobItem.jobId)) || (jobItem && p.company?.toLowerCase() === jobItem.company?.toLowerCase())
+      p => (normalizedJob && (p.jobId === normalizedJob.id || p.jobId === normalizedJob.jobId)) ||
+           (normalizedJob && p.company?.toLowerCase() === normalizedJob.company?.toLowerCase())
     );
 
     const questionsList = [];
     const seen = new Set();
 
-    for (const p of matchingPending) {
-      questionsList.push({
-        id: p.id,
-        pendingId: p.id,
-        question: p.question,
-        answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
-        category: p.category || 'Recruiter Screening',
-        options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
-      });
-      seen.add(p.question.toLowerCase());
+    // 1. Add questions from item's own pendingQuestions if present
+    if (Array.isArray(normalizedJob.pendingQuestions)) {
+      for (const p of normalizedJob.pendingQuestions) {
+        const qText = (p.question || '').trim();
+        if (qText && !seen.has(qText.toLowerCase())) {
+          questionsList.push({
+            id: p.id || `pq_${Date.now()}_${Math.random()}`,
+            pendingId: p.id,
+            jobId: normalizedJob.jobId || p.jobId,
+            company: normalizedJob.company || p.company,
+            jobTitle: normalizedJob.jobTitle || p.jobTitle,
+            question: qText,
+            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+            category: p.category || 'Recruiter Screening',
+            options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
+          });
+          seen.add(qText.toLowerCase());
+        }
+      }
     }
 
+    // 2. Add matching pending questions from global pending queue
+    for (const p of matchingPending) {
+      const qText = (p.question || '').trim();
+      if (qText && !seen.has(qText.toLowerCase())) {
+        questionsList.push({
+          id: p.id,
+          pendingId: p.id,
+          jobId: normalizedJob.jobId || p.jobId,
+          company: normalizedJob.company || p.company,
+          jobTitle: normalizedJob.jobTitle || p.jobTitle,
+          question: qText,
+          answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+          category: p.category || 'Recruiter Screening',
+          options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
+        });
+        seen.add(qText.toLowerCase());
+      }
+    }
+
+    // 3. Prepend standard profile screening questions
     const defaultQs = buildDefaultQuestions();
     for (const sq of defaultQs) {
       if (!seen.has(sq.question.toLowerCase())) {
@@ -5865,42 +5912,73 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                         ))}
                       </div>
                     </td>
-                    <td className="p-3 font-mono font-bold text-slate-700 dark:text-slate-300">
+                    <td className="p-3">
                       {item.totalApplied > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
-                          <Check className="w-3 h-3" />
-                          <span>{item.totalApplied} applied</span>
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-bold">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>{item.totalApplied} applied</span>
+                          </span>
+                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">Verified on Naukri</span>
+                        </div>
                       ) : item.unconfirmedCount > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-[11px] bg-amber-50 dark:bg-amber-950/40 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/40" title="Application was attempted but confirmation from Naukri was inconclusive. Can be retried.">
-                          <AlertTriangle className="w-3 h-3 shrink-0" />
-                          <span>Unconfirmed (Not Applied)</span>
-                        </span>
+                        <div className="flex flex-col gap-1 max-w-xs">
+                          <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400 text-[11px] font-bold bg-amber-50 dark:bg-amber-950/50 px-2 py-0.5 rounded border border-amber-200 dark:border-amber-800/50 w-fit" title="Application was attempted but live DOM confirmation was inconclusive or screening questions need answering.">
+                            <AlertTriangle className="w-3 h-3 shrink-0" />
+                            <span>Unconfirmed (Not Applied)</span>
+                          </span>
+                          <span className="text-[10px] text-amber-800 dark:text-amber-300 font-medium leading-tight">
+                            {item.latestUnconfirmedReason || 'Awaiting live confirmation on Naukri'}
+                          </span>
+                          {item.hasPendingQuestions && (
+                            <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1">
+                              <Zap className="w-2.5 h-2.5" /> {item.pendingQuestions.length} Question(s) Missing Answer
+                            </span>
+                          )}
+                        </div>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-rose-500 dark:text-rose-400 text-[11px] bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800/40">
-                          <XCircle className="w-3 h-3 shrink-0" />
-                          <span>Failed</span>
-                        </span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 text-rose-500 dark:text-rose-400 text-[11px] font-bold bg-rose-50 dark:bg-rose-950/40 px-2 py-0.5 rounded border border-rose-200 dark:border-rose-800/40 w-fit">
+                            <XCircle className="w-3 h-3 shrink-0" />
+                            <span>Failed</span>
+                          </span>
+                          <span className="text-[10px] text-rose-700 dark:text-rose-400">
+                            {item.failureStage || item.error || 'Submission Error'}
+                          </span>
+                        </div>
                       )}
                     </td>
                     <td className="p-3 text-slate-500 dark:text-slate-400 font-mono text-[11px]">
                       {item.lastAppliedAt ? new Date(item.lastAppliedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : 'Recently'}
                     </td>
                     <td className="p-3 text-right">
-                      {item.latestJobUrl ? (
-                        <a
-                          href={item.latestJobUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-1"
-                          title="Open verified job link on Naukri"
-                        >
-                          <span>View Job</span>
-                          <ExternalLink className="w-3 h-3" />
-                        </a>
-                      ) : (
-                        <span className="text-slate-400 text-[11px]">—</span>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        {item.totalApplied === 0 && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenInstantApply(item)}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs hover:shadow transition-all cursor-pointer"
+                            title="Fill required screening questions & submit application live on Naukri"
+                          >
+                            <Zap className="w-3 h-3 text-amber-300 fill-amber-300" />
+                            <span>⚡ Answer & Apply</span>
+                          </button>
+                        )}
+                        {item.latestJobUrl ? (
+                          <a
+                            href={item.latestJobUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-semibold inline-flex items-center gap-1"
+                            title="Open verified job link on Naukri"
+                          >
+                            <span>View Job</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        ) : (
+                          <span className="text-slate-400 text-[11px]">—</span>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -6298,6 +6376,16 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                 Select or type your verified answers below. Clicking an option chip populates the answer instantly. Answers are stored in your Q&A DB permanently so the automation engine never asks again!
               </div>
             </div>
+
+            {instantApplyJob.unconfirmedReason && (
+              <div className="bg-indigo-50 dark:bg-indigo-950/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-950 dark:text-indigo-200 flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
+                <div>
+                  <strong className="block font-bold text-indigo-900 dark:text-indigo-300">Application Context / Missing Details:</strong>
+                  <span>{instantApplyJob.unconfirmedReason}</span>
+                </div>
+              </div>
+            )}
 
             <div className="flex flex-col gap-4 my-1">
               {instantApplyQuestions.map((q, idx) => (

@@ -1160,8 +1160,9 @@ function getPastAppliedCompanySets(appsOrUserKey) {
  * Returns unique companies with all roles applied, timestamps, and direct URLs
  * STRICT TRUTH RULE: totalApplied increments ONLY for verified applications.
  */
-function buildCompanySummaryFromApps(allApps) {
+function buildCompanySummaryFromApps(allApps, userKey = null) {
   const companyMap = new Map();
+  const pendingQs = userKey ? getPendingQuestions(userKey) : [];
 
   for (const app of (allApps || [])) {
     const rawCompany = (app.company || 'Unknown Company').trim();
@@ -1179,7 +1180,13 @@ function buildCompanySummaryFromApps(allApps) {
         lastAppliedAt: app.appliedAt || null,
         status: app.status || ApplicationState.SUBMISSION_UNCONFIRMED,
         verificationStatus: app.verificationStatus || VerificationStatus.UNVERIFIED,
-        latestJobUrl: app.jobUrl || 'https://www.naukri.com/'
+        latestJobUrl: app.jobUrl || 'https://www.naukri.com/',
+        latestJobId: app.jobId || app.id || null,
+        latestUnconfirmedReason: null,
+        pendingQuestions: [],
+        hasPendingQuestions: false,
+        failureStage: null,
+        error: null
       });
     }
 
@@ -1188,6 +1195,13 @@ function buildCompanySummaryFromApps(allApps) {
     if (!entry.roles.includes(roleTitle)) {
       entry.roles.push(roleTitle);
     }
+
+    // Find any matching pending questions for this specific app or company
+    const matchingPending = pendingQs.filter(p => 
+      (p.jobId && (p.jobId === app.jobId || p.jobId === app.id)) ||
+      (p.company && normalizeCompanyName(p.company) === normKey)
+    );
+
     entry.applications.push({
       id: app.id,
       jobId: app.jobId,
@@ -1196,22 +1210,50 @@ function buildCompanySummaryFromApps(allApps) {
       location: app.location,
       appliedAt: app.appliedAt,
       status: app.status,
-      verificationStatus: app.verificationStatus
+      verificationStatus: app.verificationStatus,
+      verificationDetails: app.verificationDetails || app.error,
+      failureStage: app.failureStage,
+      error: app.error,
+      pendingQuestions: matchingPending
     });
 
     if (isConfirmedAppliedRecord(app)) {
       entry.totalApplied++;
     } else if (app.status === ApplicationState.FAILED || (app.status || '').toLowerCase().includes('failed')) {
       entry.failedCount++;
+      if (!entry.failureStage) entry.failureStage = app.failureStage || 'Submission Failed';
+      if (!entry.error) entry.error = app.error;
     } else {
       entry.unconfirmedCount++;
+      const reason = app.verificationDetails || app.error || app.failureStage || 'Naukri post-submit confirmation could not be verified on live DOM';
+      if (!entry.latestUnconfirmedReason) {
+        entry.latestUnconfirmedReason = reason;
+      }
     }
 
     if (app.appliedAt && (!entry.lastAppliedAt || new Date(app.appliedAt) > new Date(entry.lastAppliedAt))) {
       entry.lastAppliedAt = app.appliedAt;
       if (app.jobUrl) entry.latestJobUrl = app.jobUrl;
+      if (app.jobId || app.id) entry.latestJobId = app.jobId || app.id;
       entry.status = app.status;
       entry.verificationStatus = app.verificationStatus;
+      if (app.verificationDetails || app.error) {
+        entry.latestUnconfirmedReason = app.verificationDetails || app.error;
+      }
+      if (app.failureStage) entry.failureStage = app.failureStage;
+    }
+  }
+
+  // Populate company-level pending questions
+  for (const [normKey, entry] of companyMap.entries()) {
+    const compPending = pendingQs.filter(p => 
+      (p.company && normalizeCompanyName(p.company) === normKey) ||
+      entry.applications.some(a => a.jobId && a.jobId === p.jobId)
+    );
+    entry.pendingQuestions = compPending;
+    entry.hasPendingQuestions = compPending.length > 0;
+    if (compPending.length > 0 && (!entry.latestUnconfirmedReason || entry.latestUnconfirmedReason.includes('could not be verified'))) {
+      entry.latestUnconfirmedReason = `${compPending.length} screening question(s) require your answer`;
     }
   }
 
@@ -1222,12 +1264,12 @@ function buildCompanySummaryFromApps(allApps) {
 
 function getNaukriCompanyApplicationSummary(userKey) {
   const allApps = getNaukriAppliedJobs(userKey);
-  return buildCompanySummaryFromApps(allApps);
+  return buildCompanySummaryFromApps(allApps, userKey);
 }
 
 async function getNaukriCompanyApplicationSummaryAsync(userKey) {
   const allApps = await getNaukriAppliedJobsAsync(userKey);
-  return buildCompanySummaryFromApps(allApps);
+  return buildCompanySummaryFromApps(allApps, userKey);
 }
 
 /**
