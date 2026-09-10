@@ -2561,6 +2561,8 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         };
       }
 
+      let questionsAnsweredCount = 0;
+
       // Check if job expired or closed
       const isJobExpired = await page.evaluate(() => {
         const text = document.body?.innerText?.toLowerCase() || '';
@@ -2691,7 +2693,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FORM_OPENED, stage: 'Form/Modal Opened' });
       updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.FILLING, stage: 'Filling Form Fields' });
 
-      let questionsAnsweredCount = 0;
+      questionsAnsweredCount = 0;
       let hasUnansweredMandatory = false;
 
       // Container-Scoped Form Element Detection

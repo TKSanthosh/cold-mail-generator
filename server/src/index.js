@@ -1204,6 +1204,18 @@ app.all('/api/naukri/cron-trigger', async (req, res) => {
   }
 });
 
+// Clear/Reset Automation Lock for User
+app.post('/api/naukri/unlock', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const { releaseUserLockAsync } = require('./services/naukri.service');
+    await releaseUserLockAsync(userKey);
+    res.json({ success: true, message: `Automation lock for account "${userKey}" has been cleared.` });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // --- NAUKRI 1-CLICK EASY APPLY & SMART Q&A MEMORY ENDPOINTS (STORE & RETRIEVE FROM DB) ---
 app.get('/api/naukri/qa', async (req, res) => {
   const userKey = resolveUserKey(req, res);

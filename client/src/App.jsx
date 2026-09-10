@@ -5125,23 +5125,42 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     }
   };
 
-  const handleTriggerUpload = async () => {
+  const handleTriggerUpload = async (force = false) => {
     if (!config.hasSession && !config.username && !formData.username) {
       return showToast('Please enter your Naukri credentials or link your session cookie first.', 'error');
     }
     setUploading(true);
     setOtpError('');
     try {
-      const res = await apiFetch('/api/naukri/trigger', {
+      let res = await apiFetch('/api/naukri/trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           username: formData.username.trim() || config.username,
           password: formData.password || config.password,
-          headless: config.headless
+          headless: config.headless,
+          force: Boolean(force)
         })
       });
-      const data = await res.json();
+      let data = await res.json();
+
+      // Auto-recover if background task or stale lock is present:
+      if (data.error && (data.error.includes('Concurrent run prevented') || data.error.includes('already executing')) && !force) {
+        showToast('🔄 Prior background lock detected. Overriding lock for immediate profile boost...', 'info');
+        await apiFetch('/api/naukri/unlock', { method: 'POST' }).catch(() => {});
+        res = await apiFetch('/api/naukri/trigger', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: formData.username.trim() || config.username,
+            password: formData.password || config.password,
+            headless: config.headless,
+            force: true
+          })
+        });
+        data = await res.json();
+      }
+
       if (data.error) throw new Error(data.error);
 
       if (data.result?.status === 'otp_required' || data.result?.requiresOtp) {

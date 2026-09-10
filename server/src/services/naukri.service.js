@@ -74,14 +74,20 @@ function isUserLocked(userKey = 'default_user') {
   return false;
 }
 
-async function acquireUserLockAsync(userKey = 'default_user', owner = `worker_${process.pid}_${Date.now()}`) {
+async function acquireUserLockAsync(userKey = 'default_user', owner = `worker_${process.pid}_${Date.now()}`, ttl = 300, force = false) {
+  if (force) {
+    userLocks.delete(userKey);
+    if (isSupabaseConfigured()) {
+      try { await supabaseReleaseLock(userKey); } catch (e) {}
+    }
+  }
   if (isSupabaseConfigured()) {
     try {
-      const acquired = await supabaseAcquireLock(userKey, owner, 300);
-      if (!acquired) return false;
+      const acquired = await supabaseAcquireLock(userKey, owner, ttl);
+      if (!acquired && !force) return false;
     } catch (e) {}
   }
-  if (userLocks.has(userKey)) {
+  if (userLocks.has(userKey) && !force) {
     const lock = userLocks.get(userKey);
     if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
       return false;
@@ -1857,10 +1863,19 @@ async function performResumeUploadOnPage(page, uploadPdfPath, resumeFileName, us
  * Automates logging into Naukri & uploading fresh 1-page PDF resume for specific user
  */
 async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = {}) {
+  const force = overrideOptions.force === true;
   // 0. Acquire Distributed Concurrency Lock
-  const lockAcquired = await acquireUserLockAsync(userKey, 'resume_uploader');
+  let lockAcquired = await acquireUserLockAsync(userKey, 'resume_uploader', 300, force);
   if (!lockAcquired) {
-    throw new Error(`Account "${userKey}" is already executing an active Naukri automation task. Concurrent run prevented.`);
+    // If lock is held by another worker for > 60 seconds, safely take over for direct user action
+    const existingLock = userLocks.get(userKey);
+    if (existingLock && (Date.now() - existingLock.lockedAt > 60 * 1000)) {
+      logStructured('LOCK', `Breaking stale background lease lock for user "${userKey}"`);
+      lockAcquired = await acquireUserLockAsync(userKey, 'resume_uploader', 300, true);
+    }
+    if (!lockAcquired) {
+      throw new Error(`Account "${userKey}" is already executing an active Naukri automation task. Concurrent run prevented.`);
+    }
   }
 
   try {
