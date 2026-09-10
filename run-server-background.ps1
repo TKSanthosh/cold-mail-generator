@@ -1,6 +1,7 @@
 # AI Resume Tailor & ATS Optimizer - Background Server Runner
 $ErrorActionPreference = "SilentlyContinue"
 $projectRoot = $PSScriptRoot
+if (-not $projectRoot) { $projectRoot = "c:\antigravity_projects\cold-mail-generator" }
 Set-Location $projectRoot
 
 $port = 5001
@@ -20,12 +21,6 @@ if ($isRunning) {
     Write-Output "AI Resume Tailor server is already running on port $port."
     exit 0
 }
-
-# 2. Pull latest updates from Git if internet is available
-try {
-    git fetch origin main --quiet 2>$null
-    git merge origin/main --quiet 2>$null
-} catch {}
 
 # 3. Launch Node.js server in the background
 $logFile = Join-Path $projectRoot "server_background.log"
