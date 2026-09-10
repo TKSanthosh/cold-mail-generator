@@ -3870,30 +3870,150 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   };
 
   const handleOpenCumulatedPendingModal = () => {
+    // 1. Gather all unconfirmed companies & job roles
+    const unconfirmedComps = (appliedCompanies || []).filter(c => c.totalApplied === 0 || c.unconfirmedCount > 0);
+    const unconfirmedJobList = (appliedJobs || []).filter(a => a.status === 'SUBMISSION_UNCONFIRMED' || a.verificationStatus === 'UNVERIFIED');
+
+    const roleGroups = [];
+    const seenRoles = new Set();
+
+    // From unconfirmed companies directory
+    for (const comp of unconfirmedComps) {
+      for (const role of (comp.roles || ['Target Developer Role'])) {
+        const key = `${comp.company}__${role}`.toLowerCase();
+        if (!seenRoles.has(key)) {
+          seenRoles.add(key);
+          const matchingPending = (pendingQuestions || []).filter(p => 
+            (p.company && p.company.toLowerCase() === comp.company.toLowerCase()) ||
+            (comp.applications && comp.applications.some(a => a.jobId && a.jobId === p.jobId))
+          );
+
+          roleGroups.push({
+            company: comp.company,
+            jobTitle: role,
+            jobUrl: comp.latestJobUrl || comp.applications?.[0]?.jobUrl,
+            jobId: comp.latestJobId || comp.applications?.[0]?.jobId,
+            unconfirmedReason: comp.latestUnconfirmedReason || comp.applications?.[0]?.verificationDetails,
+            pendingQuestions: matchingPending
+          });
+        }
+      }
+    }
+
+    // Fallback if appliedCompanies is empty but history has unconfirmed jobs
+    if (roleGroups.length === 0) {
+      for (const job of unconfirmedJobList) {
+        const key = `${job.company}__${job.jobTitle}`.toLowerCase();
+        if (!seenRoles.has(key)) {
+          seenRoles.add(key);
+          const matchingPending = (pendingQuestions || []).filter(p => 
+            p.jobId === job.jobId || p.jobId === job.id || (p.company && p.company.toLowerCase() === job.company?.toLowerCase())
+          );
+          roleGroups.push({
+            company: job.company || 'Naukri Employer',
+            jobTitle: job.jobTitle || 'Target Developer Role',
+            jobUrl: job.jobUrl,
+            jobId: job.jobId || job.id,
+            unconfirmedReason: job.verificationDetails || job.error,
+            pendingQuestions: matchingPending
+          });
+        }
+      }
+    }
+
+    if (roleGroups.length === 0) {
+      roleGroups.push({
+        company: 'All Unconfirmed Roles',
+        jobTitle: 'Target Developer Roles',
+        unconfirmedReason: 'Screening Q&A Required for Live Submission',
+        pendingQuestions: pendingQuestions || []
+      });
+    }
+
+    // Build cumulated questions grouped per role
+    const cumulatedQuestions = [];
+    let qCounter = 1;
+
+    for (const group of roleGroups) {
+      const defaultQs = buildDefaultQuestions();
+      const seenQText = new Set();
+
+      // First add specific pending questions for this role
+      for (const p of group.pendingQuestions) {
+        const qText = (p.question || '').trim();
+        if (qText && !seenQText.has(qText.toLowerCase())) {
+          seenQText.add(qText.toLowerCase());
+          cumulatedQuestions.push({
+            id: `cq_${qCounter++}`,
+            pendingId: p.id,
+            company: group.company,
+            jobTitle: group.jobTitle,
+            jobUrl: group.jobUrl,
+            jobId: group.jobId,
+            question: qText,
+            answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
+            category: p.category || 'Recruiter Screening',
+            options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No'],
+            unconfirmedReason: group.unconfirmedReason
+          });
+        }
+      }
+
+      // Then add core questions for this role (pre-filled from DB)
+      for (const sq of defaultQs) {
+        if (!seenQText.has(sq.question.toLowerCase())) {
+          seenQText.add(sq.question.toLowerCase());
+          const dbItem = (qaItems || []).find(q => q.id === sq.id || (q.question && q.question.toLowerCase() === sq.question.toLowerCase()));
+          cumulatedQuestions.push({
+            id: `cq_${qCounter++}`,
+            company: group.company,
+            jobTitle: group.jobTitle,
+            jobUrl: group.jobUrl,
+            jobId: group.jobId,
+            question: sq.question,
+            answer: dbItem?.answer || sq.answer,
+            category: sq.category,
+            options: sq.options,
+            unconfirmedReason: group.unconfirmedReason
+          });
+        }
+      }
+    }
+
     setInstantApplyJob({
-      company: 'All Unconfirmed Jobs',
-      jobTitle: `${(pendingQuestions || []).length} Recruiter Screening Question(s)`,
-      isBatchAll: true
+      company: 'All Unconfirmed Job Roles',
+      jobTitle: `${roleGroups.length} Roles • ${cumulatedQuestions.length} Questions`,
+      isBatchAll: true,
+      roleCount: roleGroups.length,
+      unconfirmedReason: `${roleGroups.length} unconfirmed role(s) ready for live screening answer verification`
     });
 
-    const questionsList = (pendingQuestions || []).map(p => ({
-      id: p.id,
-      pendingId: p.id,
-      jobId: p.jobId,
-      company: p.company,
-      jobTitle: p.jobTitle,
-      question: p.question,
-      answer: p.answer || (Array.isArray(p.options) && p.options.length > 0 ? p.options[0] : 'Yes'),
-      category: p.category || 'Recruiter Screening',
-      options: Array.isArray(p.options) && p.options.length > 0 ? p.options : ['Yes', 'No']
-    }));
-
-    if (questionsList.length === 0) {
-      setInstantApplyQuestions(buildDefaultQuestions());
-    } else {
-      setInstantApplyQuestions(questionsList);
-    }
+    setInstantApplyQuestions(cumulatedQuestions);
     setInstantApplyModalOpen(true);
+  };
+
+  const quickFillAllQuestions = () => {
+    const defaultMap = {
+      'std_exp': '4 Years',
+      'std_notice': '15 Days or less',
+      'std_c_ctc': '10.78 LPA',
+      'std_e_ctc': '18 LPA',
+      'std_loc': 'Bangalore / Remote',
+      'std_relocate': 'Yes'
+    };
+
+    setInstantApplyQuestions(prev => prev.map(q => {
+      const qLower = q.question.toLowerCase();
+      if (qLower.includes('experience') || qLower.includes('yoe')) return { ...q, answer: '4 Years' };
+      if (qLower.includes('notice') || qLower.includes('joining')) return { ...q, answer: '15 Days or less' };
+      if (qLower.includes('current ctc') || qLower.includes('current salary') || qLower.includes('present ctc')) return { ...q, answer: '10.78 LPA' };
+      if (qLower.includes('expected ctc') || qLower.includes('expected salary')) return { ...q, answer: '18 LPA' };
+      if (qLower.includes('location') || qLower.includes('city')) return { ...q, answer: 'Bangalore / Remote' };
+      if (qLower.includes('relocate')) return { ...q, answer: 'Yes' };
+      if (q.options && q.options.length > 0) return { ...q, answer: q.options[0] };
+      return q;
+    }));
+    showToast('⚡ Pre-filled 4 YOE, 15 Days notice, 10.78 LPA C-CTC, 18 LPA E-CTC across all roles!', 'info');
   };
 
   const submitInstantApply = async () => {
@@ -3914,8 +4034,27 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
       });
 
       // 2. Submit live application on Naukri
-      if (instantApplyJob && instantApplyJob.jobUrl) {
-        showToast('💾 Screening answers saved to DB! Dispatching application...', 'info');
+      if (instantApplyJob?.isBatchAll) {
+        showToast(`💾 Saved all screening answers to DB! Launching live application across ${instantApplyJob.roleCount || 'all'} unconfirmed role(s)...`, 'info');
+        setInstantApplyModalOpen(false);
+
+        apiFetch('/api/naukri/apply/retry-all-unconfirmed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userAnswers: itemsToSave })
+        }).then(async res => {
+          const data = await res.json();
+          if (data.success) {
+            showToast(`🚀 ${data.message || 'Live application worker started for all roles! Table will update with confirmed statuses.'}`, 'success');
+          } else {
+            showToast(`⚠️ ${data.error || data.message || 'Batch apply initiated'}`, 'warning');
+          }
+          fetchQaAndAppliedJobs();
+        }).catch(err => {
+          showToast(`⚠️ Batch apply running in background: ${err.message}`, 'info');
+        });
+      } else if (instantApplyJob && instantApplyJob.jobUrl) {
+        showToast('💾 Screening answers saved to DB! Dispatching live application...', 'info');
         setInstantApplyModalOpen(false);
 
         apiFetch('/api/naukri/apply/retry-instant', {
@@ -3953,24 +4092,9 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
   const [isRetryingUnconfirmed, setIsRetryingUnconfirmed] = useState(false);
 
-  const retryAllUnconfirmedJobs = async () => {
-    setIsRetryingUnconfirmed(true);
-    try {
-      const res = await apiFetch('/api/naukri/apply/retry-all-unconfirmed', {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (data.success) {
-        showToast(`⚡ ${data.message || 'Started background apply for all unconfirmed jobs!'}`, 'success');
-        fetchQaAndAppliedJobs();
-      } else {
-        showToast(`⚠️ ${data.error || data.message || 'Failed to start batch apply'}`, 'warning');
-      }
-    } catch (err) {
-      showToast(`❌ Error triggering batch apply: ${err.message}`, 'error');
-    } finally {
-      setIsRetryingUnconfirmed(false);
-    }
+  const retryAllUnconfirmedJobs = () => {
+    // Open the cumulated interactive screening modal so user can view/answer for all roles in one place!
+    handleOpenCumulatedPendingModal();
   };
 
   // Real-time synchronization with background worker status
@@ -6377,69 +6501,128 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               </div>
             </div>
 
-            {instantApplyJob.unconfirmedReason && (
-              <div className="bg-indigo-50 dark:bg-indigo-950/40 p-3 rounded-xl border border-indigo-200 dark:border-indigo-800/60 text-xs text-indigo-950 dark:text-indigo-200 flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-                <div>
-                  <strong className="block font-bold text-indigo-900 dark:text-indigo-300">Application Context / Missing Details:</strong>
-                  <span>{instantApplyJob.unconfirmedReason}</span>
-                </div>
+            {/* Top Quick-Fill Bar */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-3 bg-indigo-50/80 dark:bg-indigo-950/40 rounded-xl border border-indigo-200 dark:border-indigo-800/60">
+              <div className="flex items-center gap-2">
+                <Sparkles className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
+                <span className="text-xs font-bold text-indigo-950 dark:text-indigo-200">
+                  {instantApplyJob?.isBatchAll ? `Cumulated Screening Hub for ${instantApplyJob.roleCount || 1} Role(s)` : `${instantApplyJob.company} • ${instantApplyJob.jobTitle}`}
+                </span>
               </div>
-            )}
+              <button
+                type="button"
+                onClick={quickFillAllQuestions}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all cursor-pointer"
+                title="Populate candidate standard answers (4 YOE, 15 Days Notice, 10.78 LPA C-CTC, 18 LPA E-CTC, Bangalore) across all questions"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
+                <span>⚡ 1-Click Auto-Fill Candidate Profile</span>
+              </button>
+            </div>
 
-            <div className="flex flex-col gap-4 my-1">
-              {instantApplyQuestions.map((q, idx) => (
-                <div key={q.id || idx} className="bg-slate-50 dark:bg-slate-800/60 p-4 rounded-xl border border-slate-200 dark:border-slate-700/80 flex flex-col gap-2.5">
-                  <div className="flex justify-between items-start gap-2">
-                    <div className="flex flex-col">
-                      {q.company && (
-                        <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">
-                          {q.company} • {q.jobTitle}
-                        </span>
-                      )}
-                      <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5 mt-0.5">
-                        <span className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">Q{idx + 1}.</span>
-                        <span>{q.question}</span>
+            {/* Role-Grouped Questions Display */}
+            <div className="flex flex-col gap-6 my-1">
+              {Object.values(
+                instantApplyQuestions.reduce((acc, q) => {
+                  const groupKey = `${q.company || instantApplyJob.company || 'Company'}__${q.jobTitle || instantApplyJob.jobTitle || 'Role'}`;
+                  if (!acc[groupKey]) {
+                    acc[groupKey] = {
+                      company: q.company || instantApplyJob.company,
+                      jobTitle: q.jobTitle || instantApplyJob.jobTitle,
+                      jobUrl: q.jobUrl || instantApplyJob.jobUrl,
+                      unconfirmedReason: q.unconfirmedReason || instantApplyJob.unconfirmedReason,
+                      questions: []
+                    };
+                  }
+                  acc[groupKey].questions.push(q);
+                  return acc;
+                }, {})
+              ).map((group, gIdx) => (
+                <div key={gIdx} className="bg-slate-50/80 dark:bg-slate-800/40 rounded-2xl border border-slate-200 dark:border-slate-700/80 p-4 sm:p-5 flex flex-col gap-4 shadow-xs">
+                  {/* Role Header */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-200 dark:border-slate-700">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="p-1.5 bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-lg">
+                        <Building2 className="w-4 h-4" />
+                      </span>
+                      <h4 className="font-extrabold text-sm text-slate-900 dark:text-slate-100">
+                        {group.company} <span className="text-slate-400 font-normal">•</span> <span className="text-indigo-600 dark:text-indigo-400">{group.jobTitle}</span>
+                      </h4>
+                      <span className="text-[10px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full border border-amber-300 dark:border-amber-800">
+                        ⚠️ Screening Questions
                       </span>
                     </div>
-                    <span className="text-[10px] bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 font-bold px-2 py-0.5 rounded shrink-0">
-                      {q.category || 'Screening'}
-                    </span>
+                    {group.jobUrl && (
+                      <a
+                        href={group.jobUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline inline-flex items-center gap-1 font-semibold"
+                        title="Open posting directly on Naukri"
+                      >
+                        <span>View Job on Naukri</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    )}
                   </div>
 
-                  {/* Option Chips if options are present */}
-                  {Array.isArray(q.options) && q.options.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                      <span className="text-[10px] text-slate-400 font-extrabold uppercase mr-1">Quick Options:</span>
-                      {q.options.map((opt, optIdx) => {
-                        const isSelected = String(q.answer).trim().toLowerCase() === String(opt).trim().toLowerCase();
-                        return (
-                          <button
-                            key={optIdx}
-                            type="button"
-                            onClick={() => updateQuestionAnswer(q.id, opt)}
-                            className={`text-xs font-extrabold px-3 py-1 rounded-lg border transition-all cursor-pointer ${
-                              isSelected
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                : 'bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-slate-300 dark:border-slate-700'
-                            }`}
-                          >
-                            {isSelected ? '✓ ' : ''}{opt}
-                          </button>
-                        );
-                      })}
+                  {group.unconfirmedReason && (
+                    <div className="bg-amber-50 dark:bg-amber-950/40 p-2.5 rounded-xl border border-amber-200 dark:border-amber-900/60 text-[11px] text-amber-900 dark:text-amber-200 flex items-center gap-2">
+                      <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span><strong>Requirement:</strong> {group.unconfirmedReason}</span>
                     </div>
                   )}
 
-                  {/* Text Input Box */}
-                  <div>
-                    <input
-                      type="text"
-                      value={q.answer || ''}
-                      onChange={(e) => updateQuestionAnswer(q.id, e.target.value)}
-                      placeholder="Type your exact answer or choose an option above..."
-                      className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
-                    />
+                  {/* Role Questions */}
+                  <div className="flex flex-col gap-3.5">
+                    {group.questions.map((q, qIdx) => (
+                      <div key={q.id || qIdx} className="bg-white dark:bg-slate-900 p-3.5 sm:p-4 rounded-xl border border-slate-200 dark:border-slate-800 flex flex-col gap-2 shadow-2xs">
+                        <div className="flex justify-between items-start gap-2">
+                          <span className="text-xs font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                            <span className="text-indigo-600 dark:text-indigo-400 font-mono text-[11px]">Q{qIdx + 1}.</span>
+                            <span>{q.question}</span>
+                          </span>
+                          <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 font-bold px-2 py-0.5 rounded shrink-0">
+                            {q.category || 'Screening'}
+                          </span>
+                        </div>
+
+                        {/* Interactive Option Chips */}
+                        {Array.isArray(q.options) && q.options.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                            <span className="text-[10px] text-slate-400 font-extrabold uppercase mr-1">Select Answer:</span>
+                            {q.options.map((opt, optIdx) => {
+                              const isSelected = String(q.answer).trim().toLowerCase() === String(opt).trim().toLowerCase();
+                              return (
+                                <button
+                                  key={optIdx}
+                                  type="button"
+                                  onClick={() => updateQuestionAnswer(q.id, opt)}
+                                  className={`text-xs font-bold px-2.5 py-1 rounded-lg border transition-all cursor-pointer ${
+                                    isSelected
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                      : 'bg-slate-50 dark:bg-slate-800 hover:bg-indigo-50 dark:hover:bg-indigo-950 text-indigo-700 dark:text-indigo-300 border-slate-200 dark:border-slate-700'
+                                  }`}
+                                >
+                                  {isSelected ? '✓ ' : ''}{opt}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Text Input Box */}
+                        <div className="pt-0.5">
+                          <input
+                            type="text"
+                            value={q.answer || ''}
+                            onChange={(e) => updateQuestionAnswer(q.id, e.target.value)}
+                            placeholder="Type exact answer or choose option chip above..."
+                            className="w-full px-3 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-50/50 dark:bg-slate-800/80 text-slate-900 dark:text-slate-100 font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}
@@ -6447,7 +6630,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
 
             <div className="flex items-center justify-between pt-3 border-t border-slate-100 dark:border-slate-800">
               <span className="text-[11px] text-slate-500 dark:text-slate-400 font-semibold">
-                {instantApplyQuestions.length} Screening Question(s) Ready
+                {instantApplyQuestions.length} Question(s) Across All Selected Roles
               </span>
               <div className="flex items-center gap-3">
                 <button
@@ -6467,12 +6650,12 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                   {isApplyingInstant ? (
                     <>
                       <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Saving Answers to DB & Applying Live on Naukri...</span>
+                      <span>Saving Answers & Applying Live on Naukri...</span>
                     </>
                   ) : (
                     <>
                       <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-                      <span>⚡ Save to DB & Apply Live Now</span>
+                      <span>{instantApplyJob?.isBatchAll ? '⚡ Save All & Apply to All Roles Live' : '⚡ Save & Apply Live Now'}</span>
                     </>
                   )}
                 </button>

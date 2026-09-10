@@ -1628,9 +1628,10 @@ app.post('/api/naukri/apply/retry-instant', async (req, res) => {
 
 app.post('/api/naukri/apply/retry-all-unconfirmed', async (req, res) => {
   const userKey = resolveUserKey(req, res);
+  const { userAnswers } = req.body || {};
   try {
     // Run asynchronously in background so client request never times out
-    applyAllUnconfirmedJobsAsync(userKey).catch(err => {
+    applyAllUnconfirmedJobsAsync(userKey, userAnswers).catch(err => {
       console.error(`[BATCH UNCONFIRMED ERROR for ${userKey}]`, err.message);
     });
     res.json({

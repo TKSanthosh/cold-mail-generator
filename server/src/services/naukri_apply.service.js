@@ -547,8 +547,8 @@ function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
     return resolveAnswerWithOptionMapping(bestMatch.answer, bestMatch, confidence, availableOptions);
   }
 
-  // 4. Smart Profile Fallback Inference (Location, CTC, Notice Period, Relocation, Shift)
-  const inferred = inferAnswerFromProfile(rawQuestion, availableOptions);
+  // 4. Smart Profile Fallback Inference (Location, CTC, Notice Period, Relocation, Shift, Role/Skill Experience)
+  const inferred = inferAnswerFromProfile(rawQuestionText, availableOptions);
   if (inferred) {
     return inferred;
   }
@@ -581,19 +581,19 @@ function inferAnswerFromProfile(questionText, availableOptions = []) {
   }
 
   // 3. Expected & Current CTC
-  if (normQ.includes('expected ctc') || normQ.includes('expected salary') || normQ.includes('expectation')) {
+  if (normQ.includes('expected ctc') || normQ.includes('expected salary') || normQ.includes('expectation') || normQ.includes('expected annual ctc')) {
     if (Array.isArray(availableOptions) && availableOptions.length > 0) {
       const ctcOpt = availableOptions.find(o => o.includes('18') || o.includes('15') || o.includes('16') || o.includes('20') || o.toLowerCase().includes('lpa'));
       if (ctcOpt) return { answer: ctcOpt, matchedItem: { answer: ctcOpt }, confidence: 90, rawAnswer: ctcOpt };
     }
-    return { answer: '18 LPA', matchedItem: { answer: '18 LPA' }, confidence: 90, rawAnswer: '18 LPA' };
+    return { answer: '1800000', matchedItem: { answer: '1800000' }, confidence: 90, rawAnswer: '1800000' };
   }
-  if (normQ.includes('current ctc') || normQ.includes('present ctc') || normQ.includes('current salary') || normQ.includes('fixed ctc')) {
+  if (normQ.includes('current ctc') || normQ.includes('present ctc') || normQ.includes('current salary') || normQ.includes('fixed ctc') || normQ.includes('current annual ctc')) {
     if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const ctcOpt = availableOptions.find(o => o.includes('15') || o.includes('14') || o.includes('16') || o.toLowerCase().includes('lpa'));
+      const ctcOpt = availableOptions.find(o => o.includes('10') || o.includes('11') || o.includes('12') || o.toLowerCase().includes('lpa'));
       if (ctcOpt) return { answer: ctcOpt, matchedItem: { answer: ctcOpt }, confidence: 90, rawAnswer: ctcOpt };
     }
-    return { answer: '15 LPA', matchedItem: { answer: '15 LPA' }, confidence: 90, rawAnswer: '15 LPA' };
+    return { answer: '1078000', matchedItem: { answer: '1078000' }, confidence: 90, rawAnswer: '1078000' };
   }
 
   // 4. Notice Period & Joining Timeline
@@ -601,20 +601,26 @@ function inferAnswerFromProfile(questionText, availableOptions = []) {
     if (Array.isArray(availableOptions) && availableOptions.length > 0) {
       const npOpt = availableOptions.find(o => {
         const lo = o.toLowerCase();
-        return lo.includes('immediate') || lo.includes('15') || lo.includes('30') || lo.includes('1 month') || lo.includes('serving');
+        return lo.includes('15 days') || lo.includes('15') || lo.includes('1 month') || lo.includes('serving') || lo.includes('immediate');
       });
       if (npOpt) return { answer: npOpt, matchedItem: { answer: npOpt }, confidence: 90, rawAnswer: npOpt };
     }
-    return { answer: '15 Days / Immediate', matchedItem: { answer: '15 Days / Immediate' }, confidence: 90, rawAnswer: '15 Days / Immediate' };
+    return { answer: '15 days or less', matchedItem: { answer: '15 days or less' }, confidence: 90, rawAnswer: '15 days or less' };
   }
 
-  // 5. Total Experience
-  if (normQ.includes('total experience') || normQ.includes('years of experience') || normQ.includes('overall experience')) {
+  // 5. Total Experience / Role Experience / Skill Experience (e.g., Golang, Backend Developer, Full Stack)
+  if (normQ.includes('experience') || normQ.includes('how many years') || normQ.includes('years in') || normQ.includes('years of') || normQ.includes('yoe')) {
     if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const expOpt = availableOptions.find(o => o.includes('4') || o.includes('4+') || o.includes('3-5') || o.includes('4-6') || o.includes('3+'));
+      const expOpt = availableOptions.find(o => {
+        const lo = o.toLowerCase();
+        return lo.includes('3-4') || lo.includes('>4') || lo.includes('4+') || lo.includes('4 years') || lo.includes('3-5') || lo.includes('2-3') || lo.includes('3+');
+      });
       if (expOpt) return { answer: expOpt, matchedItem: { answer: expOpt }, confidence: 90, rawAnswer: expOpt };
+
+      const firstPositive = availableOptions.find(o => !o.toLowerCase().includes('no exp') && !o.toLowerCase().includes('0-'));
+      if (firstPositive) return { answer: firstPositive, matchedItem: { answer: firstPositive }, confidence: 85, rawAnswer: firstPositive };
     }
-    return { answer: '4+ Years', matchedItem: { answer: '4+ Years' }, confidence: 90, rawAnswer: '4+ Years' };
+    return { answer: '4 Years', matchedItem: { answer: '4 Years' }, confidence: 90, rawAnswer: '4 Years' };
   }
 
   // 6. Work Shifts & Work Mode
@@ -2027,12 +2033,12 @@ async function inspectNaukriEasyApplyState(page) {
     }
 
     const chipEls = surface
-      ? Array.from(surface.querySelectorAll('button, [role="button"], .chip, [class*="chip"], [class*="Chip"], [class*="option"]'))
+      ? Array.from(surface.querySelectorAll('button, [role="button"], label, input[type="radio"], [class*="radio" i], .chip, [class*="chip" i], [class*="Chip" i], [class*="option" i], li, div[class*="choice" i], div[class*="option" i], span[class*="radio" i]'))
       : [];
     const blockedChip = /^(send|skip|close|x|submit|apply|save)$/i;
     const chips = [...new Set(
       chipEls
-        .map(c => visibleText(c))
+        .map(c => visibleText(c) || c.getAttribute('value') || '')
         .filter(t => t && t.length > 0 && t.length < 80 && !blockedChip.test(t))
     )].slice(0, 24);
 
@@ -2071,36 +2077,50 @@ async function sendNaukriChatbotAnswer(page, answer, chips = []) {
   const result = await page.evaluate((ans, chipOptions) => {
     const visibleText = (el) => (el?.innerText || el?.textContent || '').trim();
     const lower = (s) => (s || '').toLowerCase();
+    const cleanNum = (s) => (s || '').replace(/[^0-9]/g, '');
     const target = lower(ans);
+    const targetDigits = cleanNum(ans);
 
     const surface = document.querySelector(
       '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot"], .apply-dialog, .apply-message'
     );
     const scope = surface || document;
 
-    if (Array.isArray(chipOptions) && chipOptions.length) {
-      const buttons = Array.from(scope.querySelectorAll('button, [role="button"], .chip, [class*="chip"], [class*="Chip"], label, [class*="option"]'));
-      const match = buttons.find(b => {
-        const t = lower(visibleText(b));
-        if (!t || t.length > 80) return false;
-        return t === target || t.includes(target) || target.includes(t);
-      });
-      if (match) {
-        match.click();
-        return { method: 'chip', sent: true };
+    // 1. Check all radio cards, buttons, chips, labels
+    const optionEls = Array.from(scope.querySelectorAll('label, [class*="radio" i], input[type="radio"], button, [role="button"], .chip, [class*="chip" i], [class*="Chip" i], [class*="option" i], li, div[class*="choice" i]'));
+    const match = optionEls.find(b => {
+      const t = lower(visibleText(b) || b.getAttribute('value') || '');
+      if (!t || t.length > 90) return false;
+      if (t === target || t.includes(target) || target.includes(t)) return true;
+      // Range matching (e.g., target is '4' and option is '3-4 years' or '>4 years' or '4+')
+      if (targetDigits && (t.includes(targetDigits) || (targetDigits === '4' && (t.includes('3-4') || t.includes('4+') || t.includes('>4'))))) {
+        return true;
       }
-    }
-
-    const radios = Array.from(scope.querySelectorAll('input[type="radio"], label'));
-    const radioMatch = radios.find(r => {
-      const t = lower(visibleText(r) || r.value || '');
-      return t && (t === target || t.includes(target) || target.includes(t));
+      return false;
     });
-    if (radioMatch) {
-      radioMatch.click();
-      return { method: 'radio', sent: true };
+
+    if (match) {
+      match.click();
+      const radioInput = match.querySelector('input[type="radio"]') || (match.tagName === 'INPUT' ? match : null);
+      if (radioInput) {
+        radioInput.checked = true;
+        radioInput.dispatchEvent(new Event('change', { bubbles: true }));
+        radioInput.dispatchEvent(new Event('click', { bubbles: true }));
+      }
+
+      // Check if a "Save" / "Send" / "Submit" button needs clicking after choosing option
+      setTimeout(() => {
+        const confirmBtn = Array.from(scope.querySelectorAll('button, [role="button"]')).find(b => {
+          const bt = lower(visibleText(b));
+          return bt === 'save' || bt === 'send' || bt === 'next' || bt === 'continue' || bt === 'submit';
+        });
+        if (confirmBtn) confirmBtn.click();
+      }, 300);
+
+      return { method: 'option_click', sent: true };
     }
 
+    // 2. Textarea / Text Input fallback
     const input = scope.querySelector(
       'textarea, input[type="text"], input[type="number"], input[type="tel"], input:not([type="hidden"]):not([type="file"]):not([type="radio"]):not([type="checkbox"]):not([type="button"]):not([type="submit"])'
     );
@@ -3143,6 +3163,16 @@ async function executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedRe
 
   await new Promise(r => setTimeout(r, 2500));
 
+  // 2.8 Sequential Chatbot surface check
+  const chatbotElement = await page.$('.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot"]');
+  if (chatbotElement) {
+    console.log(`[EASY_APPLY] Sequential chatbot surface detected for ${jobItem.company}. Completing interactive dialogue...`);
+    const chatResult = await completeNaukriEasyApplyConversation(page, userKey, jobItem, qaDb, resolvedResume);
+    if (chatResult.questionsAnsweredCount) {
+      questionsAnsweredCount += chatResult.questionsAnsweredCount;
+    }
+  }
+
   // 3. Detect interactive screening fields
   let formFields = [];
   try {
@@ -3196,7 +3226,6 @@ async function executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedRe
     console.warn(`[EASY_APPLY] Form fields inspection warning:`, err.message);
   }
 
-  let questionsAnsweredCount = 0;
   if (formFields && formFields.length > 0) {
     console.log(`[FORM] Detected ${formFields.length} interactive screening field(s) for ${jobItem.company}.`);
 
@@ -3447,13 +3476,26 @@ async function retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, user
  * Automatically iterates through all unconfirmed jobs, answers screening questions,
  * submits applications live on Naukri, and upgrades verified submissions to confirmed.
  */
-async function applyAllUnconfirmedJobsAsync(userKey = 'default_user') {
+async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnswers = []) {
   const {
     findBrowserExecutable,
     restoreAndInjectNaukriSession,
     acquireUserLockAsync,
     releaseUserLockAsync
   } = require('./naukri.service');
+
+  // Save any provided user Q&A answers into DB permanently
+  if (Array.isArray(customAnswers) && customAnswers.length > 0) {
+    for (const item of customAnswers) {
+      if (item && item.question && item.answer) {
+        await saveQaItemAsync(userKey, {
+          question: item.question.trim(),
+          answer: item.answer.trim(),
+          category: item.category || 'Recruiter Screening'
+        }).catch(() => {});
+      }
+    }
+  }
 
   const allApps = getNaukriAppliedJobs(userKey);
   const unconfirmed = allApps.filter(app => !isConfirmedAppliedRecord(app) && app.jobUrl);
@@ -3516,7 +3558,7 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user') {
           jobUrl: job.jobUrl
         };
 
-        const result = await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume);
+        const result = await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, customAnswers);
         if (result.isVerified) {
           verifiedCount++;
           console.log(`[UNCONFIRMED_BATCH] ✅ SUBMITTED & VERIFIED: "${job.jobTitle}" at "${job.company}"!`);
