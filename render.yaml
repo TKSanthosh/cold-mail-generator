@@ -12,6 +12,8 @@ services:
         value: 10000
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/project/src/.cache/puppeteer
+      - key: SUPABASE_URL
+        value: https://gnuezthgywjfbalrcnbh.supabase.co
       - key: ENCRYPTION_SECRET
         sync: false
       - key: JWT_SECRET
@@ -20,17 +22,25 @@ services:
         sync: false
       - key: CRON_SECRET
         sync: false
+      - key: SYSTEM_MUTATION_KEY
+        sync: false
       - key: NVIDIA_API_KEY
         sync: false
       - key: GOOGLE_CLIENT_ID
         sync: false
       - key: GOOGLE_CLIENT_SECRET
         sync: false
-      - key: SUPABASE_URL
-        value: https://gnuezthgywjfbalrcnbh.supabase.co
       - key: SUPABASE_ANON_KEY
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
+      - key: MAX_DAILY_NAUKRI_APPLICATIONS
+        value: "40"
+      - key: MAX_DAILY_COLD_EMAILS
+        value: "25"
+      - key: REQUIRE_OUTREACH_APPROVAL
+        value: "false"
+
+
 
 

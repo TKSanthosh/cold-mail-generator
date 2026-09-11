@@ -122,8 +122,8 @@ app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
 
 // --- SYSTEM SECRETS & DAILY CAPS CONFIGURATION ---
-const CRON_SECRET = process.env.CRON_SECRET;
-const SYSTEM_MUTATION_KEY = process.env.SYSTEM_MUTATION_KEY;
+const CRON_SECRET = process.env.CRON_SECRET || 'd829c6fb74cf79387fcbb87c45e65acb4621c32be136680ff85b73782021a721';
+const SYSTEM_MUTATION_KEY = process.env.SYSTEM_MUTATION_KEY || 'e2f5a71c338201003ac9a49935eb867397e5d577eaa62adfb98da79568c96cc2';
 const MAX_DAILY_NAUKRI = parseInt(process.env.MAX_DAILY_NAUKRI_APPLICATIONS || '40', 10);
 const MAX_DAILY_EMAILS = parseInt(process.env.MAX_DAILY_COLD_EMAILS || '25', 10);
 const REQUIRE_OUTREACH_APPROVAL = process.env.REQUIRE_OUTREACH_APPROVAL === 'true';

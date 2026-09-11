@@ -22,6 +22,8 @@ jobs:
           echo "Triggering Naukri automated profile boost..."
           curl -s -X POST "https://cold-mail-generator-7ytw.onrender.com/api/naukri/cron-trigger?force=true" \
             -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \
             --max-time 240 \
             --retry 1 \
             --retry-delay 10 \
