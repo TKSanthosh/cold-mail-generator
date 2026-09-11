@@ -260,24 +260,25 @@ function generateResumePdf(resumeJson, outputPath) {
           });
         }
         
-        const candidateTitle = resumeJson.personalInfo?.title || 'Full Stack Developer / Software Engineer';
+        const candidateTitle = resumeJson.personalInfo?.title || 'Software Development Engineer / Full Stack Developer';
         const titleKeywords = [
           candidateTitle,
           'Software Engineer', 'Full Stack Developer', 'Software Development Engineer',
           'SDE', 'Backend Engineer', 'Frontend Engineer', 'Node.js Developer',
-          'React Developer', 'MERN Stack Developer', 'Web Application Developer'
+          'React Developer', 'Full Stack Software Engineer', 'Web Application Developer'
         ];
 
-        const industryKeywords = [
-          'Node.js', 'Express.js', 'React.js', 'JavaScript', 'TypeScript', 'HTML5', 'CSS3',
-          'RESTful APIs', 'Microservices', 'System Design', 'MySQL', 'MongoDB', 'PostgreSQL',
-          'AWS', 'Cloud Computing', 'Docker', 'Kubernetes', 'CI/CD', 'Git', 'GitHub',
-          'JWT', 'RBAC', 'Authentication', 'WebSockets', 'Unit Testing', 'Jest',
-          'Agile', 'Scrum', 'Postman', 'Performance Optimization', 'Database Indexing',
-          'Data Structures', 'Algorithms', 'Scalable Architecture'
+        // Only exact skills and competencies explicitly present in Santhosh's verified resume
+        const verifiedCoreKeywords = [
+          'Node.js', 'Express.js', 'React.js', 'JavaScript', 'JavaScript (ES6+)', 'React Hooks',
+          'RESTful APIs', 'REST API', 'MySQL', 'MongoDB', 'JWT Authentication', 'JWT',
+          'RBAC', 'Role-Based Access Control', 'HTML5', 'CSS3', 'Reusable Components',
+          'MVC Architecture', 'Async/Await', 'WebSockets', 'Joins', 'Indexing',
+          'Query Optimization', 'Performance Optimization', 'Structured Logging',
+          'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'Clean Code', 'Debugging'
         ];
 
-        keywordsToEmbed = Array.from(new Set([...skillsList, ...titleKeywords, ...industryKeywords])).filter(Boolean);
+        keywordsToEmbed = Array.from(new Set([...skillsList, ...titleKeywords, ...verifiedCoreKeywords])).filter(Boolean);
       }
 
       if (keywordsToEmbed.length > 0) {
