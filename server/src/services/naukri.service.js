@@ -2276,8 +2276,6 @@ async function triggerAutonomousNaukriApply(options = {}) {
     getAllUserKeys().forEach(k => {
       if (k && !k.startsWith('test_') && !k.startsWith('temp_')) userKeySet.add(k);
     });
-    if (userKeySet.size === 0) userKeySet.add('tksanthosh494_gmail_com');
-
     const targetUsers = Array.from(userKeySet);
 
     for (const userKey of targetUsers) {

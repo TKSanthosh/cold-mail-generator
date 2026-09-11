@@ -561,97 +561,52 @@ async function parsePastedLinkedInPost(rawText, userKey = null) {
 }
 
 /**
- * Uses LLM Intelligence to discover fresh recruiter hiring posts matching user's keywords,
- * with strict deliverability & anti-bounce validation.
+ * Discovers authentic company talent acquisition leads matching user's keywords,
+ * with strict deliverability & anti-bounce validation. Does NOT fabricate fake person names or fake social posts.
  */
-async function discoverLiveRecruiterPostsWithLlm(keywords = "MERN Stack React Node.js", count = 15, timeFrame = "3d", userKey = null) {
-  const timeDescriptions = {
-    '24h': 'published strictly within the past 24 hours (today)',
-    '3d': 'published strictly within the past 1 to 3 days',
-    '7d': 'published strictly within the past 7 days (this week)',
-    '30d': 'published within the past 30 days (this month)',
-    'all': 'published recently across active tech companies'
-  };
-  const timeDesc = timeDescriptions[timeFrame] || 'published within the past 1 to 3 days';
+async function discoverTargetCompanyRecruiterLeads(keywords = "MERN Stack React Node.js", count = 15, timeFrame = "3d", userKey = null) {
+  // Use authentic verified company recruitment channels and domain-resolved hiring contacts
+  const cleanKeywords = (keywords || 'Full Stack Developer').trim();
+  const leads = [];
+  const domainKeys = Object.keys(KNOWN_COMPANY_DOMAINS);
 
-  const systemPrompt = `You are an elite, real-time LinkedIn recruiter search intelligence engine.
-Generate a list of ${count} realistic, authentic recruiter job postings ${timeDesc} by real Indian tech startups, product firms, and global enterprise teams in Bangalore, Hyderabad, Pune, Mumbai, Gurgaon, Noida, or Remote hiring for: "${keywords}".
+  for (const compKey of domainKeys) {
+    if (leads.length >= count) break;
+    const domain = KNOWN_COMPANY_DOMAINS[compKey];
+    const companyName = compKey.charAt(0).toUpperCase() + compKey.slice(1);
+    const email = `careers@${domain}`;
 
-Requirements:
-- Target real companies (e.g. Swiggy, Razorpay, PhonePe, Zomato, CRED, Groww, Freshworks, Postman, Juspay, Meesho, Dream11, Flipkart, Paytm, Urban Company, InMobi, BrowserStack, Zoho, Chargebee, Darwinbox, CleverTap, Delhivery, Porter, Jupiter, Thoughtworks, Nagarro, EPAM, Google India, Microsoft India, Atlassian India)
-- Provide for each post:
-  1. recruiterName (Real person name only, e.g. "Priya Sharma", "Arjun Nair", "Rohit Sen", "Ananya Verma")
-  2. company (Exact company name)
-  3. role (e.g. "Full Stack Developer (MERN)", "Backend Engineer (Node.js)", "Senior Software Engineer")
-  4. email (Authentic corporate recruitment email, e.g. careers@swiggy.in, tech-hiring@razorpay.com, careers@phonepe.com, techjobs@zomato.com, jobs@browserstack.com, careers@freshworks.com, etc.)
-  5. postSnippet (A realistic 2-3 sentence hiring post text with exact tech stack requirements)
-  6. postedDaysAgo (Number matching timeframe: 1 for 24h, 1-3 for 3d, 1-7 for 7d)
+    if (isEmailBounced(email, userKey)) continue;
 
-OUTPUT FORMAT: Strict JSON array of objects only. No markdown fences.`;
-
-  try {
-    const rawText = await callLlm(systemPrompt, `Discover fresh active recruiter posts for: ${keywords} (Timeframe: ${timeFrame})`, 1800);
-    const posts = [];
-    try {
-      const parsed = JSON.parse(rawText.trim().replace(/^```json/i, '').replace(/```$/i, '').trim());
-      if (Array.isArray(parsed)) posts.push(...parsed);
-    } catch (e) {
-      const match = rawText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-      if (match) {
-        try { posts.push(...JSON.parse(match[0])); } catch (err) {}
-      }
+    const verification = await verifyEmailDeliverability(email, userKey);
+    if (verification.isValid) {
+      leads.push({
+        id: `lead_corp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+        email,
+        recruiterName: `${companyName} Talent Acquisition Team`,
+        company: companyName,
+        role: `Software Engineer / Full Stack Developer (${cleanKeywords.split(',')[0].trim()})`,
+        postSnippet: null,
+        sourceUrl: `https://www.linkedin.com/company/${compKey}/jobs/`,
+        postedAt: new Date().toISOString(),
+        postedDaysAgo: 0,
+        timeFrame: 'Direct Company Inquiry (Verified Domain)',
+        isVerified: true,
+        isLivePost: false,
+        leadType: 'DIRECT_COMPANY_INQUIRY',
+        deliverabilityScore: verification.score || 95
+      });
     }
-
-    if (posts.length === 0) return [];
-    const validRawPosts = posts.filter(p => p.email && p.email.includes('@') && !isEmailBounced(p.email.toLowerCase().trim(), userKey));
-
-    const verificationResults = await Promise.all(
-      validRawPosts.map(async (p) => {
-        const cleanEmail = p.email.toLowerCase().trim();
-        const verification = await verifyEmailDeliverability(cleanEmail, userKey);
-        let deliverableEmail = cleanEmail;
-
-        if (!verification.isValid) {
-          const domain = resolveCompanyDomain(p.company);
-          const resolved = await generateAndVerifyRecruiterEmail(p.recruiterName, p.company, domain, userKey);
-          if (resolved && resolved.email) {
-            deliverableEmail = resolved.email;
-          } else {
-            return null; // Skip invalid, non-deliverable email
-          }
-        }
-
-        const companyClean = (p.company || 'Tech Company').trim();
-        const days = p.postedDaysAgo || (timeFrame === '24h' ? 1 : 2);
-        const cleanRecruiterName = (p.recruiterName || `${companyClean} Hiring Team`)
-          .replace(/\([^)]*\)/g, '')
-          .replace(/\[[^\]]*\]/g, '')
-          .trim();
-
-        return {
-          id: `lead_live_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
-          email: deliverableEmail,
-          recruiterName: cleanRecruiterName || `${companyClean} Hiring Team`,
-          company: companyClean,
-          role: p.role || `Full Stack Developer (${keywords.split(',')[0] || 'MERN'})`,
-          postSnippet: p.postSnippet || `${companyClean} is hiring for ${p.role || keywords}. Send your updated resume to ${deliverableEmail}.`,
-          sourceUrl: p.sourceUrl || `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(companyClean + ' ' + (p.role || keywords))}&location=India`,
-          postedAt: new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString(),
-          postedDaysAgo: days,
-          timeFrame: `${days}d ago (Live Verified)`,
-          isVerified: true,
-          isLive: true,
-          deliverabilityScore: verification.score || 95
-        };
-      })
-    );
-
-    return verificationResults.filter(Boolean);
-  } catch (err) {
-    console.warn('[LINKEDIN LIVE DISCOVERY WARN]', err.message);
-    return [];
   }
+
+  return leads;
 }
+
+// Backward-compatibility alias that returns honest, verified company recruitment leads
+async function discoverLiveRecruiterPostsWithLlm(keywords = "MERN Stack React Node.js", count = 15, timeFrame = "3d", userKey = null) {
+  return discoverTargetCompanyRecruiterLeads(keywords, count, timeFrame, userKey);
+}
+
 
 /**
  * Harvests authentic recruiter posts with zero fake emails and full deliverability validation
@@ -1082,7 +1037,7 @@ function initLinkedInScheduler() {
       if (!config.lastRunAt || now >= nextRun) {
         console.log('[LINKEDIN SCHEDULER] Immediate boot cycle triggered! Searching recruiter posts & dispatching emails...');
         const discoveredUsers = getAllUserKeys();
-        const targetUsers = discoveredUsers.length > 0 ? discoveredUsers : ['tksanthosh494_gmail_com'];
+        const targetUsers = discoveredUsers;
 
         for (const userKey of targetUsers) {
           if (isUserAuthorized(userKey)) {
@@ -1126,7 +1081,7 @@ function initLinkedInScheduler() {
       console.log(`[LINKEDIN AUTO-PILOT] Scheduled trigger reached (${modeDesc})! Starting 100% autonomous discovery and direct email dispatch to HRs...`);
 
       const discoveredUsers = getAllUserKeys();
-      const targetUsers = discoveredUsers.length > 0 ? discoveredUsers : ['tksanthosh494_gmail_com'];
+      const targetUsers = discoveredUsers;
 
       for (const userKey of targetUsers) {
         if (isUserAuthorized(userKey)) {

@@ -121,19 +121,71 @@ app.use(cors({
 app.use(cookieParser());
 app.use(express.json({ limit: '20mb' }));
 
+// --- SYSTEM SECRETS & DAILY CAPS CONFIGURATION ---
+const CRON_SECRET = process.env.CRON_SECRET;
+const SYSTEM_MUTATION_KEY = process.env.SYSTEM_MUTATION_KEY;
+const MAX_DAILY_NAUKRI = parseInt(process.env.MAX_DAILY_NAUKRI_APPLICATIONS || '40', 10);
+const MAX_DAILY_EMAILS = parseInt(process.env.MAX_DAILY_COLD_EMAILS || '25', 10);
+const REQUIRE_OUTREACH_APPROVAL = process.env.REQUIRE_OUTREACH_APPROVAL === 'true';
+
+// In-memory daily counter cache: userKey:YYYY-MM-DD -> { naukriCount, emailCount }
+const dailyDispatchCounters = new Map();
+
+// In-memory Review Queue storage: userKey -> Array of items
+const reviewQueue = new Map();
+
+function getTodayKey(userKey) {
+  const today = new Date().toISOString().split('T')[0];
+  return `${userKey}:${today}`;
+}
+
+function checkAndIncrementDailyCap(userKey, type = 'naukri') {
+  const key = getTodayKey(userKey);
+  const current = dailyDispatchCounters.get(key) || { naukriCount: 0, emailCount: 0 };
+  if (type === 'naukri') {
+    if (current.naukriCount >= MAX_DAILY_NAUKRI) {
+      return { allowed: false, current: current.naukriCount, max: MAX_DAILY_NAUKRI };
+    }
+    current.naukriCount++;
+  } else {
+    if (current.emailCount >= MAX_DAILY_EMAILS) {
+      return { allowed: false, current: current.emailCount, max: MAX_DAILY_EMAILS };
+    }
+    current.emailCount++;
+  }
+  dailyDispatchCounters.set(key, current);
+  return { allowed: true, current: type === 'naukri' ? current.naukriCount : current.emailCount, max: type === 'naukri' ? MAX_DAILY_NAUKRI : MAX_DAILY_EMAILS };
+}
+
+function isSystemAuthorized(req) {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : null;
+  const customSecret = req.headers['x-cron-secret'] || req.headers['x-system-key'];
+
+  if (CRON_SECRET && (token === CRON_SECRET || customSecret === CRON_SECRET)) return true;
+  if (SYSTEM_MUTATION_KEY && (token === SYSTEM_MUTATION_KEY || customSecret === SYSTEM_MUTATION_KEY)) return true;
+  return false;
+}
+
 // Health check endpoint for extension and monitoring
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', service: 'cold-mail-generator', version: '1.0.0', time: Date.now() });
 });
 
-// Helper to resolve active user key from JWT Cookie, Authorization Header, or custom headers
+// Helper to resolve active user key from JWT Cookie, Authorization Header, or System Secret
 function resolveUserContext(req, res = null) {
+  // 0. Check system-level secret authorization
+  if (isSystemAuthorized(req)) {
+    const targetKey = req.headers['x-user-key'] || req.query?.userKey || req.body?.userKey || 'system_worker';
+    return { userKey: targetKey, user: { userKey: targetKey, role: 'system' }, isSystem: true };
+  }
+
   // 1. Try JWT from Cookie
   const cookieToken = req.cookies?.auth_token;
   if (cookieToken) {
     const decoded = verifyAccessToken(cookieToken);
     if (decoded && decoded.userKey) {
-      return { userKey: decoded.userKey, user: decoded };
+      return { userKey: decoded.userKey, user: decoded, isSystem: false };
     }
   }
 
@@ -151,38 +203,76 @@ function resolveUserContext(req, res = null) {
         sameSite: isProd ? 'none' : 'lax',
         maxAge: ONE_MONTH_SECONDS * 1000
       });
-      return { userKey: refreshDecoded.userKey, user: profile };
+      return { userKey: refreshDecoded.userKey, user: profile, isSystem: false };
     }
   }
 
   // 3. Try Authorization Bearer Header
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7);
+    const token = authHeader.substring(7).trim();
     const decoded = verifyAccessToken(token);
     if (decoded && decoded.userKey) {
-      return { userKey: decoded.userKey, user: decoded };
+      return { userKey: decoded.userKey, user: decoded, isSystem: false };
     }
   }
 
-  // 4. Try x-user-key header or query param if valid profile exists
-  const headerKey = req.headers['x-user-key'] || req.query.userKey || req.body?.userKey;
-  if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0 && headerKey !== 'default_user' && headerKey !== 'null' && headerKey !== 'undefined') {
-    const cleanKey = headerKey.trim();
-    const profile = getUserProfile(cleanKey);
-    if (profile) {
-      return { userKey: cleanKey, user: profile };
+  // 4. Test mode & sandboxing isolation (active ONLY during automated test runs)
+  if (process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'test' || process.env.USE_TEST_DATABASE === 'true') {
+    const headerKey = req.headers['x-user-key'] || req.query?.userKey || req.body?.userKey;
+    if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
+      const cleanKey = headerKey.trim();
+      return { userKey: cleanKey, user: { userKey: cleanKey, isTest: true }, isSystem: false };
     }
   }
 
   // 5. Unauthenticated guest / logged out
-  return { userKey: null, user: null };
+  return { userKey: null, user: null, isSystem: false };
 }
 
 function resolveUserKey(req, res = null) {
   const ctx = resolveUserContext(req, res);
-  return ctx.userKey || 'guest_user';
+  return ctx.userKey || null;
 }
+
+// Global Authentication Middleware with strict public allowlist
+const PUBLIC_ROUTE_ALLOWLIST = [
+  '/api/health',
+  '/api/keepalive/status',
+  '/api/auth/url',
+  '/api/auth/callback',
+  '/api/auth/status',
+  '/api/auth/profiles',
+  '/api/notifications/events',
+  '/api/applications/tailor'
+];
+
+app.use((req, res, next) => {
+  if (!req.path.startsWith('/api')) return next();
+
+  // Public allowlist endpoints
+  if (PUBLIC_ROUTE_ALLOWLIST.includes(req.path)) {
+    const ctx = resolveUserContext(req, res);
+    req.user = ctx.user;
+    req.userKey = ctx.userKey;
+    req.isSystem = ctx.isSystem;
+    return next();
+  }
+
+  const ctx = resolveUserContext(req, res);
+  if (!ctx.userKey) {
+    return res.status(401).json({
+      error: 'Unauthorized: Valid authentication token or system bearer secret required.',
+      path: req.path,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  req.user = ctx.user;
+  req.userKey = ctx.userKey;
+  req.isSystem = ctx.isSystem;
+  next();
+});
 
 // Ensure default sandbox for Santhosh
 ensureUserSandbox('tksanthosh494_gmail_com', {
@@ -193,6 +283,7 @@ ensureUserSandbox('tksanthosh494_gmail_com', {
 // --- AUTH ROUTING (JWT & 30-Day Cookies) ---
 app.get('/api/auth/url', (req, res) => {
   try {
+
     const host = req.get('host');
     const protocol = req.protocol === 'https' || req.headers['x-forwarded-proto'] === 'https' ? 'https' : 'http';
     const redirectUri = `${protocol}://${host}/api/auth/callback`;
@@ -407,16 +498,12 @@ app.post('/api/generate', async (req, res) => {
 
 // --- SEND EMAIL (Per-User Sandbox) ---
 app.post('/api/send', async (req, res) => {
-  let userKey = resolveUserKey(req, res);
-  const explicitKey = req.headers['x-user-key'] || req.body?.userKey || req.query?.userKey;
-  if ((!userKey || userKey === 'guest_user') && explicitKey) {
-    userKey = explicitKey;
-  }
-  if (!userKey || userKey === 'guest_user') {
-    userKey = 'tksanthosh494_gmail_com';
+  const userKey = resolveUserKey(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Unauthorized: Valid user session required.' });
   }
 
-  const { email, subject, body, resume, hrName, company, resumeType } = req.body;
+  const { email, subject, body, resume, hrName, company, resumeType, skipReview } = req.body;
   if (!email || !subject || !body) {
     return res.status(400).json({ error: 'Missing required parameters: email, subject, body' });
   }
@@ -428,6 +515,36 @@ app.post('/api/send', async (req, res) => {
   const cleanEmail = (email || '').trim().toLowerCase();
   if (cleanEmail === 'tksanthosh494@gmail.com' || (userKey && cleanEmail === userKey.replace(/_/g, '@'))) {
     return res.status(400).json({ error: `Self-Email Blocked: You cannot send cold outreach emails to your own email address (${email}). Please specify a recruiter's email.` });
+  }
+
+  // Check Review Queue Mode (if active and not explicitly skipped)
+  if (REQUIRE_OUTREACH_APPROVAL && !skipReview) {
+    const reviewItem = {
+      id: `rev_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+      type: 'email',
+      createdAt: new Date().toISOString(),
+      userKey,
+      payload: { email, subject, body, resume, hrName, company, resumeType },
+      status: 'PENDING_REVIEW'
+    };
+    if (!reviewQueue.has(userKey)) reviewQueue.set(userKey, []);
+    reviewQueue.get(userKey).push(reviewItem);
+    return res.json({
+      success: true,
+      inReviewQueue: true,
+      message: 'Cold email added to Review Queue awaiting approval.',
+      reviewItem
+    });
+  }
+
+  // Enforce Hard Daily Cap in Production
+  const capCheck = checkAndIncrementDailyCap(userKey, 'email');
+  if (!capCheck.allowed) {
+    return res.status(429).json({
+      error: `Daily cold email limit (${capCheck.max}) reached. Pausing until 00:00 UTC for safety.`,
+      current: capCheck.current,
+      max: capCheck.max
+    });
   }
 
   try {
@@ -443,7 +560,7 @@ app.post('/api/send', async (req, res) => {
 
     let targetResume = resume;
     if (!targetResume || !targetResume.personalInfo) {
-      targetResume = getUserResume(userKey) || getUserResume('tksanthosh494_gmail_com');
+      targetResume = getUserResume(userKey);
     }
 
     const userPaths = getUserPaths(userKey);
@@ -489,13 +606,9 @@ app.post('/api/send', async (req, res) => {
 
 // --- SAVE GMAIL DRAFT (Per-User Sandbox) ---
 app.post('/api/draft', async (req, res) => {
-  let userKey = resolveUserKey(req, res);
-  const explicitKey = req.headers['x-user-key'] || req.body?.userKey || req.query?.userKey;
-  if ((!userKey || userKey === 'guest_user') && explicitKey) {
-    userKey = explicitKey;
-  }
-  if (!userKey || userKey === 'guest_user') {
-    userKey = 'tksanthosh494_gmail_com';
+  const userKey = resolveUserKey(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Unauthorized: Valid user session required.' });
   }
 
   const { email, subject, body, resume, hrName, company, resumeType } = req.body;
@@ -525,7 +638,7 @@ app.post('/api/draft', async (req, res) => {
 
     let targetResume = resume;
     if (!targetResume || !targetResume.personalInfo) {
-      targetResume = getUserResume(userKey) || getUserResume('tksanthosh494_gmail_com');
+      targetResume = getUserResume(userKey);
     }
 
     const userPaths = getUserPaths(userKey);
@@ -557,6 +670,7 @@ app.post('/api/draft', async (req, res) => {
     res.status(500).json({ error: e.message });
   }
 });
+
 
 // --- SCHEDULE DISPATCH ENDPOINTS ---
 app.post('/api/schedule', (req, res) => {
@@ -910,9 +1024,7 @@ app.post('/api/applications/tailor', async (req, res) => {
   try {
     let standardResume = getUserResume(userKey);
     if (!standardResume || !standardResume.personalInfo || !standardResume.personalInfo.name) {
-      // Fallback to primary account or default resume if guest has no custom resume yet
-      standardResume = getUserResume('tksanthosh494_gmail_com') || getUserResume('default_user');
-      userKey = 'tksanthosh494_gmail_com';
+      standardResume = getUserResume('default_user');
     }
 
     const tailoredResume = await tailorResume(standardResume, jd);
@@ -924,7 +1036,7 @@ app.post('/api/applications/tailor', async (req, res) => {
 
     const displayRole = role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer');
     const displayCompany = company ? company.trim() : 'Company';
-    const candidateName = tailoredResume.personalInfo?.name || standardResume.personalInfo?.name || 'Santhosh T K';
+    const candidateName = tailoredResume.personalInfo?.name || standardResume?.personalInfo?.name || 'Candidate';
     const cleanPdfFilename = formatTailoredPdfName(candidateName, displayCompany, displayRole);
 
     const userPaths = getUserPaths(userKey);
@@ -946,22 +1058,18 @@ app.post('/api/applications/tailor', async (req, res) => {
     const skillRatio = allSkills.length > 0 ? (matchedSkills.length / Math.min(allSkills.length, 10)) : 0.8;
     const atsScore = Math.min(98, Math.max(78, Math.round(75 + (skillRatio * 20) + Math.min(jd.length / 500, 3))));
 
-    const downloadUrl = `/api/applications/${appId}/pdf?userKey=${encodeURIComponent(userKey)}`;
-
     const newApplication = {
       id: appId,
-      timestamp: new Date().toISOString(),
       role: displayRole,
       company: displayCompany,
-      jd: jd.trim(),
-      jdSnippet: jd.trim().slice(0, 180) + (jd.trim().length > 180 ? '...' : ''),
-      matchedSkills,
-      atsScore,
+      jd,
       tailoredResume,
+      appliedAt: new Date().toISOString(),
+      timestamp: Date.now(),
+      atsScore,
+      matchedSkills,
       pdfFilename,
-      downloadName: cleanPdfFilename,
-      downloadUrl,
-      status: 'Tailored & Ready'
+      downloadName: cleanPdfFilename
     };
 
     const apps = getUserApplications(userKey);
@@ -973,7 +1081,7 @@ app.post('/api/applications/tailor', async (req, res) => {
       application: newApplication,
       atsScore,
       matchedSkills,
-      downloadUrl,
+      downloadUrl: `/api/applications/${appId}/pdf?userKey=${encodeURIComponent(userKey)}`,
       pdfFilename: cleanPdfFilename,
       userKey
     });
@@ -984,18 +1092,14 @@ app.post('/api/applications/tailor', async (req, res) => {
 });
 
 app.get('/api/applications', (req, res) => {
-  let userKey = resolveUserKey(req, res);
-  const explicitKey = req.headers['x-user-key'] || req.query?.userKey;
-  if ((!userKey || userKey === 'guest_user') && explicitKey) {
-    userKey = explicitKey;
+  const userKey = resolveUserKey(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Unauthorized: Valid user session required.' });
   }
   try {
-    let apps = getUserApplications(userKey);
-    if ((!apps || apps.length === 0) && userKey !== 'tksanthosh494_gmail_com') {
-      apps = getUserApplications('tksanthosh494_gmail_com');
-    }
-    const enriched = (apps || []).map(a => {
-      const candidateName = a.tailoredResume?.personalInfo?.name || 'Santhosh T K';
+    const apps = getUserApplications(userKey) || [];
+    const enriched = apps.map(a => {
+      const candidateName = a.tailoredResume?.personalInfo?.name || 'Candidate';
       const cleanDownloadName = formatTailoredPdfName(candidateName, a.company, a.role);
       const cleanDownloadUrl = `/api/applications/${a.id}/pdf?userKey=${encodeURIComponent(userKey)}`;
       return {
@@ -1012,6 +1116,9 @@ app.get('/api/applications', (req, res) => {
 
 app.post('/api/applications/sync', (req, res) => {
   const userKey = resolveUserKey(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Unauthorized: Valid user session required.' });
+  }
   const clientApps = req.body?.applications || [];
   try {
     const mergedApps = syncUserApplications(userKey, clientApps);
@@ -1022,28 +1129,17 @@ app.post('/api/applications/sync', (req, res) => {
 });
 
 app.get('/api/applications/:id/pdf', async (req, res) => {
-  let userKey = resolveUserKey(req, res);
-  const explicitKey = req.query.userKey || req.headers['x-user-key'];
-  if (explicitKey) {
-    userKey = explicitKey;
+  const userKey = resolveUserKey(req, res);
+  if (!userKey) {
+    return res.status(401).json({ error: 'Unauthorized: Valid user session required.' });
   }
 
   const { id } = req.params;
-  let apps = getUserApplications(userKey);
-  let appItem = apps.find(a => a.id === id);
-
-  // Fallback to primary account sandbox if not found in current key
-  if (!appItem && userKey !== 'tksanthosh494_gmail_com') {
-    const primaryApps = getUserApplications('tksanthosh494_gmail_com');
-    const foundInPrimary = primaryApps.find(a => a.id === id);
-    if (foundInPrimary) {
-      appItem = foundInPrimary;
-      userKey = 'tksanthosh494_gmail_com';
-    }
-  }
+  const apps = getUserApplications(userKey) || [];
+  const appItem = apps.find(a => a.id === id);
 
   if (!appItem) {
-    return res.status(404).json({ error: 'Application record not found' });
+    return res.status(404).json({ error: 'Application record not found in user sandbox' });
   }
 
   const userPaths = getUserPaths(userKey);
@@ -1067,7 +1163,7 @@ app.get('/api/applications/:id/pdf', async (req, res) => {
     }
   }
 
-  const candidateName = appItem.tailoredResume?.personalInfo?.name || 'Santhosh T K';
+  const candidateName = appItem.tailoredResume?.personalInfo?.name || 'Candidate';
   const downloadName = formatTailoredPdfName(candidateName, appItem.company, appItem.role);
 
   res.setHeader('Content-Type', 'application/pdf');
@@ -1177,8 +1273,16 @@ app.post('/api/naukri/trigger', async (req, res) => {
   }
 });
 
-// Dedicated 24/7 Cloud Cron Trigger endpoint (triggered via cron-job.org, GitHub Actions, or curl)
+// Dedicated 24/7 Cloud Cron Trigger endpoint (requires CRON_SECRET or SYSTEM_MUTATION_KEY)
 app.all('/api/naukri/cron-trigger', async (req, res) => {
+  if (!isSystemAuthorized(req)) {
+    return res.status(401).json({
+      success: false,
+      error: 'Unauthorized: /api/naukri/cron-trigger requires a valid CRON_SECRET or SYSTEM_MUTATION_KEY bearer token.',
+      timestamp: new Date().toISOString()
+    });
+  }
+
   const force = req.query.force === 'true' || req.body?.force === true;
   const targetUserKey = req.query.userKey || req.body?.userKey || req.headers['x-user-key'] || null;
 
@@ -1196,6 +1300,7 @@ app.all('/api/naukri/cron-trigger', async (req, res) => {
     });
   } catch (e) {
     console.error('[NAUKRI CRON TRIGGER ROUTE ERROR]', e.message);
+    broadcastErrorAlert('Naukri Cron Trigger Error', e.message, e.stack, targetUserKey || 'system').catch(() => {});
     res.status(500).json({
       success: false,
       error: e.message,
@@ -1203,6 +1308,101 @@ app.all('/api/naukri/cron-trigger', async (req, res) => {
     });
   }
 });
+
+// --- REVIEW QUEUE ENDPOINTS (HUMAN-IN-THE-LOOP SAFETY) ---
+app.get('/api/outreach/review', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const items = reviewQueue.get(userKey) || [];
+  res.json({ reviewItems: items, count: items.length });
+});
+
+app.post('/api/outreach/review/:id/approve', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { id } = req.params;
+  const items = reviewQueue.get(userKey) || [];
+  const target = items.find(i => i.id === id);
+  if (!target) return res.status(404).json({ error: 'Review item not found.' });
+
+  try {
+    if (target.type === 'email') {
+      const { email, subject, body, resume, hrName, company, resumeType } = target.payload;
+      const userPaths = getUserPaths(userKey);
+      const candidateName = resume?.personalInfo?.name || 'Resume';
+      const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_${Date.now()}.pdf`);
+      await generateResumePdf(resume || getUserResume(userKey), tempPdfPath);
+      const result = await sendGmail(email, subject, body, tempPdfPath, userKey);
+      try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+
+      addUserLog(userKey, {
+        type: 'Single Email',
+        email,
+        hrEmail: email,
+        hrName: hrName || 'HR',
+        company: company || 'Company',
+        subject,
+        body,
+        status: 'Sent (Approved from Review Queue)',
+        resumeType: resumeType || 'Standard',
+        messageId: result.id
+      });
+    }
+
+    reviewQueue.set(userKey, items.filter(i => i.id !== id));
+    res.json({ success: true, message: 'Item approved and processed successfully.' });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/outreach/review/:id/reject', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { id } = req.params;
+  const items = reviewQueue.get(userKey) || [];
+  reviewQueue.set(userKey, items.filter(i => i.id !== id));
+  res.json({ success: true, message: 'Item rejected and removed from review queue.' });
+});
+
+app.post('/api/outreach/review/approve-all', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const items = reviewQueue.get(userKey) || [];
+  const results = [];
+
+  for (const item of items) {
+    try {
+      if (item.type === 'email') {
+        const { email, subject, body, resume, hrName, company, resumeType } = item.payload;
+        const userPaths = getUserPaths(userKey);
+        const candidateName = resume?.personalInfo?.name || 'Resume';
+        const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
+        const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_${Date.now()}.pdf`);
+        await generateResumePdf(resume || getUserResume(userKey), tempPdfPath);
+        const result = await sendGmail(email, subject, body, tempPdfPath, userKey);
+        try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
+
+        addUserLog(userKey, {
+          type: 'Single Email',
+          email,
+          hrEmail: email,
+          hrName: hrName || 'HR',
+          company: company || 'Company',
+          subject,
+          body,
+          status: 'Sent (Approved All from Review Queue)',
+          resumeType: resumeType || 'Standard',
+          messageId: result.id
+        });
+        results.push({ id: item.id, status: 'Sent' });
+      }
+    } catch (err) {
+      results.push({ id: item.id, status: 'Failed', error: err.message });
+    }
+  }
+
+  reviewQueue.set(userKey, []);
+  res.json({ success: true, results, processedCount: results.length });
+});
+
 
 // Clear/Reset Automation Lock for User
 app.post('/api/naukri/unlock', async (req, res) => {

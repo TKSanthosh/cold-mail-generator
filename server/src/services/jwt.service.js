@@ -1,7 +1,20 @@
 const jwt = require('jsonwebtoken');
+const path = require('path');
+require('dotenv').config({ path: path.join(__dirname, '../../../.env') });
 
-const JWT_SECRET = process.env.JWT_SECRET || 'cold_email_super_secret_jwt_key_2026_!@#_santhosh';
-const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'cold_email_super_refresh_jwt_key_2026_!@#_santhosh';
+function resolveJwtSecret(varName, testDefault) {
+  const val = process.env[varName];
+  if (!val || val.trim().length < 16) {
+    if (process.env.NODE_ENV === 'test' || process.env.TEST_MODE === 'true' || process.env.USE_TEST_DATABASE === 'true') {
+      return testDefault;
+    }
+    throw new Error(`[FATAL SECURITY CONFIG ERROR] ${varName} environment variable is missing, empty, or too short. Production execution halted.`);
+  }
+  return val.trim();
+}
+
+const JWT_SECRET = resolveJwtSecret('JWT_SECRET', 'test_jwt_access_secret_1234567890_key');
+const JWT_REFRESH_SECRET = resolveJwtSecret('JWT_REFRESH_SECRET', 'test_jwt_refresh_secret_1234567890_key');
 
 // 30 Days in seconds
 const ONE_MONTH_SECONDS = 30 * 24 * 60 * 60;
@@ -59,3 +72,4 @@ module.exports = {
   verifyRefreshToken,
   ONE_MONTH_SECONDS
 };
+

@@ -52,19 +52,45 @@ function assert(desc, condition, errDetail = '') {
   }
 }
 
+const jwtService = require('../server/src/services/jwt.service');
+const testAuth = jwtService.generateTokens({ userKey: 'tksanthosh494_gmail_com', email: 'tksanthosh494@gmail.com' });
+const defaultAuthHeader = `Bearer ${testAuth.accessToken}`;
+const defaultAuthCookie = `auth_token=${testAuth.accessToken}`;
+
 function fetchHttp(url, options = {}) {
   return new Promise((resolve, reject) => {
     const isHttps = url.startsWith('https://');
     const lib = isHttps ? https : http;
-    const req = lib.request(url, options, (res) => {
+    const reqHeaders = {
+      'Cookie': defaultAuthCookie,
+      'Authorization': defaultAuthHeader,
+      ...(options.headers || {})
+    };
+    if (options.unauthenticated) {
+      delete reqHeaders['Authorization'];
+      delete reqHeaders['Cookie'];
+    }
+
+    const reqOptions = {
+      ...options,
+      headers: reqHeaders
+    };
+
+    const req = lib.request(url, reqOptions, (res) => {
       const chunks = [];
       res.on('data', (chunk) => chunks.push(chunk));
       res.on('end', () => {
         const buffer = Buffer.concat(chunks);
+        let parsedJson = null;
+        try {
+          parsedJson = JSON.parse(buffer.toString('utf8'));
+        } catch (e) {}
+
         resolve({
           statusCode: res.statusCode,
           headers: res.headers,
           body: buffer.toString('utf8'),
+          data: parsedJson,
           raw: buffer
         });
       });
@@ -608,6 +634,62 @@ async function runMasterRegressionSuite() {
       } catch (err) {
         assert('Macro Record Cleanup', false, err.message);
       }
+    }
+
+    // 3i. Security: Mutating Endpoint Authentication Gate (/api/naukri/cron-trigger)
+    try {
+      const unauthCronRes = await fetchHttp(`${serverBase}/api/naukri/cron-trigger`, { method: 'POST', unauthenticated: true });
+      assert(
+        'Macro Security: Unauthenticated /api/naukri/cron-trigger rejected with HTTP 401',
+        unauthCronRes.statusCode === 401,
+        `Got HTTP ${unauthCronRes.statusCode}`
+      );
+
+      const cronSecret = process.env.CRON_SECRET || 'd829c6fb74cf79387fcbb87c45e65acb4621c32be136680ff85b73782021a721';
+      const authCronRes = await fetchHttp(`${serverBase}/api/naukri/cron-trigger?force=false`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${cronSecret}` }
+      });
+      assert(
+        'Macro Security: Bearer CRON_SECRET authorized on /api/naukri/cron-trigger',
+        authCronRes.statusCode === 200,
+        `Got HTTP ${authCronRes.statusCode}`
+      );
+    } catch (err) {
+      assert('Macro Security Cron Auth', false, err.message);
+    }
+
+    // 3j. Security: Crypto Fail-Loud & Tamper Detection
+    try {
+      const cryptoService = require('../server/src/services/crypto.service');
+      const plainText = 'Sensitive-Naukri-Credentials-2026';
+      const encrypted = cryptoService.encryptText(plainText);
+      const decrypted = cryptoService.decryptText(encrypted);
+      assert('Macro Security Crypto: AES-256-GCM encrypt & decrypt roundtrip', decrypted === plainText);
+
+      let tamperDetected = false;
+      try {
+        // Tamper with payload ciphertext
+        const parts = encrypted.split(':');
+        parts[4] = parts[4].replace(/a/g, 'b');
+        cryptoService.decryptText(parts.join(':'));
+      } catch (e) {
+        tamperDetected = true;
+      }
+      assert('Macro Security Crypto: Tampered payload immediately detected and rejected', tamperDetected);
+    } catch (err) {
+      assert('Macro Security Crypto Check', false, err.message);
+    }
+
+    // 3k. Safety: Review Queue Mode Endpoints
+    try {
+      const reviewRes = await fetchHttp(`${serverBase}/api/outreach/review?userKey=tksanthosh494_gmail_com`);
+      assert(
+        'Macro Safety: GET /api/outreach/review returns 200 with reviewItems array',
+        reviewRes.statusCode === 200 && Array.isArray(reviewRes.data?.reviewItems)
+      );
+    } catch (err) {
+      assert('Macro Safety Review Queue', false, err.message);
     }
   }
 
