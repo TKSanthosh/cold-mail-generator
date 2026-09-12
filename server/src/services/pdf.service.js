@@ -299,7 +299,12 @@ function generateResumePdf(resumeJson, outputPath) {
 
       doc.end();
 
-      writeStream.on('finish', () => resolve(outputPath));
+      writeStream.on('finish', () => {
+        if (typeof global.gc === 'function') {
+          setImmediate(() => { try { global.gc(); } catch (e) {} });
+        }
+        resolve(outputPath);
+      });
       writeStream.on('error', reject);
     } catch (err) {
       reject(err);

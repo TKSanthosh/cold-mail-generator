@@ -2059,35 +2059,48 @@ app.post('/api/naukri/apply-all-fast', async (req, res) => {
 
 app.post('/api/naukri/apply/reconcile', async (req, res) => {
   const userKey = resolveUserKey(req, res);
-  const { findBrowserExecutable, getNaukriConfig, restoreAndInjectNaukriSession } = require('./services/naukri.service');
-  const puppeteer = require('puppeteer');
+  const { findBrowserExecutable, restoreAndInjectNaukriSession } = require('./services/naukri.service');
+  const {
+    getOptimizedLaunchOptions,
+    withSingleBrowserLock,
+    setupPageOptimizations,
+    safeCloseBrowser
+  } = require('./services/browser.helper');
 
-  let browser = null;
   try {
-    const config = getNaukriConfig(userKey);
-    const browserPath = findBrowserExecutable();
-    browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: browserPath || undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
+    const responsePayload = await withSingleBrowserLock('reconcile_api', async () => {
+      const browserPath = findBrowserExecutable();
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: 'new',
+        executablePath: browserPath || undefined
+      });
+
+      let browser = null;
+      try {
+        const puppeteer = require('puppeteer');
+        browser = await puppeteer.launch(launchOptions);
+        const pages = await browser.pages();
+        const page = pages.length > 0 ? pages[0] : await browser.newPage();
+        await setupPageOptimizations(page, { blockMedia: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        await restoreAndInjectNaukriSession(page, userKey);
+
+        const result = await reconcileNaukriAppliedJobs(page, userKey);
+        return {
+          ...result,
+          todayStats: getTodayAppliedStats(userKey),
+          applications: getNaukriAppliedJobs(userKey)
+        };
+      } finally {
+        if (browser) {
+          await safeCloseBrowser(browser);
+        }
+      }
     });
 
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-    await restoreAndInjectNaukriSession(page, userKey);
-
-    const result = await reconcileNaukriAppliedJobs(page, userKey);
-    res.json({
-      ...result,
-      todayStats: getTodayAppliedStats(userKey),
-      applications: getNaukriAppliedJobs(userKey)
-    });
+    res.json(responsePayload);
   } catch (e) {
     res.status(500).json({ success: false, error: e.message });
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (err) {}
-    }
   }
 });
 

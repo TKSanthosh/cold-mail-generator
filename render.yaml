@@ -4,12 +4,14 @@ services:
     runtime: node
     plan: free
     buildCommand: chmod +x render-build.sh && ./render-build.sh
-    startCommand: node server/src/index.js
+    startCommand: node --expose-gc --max-old-space-size=256 server/src/index.js
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=256 --expose-gc"
       - key: PUPPETEER_CACHE_DIR
         value: /opt/render/project/src/.cache/puppeteer
       - key: SUPABASE_URL

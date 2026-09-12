@@ -8,6 +8,14 @@ const fs = require('fs');
 const path = require('path');
 const { generateResumePdf } = require('./pdf.service');
 const { resolveUserResumeFile } = require('./resume.service');
+const {
+  getOptimizedLaunchOptions,
+  withSingleBrowserLock,
+  setupPageOptimizations,
+  safeCloseBrowser,
+  runGcIfAvailable,
+  isBrowserActive
+} = require('./browser.helper');
 const { getUserResume, getUserResumeAsync, getUserPaths, ensureUserSandbox, addUserLog, getAllUserKeys, hydrateUserSandboxFromDatabase } = require('./user.service');
 const {
   isSupabaseConfigured,
@@ -1088,45 +1096,47 @@ async function validateNaukriSessionOnPage(page, userKey = 'default_user') {
  * Standalone live session validation helper (launches headless Chrome, checks, and returns result)
  */
 async function validateNaukriSession(userKey = 'default_user') {
-  const browserPath = await ensureBrowserInstalled();
-  const launchOptions = {
-    headless: 'new',
-    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-  };
-  if (browserPath) launchOptions.executablePath = browserPath;
+  return withSingleBrowserLock('validateNaukriSession', async () => {
+    const browserPath = await ensureBrowserInstalled();
+    const launchOptions = getOptimizedLaunchOptions({
+      headless: 'new',
+      executablePath: browserPath || undefined
+    });
 
-  let browser = null;
-  try {
-    browser = await puppeteer.launch(launchOptions);
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    let browser = null;
+    try {
+      browser = await puppeteer.launch(launchOptions);
+      const pages = await browser.pages();
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: true });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-    if (!restoreResult.hasSession) {
-      if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+          return {
+            authenticated: false,
+            isValid: false,
+            status: 'AUTH_RESTORE_FAILED',
+            reason: restoreResult.error || 'Browser failed to restore session'
+          };
+        }
         return {
           authenticated: false,
           isValid: false,
-          status: 'AUTH_RESTORE_FAILED',
-          reason: restoreResult.error || 'Browser failed to restore session'
+          status: 'NOT_CONFIGURED',
+          reason: 'No session cookies found'
         };
       }
-      return {
-        authenticated: false,
-        isValid: false,
-        status: 'NOT_CONFIGURED',
-        reason: 'No session cookies found'
-      };
-    }
 
-    const result = await validateNaukriSessionOnPage(page, userKey);
-    return result;
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
+      const result = await validateNaukriSessionOnPage(page, userKey);
+      return result;
+    } finally {
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
     }
-  }
+  });
 }
 
 /**
@@ -1919,25 +1929,11 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     let isOtpWaiting = false;
 
     try {
-      const launchOptions = {
+      const launchOptions = getOptimizedLaunchOptions({
         headless: headless ? 'new' : false,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
-          '--disable-gpu',
-          '--disable-blink-features=AutomationControlled',
-          '--window-size=1366,768'
-        ],
-        defaultViewport: { width: 1366, height: 768 }
-      };
-
-      if (browserPath) {
-        launchOptions.executablePath = browserPath;
-      }
+        executablePath: browserPath || undefined,
+        defaultViewport: { width: 1280, height: 720 }
+      });
 
       try {
         browser = await puppeteer.launch(launchOptions);
@@ -1954,6 +1950,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
 
       const pages = await browser.pages();
       const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: headless });
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
       // Anti-bot stealth
@@ -2232,7 +2229,7 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       throw err;
     } finally {
       if (browser && !isOtpWaiting) {
-        try { await browser.close(); } catch (e) {}
+        await safeCloseBrowser(browser);
       }
     }
 
@@ -2375,28 +2372,33 @@ function initNaukriScheduler() {
 
   logStructured('SCHEDULER', 'Initialized 24/7 continuous uploader & autonomous Easy Apply worker across all active candidate accounts.');
 
-  // 1. Scheduled Slot Uploader Ticker (every 30s)
+  // 1. Scheduled Slot Uploader Ticker (runs every 60s)
   naukriSchedulerTimer = setInterval(async () => {
     try {
       await triggerNaukriUploadForActiveUsers({ force: false });
     } catch (err) {
       console.warn('[NAUKRI SCHEDULER TICKER WARN]', err.message);
     }
-  }, 30000);
+  }, 60000);
 
-  // 2. Autonomous 24/7 Easy Apply & Profile Worker (runs continuously every 30s for responsive turbo throughput)
+  // 2. Autonomous Easy Apply & Profile Worker (runs every 3 minutes, only when no active browser lock exists)
   autonomousApplyTimer = setInterval(async () => {
     try {
+      if (isBrowserActive()) {
+        return; // Defer to prevent parallel browser concurrency
+      }
       await triggerAutonomousNaukriApply({ turbo: true });
     } catch (err) {
       console.warn('[NAUKRI AUTONOMOUS WORKER TICKER WARN]', err.message);
     }
-  }, 30 * 1000);
+  }, 3 * 60 * 1000);
 
-  // 3. Initial autonomous run 5 seconds after startup
+  // 3. Initial autonomous run 15 seconds after startup
   setTimeout(() => {
-    triggerAutonomousNaukriApply().catch(() => {});
-  }, 5000);
+    if (!isBrowserActive()) {
+      triggerAutonomousNaukriApply().catch(() => {});
+    }
+  }, 15000);
 }
 
 /**
@@ -2666,149 +2668,152 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
  * Continuously checks and extracts full portfolio telemetry from candidate's Naukri profile
  */
 async function checkNaukriPortfolio(userKey = 'default_user') {
-  logStructured('PORTFOLIO', `Checking live Naukri portfolio for user "${userKey}"...`);
-  await acquireUserLockAsync(userKey, 'portfolio_check');
+  return withSingleBrowserLock('checkNaukriPortfolio', async () => {
+    logStructured('PORTFOLIO', `Checking live Naukri portfolio for user "${userKey}"...`);
+    await acquireUserLockAsync(userKey, 'portfolio_check');
 
-  let browser = null;
-  try {
-    const launchOptions = {
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
-    };
-    const browserPath = findBrowserExecutable();
-    if (browserPath) launchOptions.executablePath = browserPath;
+    let browser = null;
+    try {
+      const browserPath = findBrowserExecutable();
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: 'new',
+        executablePath: browserPath || undefined
+      });
 
-    browser = await puppeteer.launch(launchOptions);
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      browser = await puppeteer.launch(launchOptions);
+      const pages = await browser.pages();
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: true });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // Anti-bot stealth
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      window.chrome = { runtime: {} };
-    });
+      // Anti-bot stealth
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+      });
 
-    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-    if (!restoreResult.hasSession) {
-      throw new Error('No active Naukri session found. Please link your session cookie.');
-    }
-
-    await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await delay(3500);
-
-    const currentUrl = page.url();
-    if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
-      throw new Error('Naukri session expired. Please refresh your session cookie.');
-    }
-
-    await dismissNaukriPopups(page);
-
-    // Scroll progressively to mount lazy sections
-    await page.evaluate(async () => {
-      for (const y of [300, 700, 1200, 1800]) {
-        window.scrollTo(0, y);
-        await new Promise(r => setTimeout(r, 100));
-      }
-      window.scrollTo(0, 0);
-    });
-    await delay(1200);
-
-    const portfolioData = await page.evaluate(() => {
-      const nameEl = document.querySelector('.user-name, .fullname, .name, h1, .profile-name, .title-wrapper .name');
-      const candidateName = nameEl ? nameEl.innerText.trim() : null;
-
-      const scoreEl = document.querySelector('.profile-strength-box .text, .strength-text, .profile-strength-wrap, .perf-score, [class*="profile-strength"], [class*="strength"]');
-      const profileScore = scoreEl ? scoreEl.innerText.trim() : '100%';
-
-      const headlineBox = document.querySelector('#lazyResumeHead, .resumeHeadline');
-      const headlineEl = headlineBox ? headlineBox.querySelector('.widgetCont, .typ-14Medium, .text, .content, p, span:not(.edit)') : null;
-      let headline = headlineEl ? headlineEl.innerText.trim() : (headlineBox ? headlineBox.innerText.replace(/Resume headline/i, '').replace(/editOneTheme/i, '').trim() : null);
-      if (headline && headline.startsWith('editOneTheme')) headline = headline.replace(/^editOneTheme\s*/, '');
-
-      const summaryBox = document.querySelector('#lazyProfileSummary, .profileSummary');
-      const summaryEl = summaryBox ? summaryBox.querySelector('.widgetCont, .prefill, .text, p') : null;
-      let summary = summaryEl ? summaryEl.innerText.trim() : '';
-      if (summary) summary = summary.replace(/\.\.\.\s*Read More$/i, '').trim();
-
-      const keySkillsBox = document.querySelector('#lazyKeySkills, .keySkills');
-      const skillChips = keySkillsBox ? Array.from(keySkillsBox.querySelectorAll('.chip, .tag, .skill-name, a.chip, span.chip')).map(c => c.innerText.trim()).filter(Boolean) : [];
-
-      const resumeBox = document.querySelector('#lazyAttachCV, .attachCV, [class*="attachCV"]');
-      const resumeNameEl = resumeBox ? resumeBox.querySelector('.resume-name, .title, .name, a[href*="download"]') : null;
-      const resumeDateEl = resumeBox ? resumeBox.querySelector('.update-date, .date, [class*="updateDate"], .typ-12Regular') : null;
-      
-      let resName = resumeNameEl ? resumeNameEl.innerText.trim() : null;
-      let resDate = resumeDateEl ? resumeDateEl.innerText.trim() : null;
-      if (!resName && resumeBox) {
-        const text = resumeBox.innerText || '';
-        const mName = text.match(/[\w\-.]+\.pdf/i);
-        if (mName) resName = mName[0];
-        const mDate = text.match(/Uploaded on [^\n]+/i);
-        if (mDate) resDate = mDate[0];
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        throw new Error('No active Naukri session found. Please link your session cookie.');
       }
 
-      const resumeAttached = {
-        fileName: resName || 'santhosh_t_k_resume.pdf',
-        uploadedDate: resDate || 'Uploaded Recently'
-      };
+      await page.goto('https://www.naukri.com/mnjuser/profile', { waitUntil: 'domcontentloaded', timeout: 45000 });
+      await delay(3500);
 
-      return {
-        candidateName,
-        profileScore,
-        headline,
-        summary,
-        keySkills: skillChips,
-        resumeAttached,
-        lastCheckedAt: new Date().toISOString()
-      };
-    });
+      const currentUrl = page.url();
+      if (currentUrl.includes('login') || currentUrl.includes('nlogin')) {
+        throw new Error('Naukri session expired. Please refresh your session cookie.');
+      }
 
-    // Save to user config and Supabase
-    const cfg = await getNaukriConfigAsync(userKey);
-    cfg.portfolio = portfolioData;
-    if (portfolioData.candidateName) cfg.candidateName = portfolioData.candidateName;
-    await saveNaukriConfigAsync(userKey, cfg);
+      await dismissNaukriPopups(page);
 
-    logStructured('PORTFOLIO', `Extracted portfolio for "${userKey}": Score: ${portfolioData.profileScore}, Headline: "${(portfolioData.headline || '').slice(0, 50)}...", Skills: ${portfolioData.keySkills.length}`);
-    return portfolioData;
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
+      // Scroll progressively to mount lazy sections
+      await page.evaluate(async () => {
+        for (const y of [300, 700, 1200, 1800]) {
+          window.scrollTo(0, y);
+          await new Promise(r => setTimeout(r, 100));
+        }
+        window.scrollTo(0, 0);
+      });
+      await delay(1200);
+
+      const portfolioData = await page.evaluate(() => {
+        const nameEl = document.querySelector('.user-name, .fullname, .name, h1, .profile-name, .title-wrapper .name');
+        const candidateName = nameEl ? nameEl.innerText.trim() : null;
+
+        const scoreEl = document.querySelector('.profile-strength-box .text, .strength-text, .profile-strength-wrap, .perf-score, [class*="profile-strength"], [class*="strength"]');
+        const profileScore = scoreEl ? scoreEl.innerText.trim() : '100%';
+
+        const headlineBox = document.querySelector('#lazyResumeHead, .resumeHeadline');
+        const headlineEl = headlineBox ? headlineBox.querySelector('.widgetCont, .typ-14Medium, .text, .content, p, span:not(.edit)') : null;
+        let headline = headlineEl ? headlineEl.innerText.trim() : (headlineBox ? headlineBox.innerText.replace(/Resume headline/i, '').replace(/editOneTheme/i, '').trim() : null);
+        if (headline && headline.startsWith('editOneTheme')) headline = headline.replace(/^editOneTheme\s*/, '');
+
+        const summaryBox = document.querySelector('#lazyProfileSummary, .profileSummary');
+        const summaryEl = summaryBox ? summaryBox.querySelector('.widgetCont, .prefill, .text, p') : null;
+        let summary = summaryEl ? summaryEl.innerText.trim() : '';
+        if (summary) summary = summary.replace(/\.\.\.\s*Read More$/i, '').trim();
+
+        const keySkillsBox = document.querySelector('#lazyKeySkills, .keySkills');
+        const skillChips = keySkillsBox ? Array.from(keySkillsBox.querySelectorAll('.chip, .tag, .skill-name, a.chip, span.chip')).map(c => c.innerText.trim()).filter(Boolean) : [];
+
+        const resumeBox = document.querySelector('#lazyAttachCV, .attachCV, [class*="attachCV"]');
+        const resumeNameEl = resumeBox ? resumeBox.querySelector('.resume-name, .title, .name, a[href*="download"]') : null;
+        const resumeDateEl = resumeBox ? resumeBox.querySelector('.update-date, .date, [class*="updateDate"], .typ-12Regular') : null;
+        
+        let resName = resumeNameEl ? resumeNameEl.innerText.trim() : null;
+        let resDate = resumeDateEl ? resumeDateEl.innerText.trim() : null;
+        if (!resName && resumeBox) {
+          const text = resumeBox.innerText || '';
+          const mName = text.match(/[\w\-.]+\.pdf/i);
+          if (mName) resName = mName[0];
+          const mDate = text.match(/Uploaded on [^\n]+/i);
+          if (mDate) resDate = mDate[0];
+        }
+
+        const resumeAttached = {
+          fileName: resName || 'santhosh_t_k_resume.pdf',
+          uploadedDate: resDate || 'Uploaded Recently'
+        };
+
+        return {
+          candidateName,
+          profileScore,
+          headline,
+          summary,
+          keySkills: skillChips,
+          resumeAttached,
+          lastCheckedAt: new Date().toISOString()
+        };
+      });
+
+      // Save to user config and Supabase
+      const cfg = await getNaukriConfigAsync(userKey);
+      cfg.portfolio = portfolioData;
+      if (portfolioData.candidateName) cfg.candidateName = portfolioData.candidateName;
+      await saveNaukriConfigAsync(userKey, cfg);
+
+      logStructured('PORTFOLIO', `Extracted portfolio for "${userKey}": Score: ${portfolioData.profileScore}, Headline: "${(portfolioData.headline || '').slice(0, 50)}...", Skills: ${portfolioData.keySkills.length}`);
+      return portfolioData;
+    } finally {
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
+      await releaseUserLockAsync(userKey, 'portfolio_check');
     }
-    await releaseUserLockAsync(userKey, 'portfolio_check');
-  }
+  });
 }
 
 /**
  * Safely performs smart micro-changes/touch updates to Naukri profile to refresh candidate active timestamp
  */
 async function applyNaukriMicroChanges(userKey = 'default_user', options = {}) {
-  const {
-    field = 'headline', // 'headline', 'summary', or 'all'
-    mode = 'touch', // 'touch' (safe non-breaking toggle) or 'rotate' (ATS keyword variation) or 'custom'
-    customText = null
-  } = options;
+  return withSingleBrowserLock('applyNaukriMicroChanges', async () => {
+    const {
+      field = 'headline', // 'headline', 'summary', or 'all'
+      mode = 'touch', // 'touch' (safe non-breaking toggle) or 'rotate' (ATS keyword variation) or 'custom'
+      customText = null
+    } = options;
 
-  logStructured('MICRO_UPDATE', `Starting smart micro-change on "${field}" for user "${userKey}" (mode: ${mode})...`);
-  await acquireUserLockAsync(userKey, 'micro_update');
+    logStructured('MICRO_UPDATE', `Starting smart micro-change on "${field}" for user "${userKey}" (mode: ${mode})...`);
+    await acquireUserLockAsync(userKey, 'micro_update');
 
-  let browser = null;
-  try {
-    const launchOptions = {
-      headless: 'new',
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--window-size=1280,800']
-    };
-    const browserPath = findBrowserExecutable();
-    if (browserPath) launchOptions.executablePath = browserPath;
+    let browser = null;
+    try {
+      const browserPath = findBrowserExecutable();
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: 'new',
+        executablePath: browserPath || undefined
+      });
 
-    browser = await puppeteer.launch(launchOptions);
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      browser = await puppeteer.launch(launchOptions);
+      const pages = await browser.pages();
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: true });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // Anti-bot stealth
-    await page.evaluateOnNewDocument(() => {
+      // Anti-bot stealth
+      await page.evaluateOnNewDocument(() => {
       Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
       window.chrome = { runtime: {} };
     });
@@ -2939,12 +2944,13 @@ async function applyNaukriMicroChanges(userKey = 'default_user', options = {}) {
     }
 
     return { success: true, message: 'Micro-update completed.' };
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
+    } finally {
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
+      await releaseUserLockAsync(userKey, 'micro_update');
     }
-    await releaseUserLockAsync(userKey, 'micro_update');
-  }
+  });
 }
 
 module.exports = {

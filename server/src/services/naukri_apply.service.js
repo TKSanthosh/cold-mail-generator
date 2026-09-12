@@ -9,6 +9,14 @@ try {
 const { getUserPaths, ensureUserSandbox, addUserLog } = require('./user.service');
 const { resolveUserResumeFile } = require('./resume.service');
 const {
+  getOptimizedLaunchOptions,
+  withSingleBrowserLock,
+  setupPageOptimizations,
+  safeCloseBrowser,
+  runGcIfAvailable,
+  isBrowserActive
+} = require('./browser.helper');
+const {
   isSupabaseConfigured,
   supabaseSaveNaukriConfig,
   supabaseGetNaukriConfig,
@@ -3047,78 +3055,70 @@ async function runStandaloneNaukriApply(userKey = 'default_user', customOptions 
     return { success: false, message: `Account "${userKey}" is currently locked by another automation process.` };
   }
 
-  let browser = null;
-  try {
-    activeApplyJobState.running = true;
-    activeApplyJobState.progress = {
-      current: 1,
-      total: customOptions.maxJobsPerRun || 12,
-      currentJob: '',
-      status: 'Connecting to Naukri session & initializing browser...'
-    };
+  return withSingleBrowserLock('runStandaloneNaukriApply', async () => {
+    let browser = null;
+    try {
+      activeApplyJobState.running = true;
+      activeApplyJobState.progress = {
+        current: 1,
+        total: customOptions.maxJobsPerRun || 12,
+        currentJob: '',
+        status: 'Connecting to Naukri session & initializing browser...'
+      };
 
-    const config = await getNaukriConfigAsync(userKey);
-    let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
-    const launchOptions = {
-      headless: customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false),
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--disable-gpu',
-        '--disable-blink-features=AutomationControlled',
-        '--window-size=1366,768'
-      ],
-      defaultViewport: { width: 1366, height: 768 }
-    };
-    if (browserPath) launchOptions.executablePath = browserPath;
+      const config = await getNaukriConfigAsync(userKey);
+      let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+      const isHeadless = customOptions.headless !== undefined ? (customOptions.headless ? 'new' : false) : (config.headless !== false ? 'new' : false);
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: isHeadless,
+        executablePath: browserPath || undefined,
+        defaultViewport: { width: 1280, height: 720 }
+      });
 
-    browser = await puppeteer.launch(launchOptions);
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      browser = await puppeteer.launch(launchOptions);
+      const pages = await browser.pages();
+      const page = pages.length > 0 ? pages[0] : await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: Boolean(isHeadless) });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    // Anti-bot stealth
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-      window.chrome = { runtime: {} };
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-      Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-    });
+      // Anti-bot stealth
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+        window.chrome = { runtime: {} };
+        Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+      });
 
-    // 1. Restore & inject latest authentication state from DB/sandbox
-    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-    if (!restoreResult.hasSession) {
-      if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
-        throw new Error(`[AUTH_RESTORE_FAILED] Application failed to restore saved session into browser context: ${restoreResult.error}`);
+      // 1. Restore & inject latest authentication state from DB/sandbox
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        if (restoreResult.failureType === 'AUTH_RESTORE_FAILED') {
+          throw new Error(`[AUTH_RESTORE_FAILED] Application failed to restore saved session into browser context: ${restoreResult.error}`);
+        }
+        throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie".');
       }
-      throw new Error('Naukri session is unauthenticated. Please link your account via "Paste Session Cookie".');
-    }
 
-    // 2. Validate session on Naukri BEFORE performing any applications
-    const validation = await validateNaukriSessionOnPage(page, userKey);
-    if (!validation.isValid) {
-      const cfg = await getNaukriConfigAsync(userKey);
-      cfg.hasSession = false;
-      cfg.sessionStatus = 'EXPIRED';
-      cfg.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie)';
-      cfg.lastError = `Naukri session has expired on the server (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
-      await saveNaukriConfigAsync(userKey, cfg);
+      // 2. Validate session on Naukri BEFORE performing any applications
+      const validation = await validateNaukriSessionOnPage(page, userKey);
+      if (!validation.isValid) {
+        const cfg = await getNaukriConfigAsync(userKey);
+        cfg.hasSession = false;
+        cfg.sessionStatus = 'EXPIRED';
+        cfg.lastStatus = 'SESSION EXPIRED (Please Re-Link Cookie)';
+        cfg.lastError = `Naukri session has expired on the server (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in settings to refresh your cookie.`;
+        await saveNaukriConfigAsync(userKey, cfg);
+        throw new Error(`Naukri session is unauthenticated or expired (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in the Naukri menu to refresh your session.`);
+      }
 
-      throw new Error(`Naukri session is unauthenticated or expired (${validation.detail || validation.reason || 'Session expired'}). Please click "Paste Session Cookie" in the Naukri menu to refresh your session.`);
+      return await applyToNaukriJobsWithPuppeteer(page, userKey, customOptions);
+    } finally {
+      activeApplyJobState.running = false;
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
+      await releaseUserLockAsync(userKey, 'easy_apply');
     }
-
-    return await applyToNaukriJobsWithPuppeteer(page, userKey, customOptions);
-  } finally {
-    activeApplyJobState.running = false;
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
-    }
-    await releaseUserLockAsync(userKey, 'easy_apply');
-  }
+  });
 }
 
 /**
@@ -3471,43 +3471,46 @@ async function retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, user
 
   await acquireUserLockAsync(userKey, 'instant_apply', 300);
 
-  let browser = null;
-  try {
-    const browserPath = findBrowserExecutable();
-    browser = await puppeteer.launch({
-      headless: 'new',
-      executablePath: browserPath || undefined,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu']
-    });
+  return withSingleBrowserLock('retryAndApplySingleJobInstantAsync', async () => {
+    let browser = null;
+    try {
+      const browserPath = findBrowserExecutable();
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: 'new',
+        executablePath: browserPath || undefined
+      });
+      browser = await puppeteer.launch(launchOptions);
 
-    const page = await browser.newPage();
-    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+      const page = await browser.newPage();
+      await setupPageOptimizations(page, { blockMedia: true });
+      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-    const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-    if (!restoreResult.hasSession) {
-      throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
+      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+      if (!restoreResult.hasSession) {
+        throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
+      }
+
+      const resolvedResume = await resolveUserResumeFile(userKey);
+
+      console.log(`[INSTANT_APPLY] Navigating to target job URL: ${jobUrl}...`);
+      await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await new Promise(r => setTimeout(r, 2000));
+
+      const jobItem = {
+        jobId: jobId || `job_${Date.now()}`,
+        jobUrl,
+        jobTitle: 'Target Role',
+        company: 'Naukri Employer'
+      };
+
+      return await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, userAnswers);
+    } finally {
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
+      await releaseUserLockAsync(userKey, 'instant_apply');
     }
-
-    const resolvedResume = await resolveUserResumeFile(userKey);
-
-    console.log(`[INSTANT_APPLY] Navigating to target job URL: ${jobUrl}...`);
-    await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    await new Promise(r => setTimeout(r, 2000));
-
-    const jobItem = {
-      jobId: jobId || `job_${Date.now()}`,
-      jobUrl,
-      jobTitle: 'Target Role',
-      company: 'Naukri Employer'
-    };
-
-    return await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, userAnswers);
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
-    }
-    await releaseUserLockAsync(userKey, 'instant_apply');
-  }
+  });
 }
 
 /**
@@ -3549,90 +3552,84 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnsw
     return { success: false, message: `Account "${userKey}" is currently busy with another automation process.` };
   }
 
-  let browser = null;
-  let verifiedCount = 0;
-  let processedCount = 0;
+  return withSingleBrowserLock('applyAllUnconfirmedJobsAsync', async () => {
+    let browser = null;
+    let verifiedCount = 0;
+    let processedCount = 0;
 
-  try {
-    let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
-    const launchOptions = {
-      headless: 'new',
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-software-rasterizer',
-        '--no-zygote',
-        '--single-process'
-      ]
-    };
-    if (browserPath) launchOptions.executablePath = browserPath;
-    browser = await puppeteer.launch(launchOptions);
+    try {
+      let browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+      const launchOptions = getOptimizedLaunchOptions({
+        headless: 'new',
+        executablePath: browserPath || undefined
+      });
+      browser = await puppeteer.launch(launchOptions);
 
-    const resolvedResume = await resolveUserResumeFile(userKey);
-    let page = null;
+      const resolvedResume = await resolveUserResumeFile(userKey);
+      let page = null;
 
-    async function ensureActivePage() {
-      if (page) {
-        try { await page.close(); } catch (e) {}
-      }
-      page = await browser.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
-      await restoreAndInjectNaukriSession(page, userKey);
-      return page;
-    }
-
-    page = await ensureActivePage();
-
-    for (const job of unconfirmed) {
-      if (!job.jobUrl) continue;
-      processedCount++;
-      console.log(`[UNCONFIRMED_BATCH] (${processedCount}/${unconfirmed.length}) Applying to: "${job.jobTitle}" at "${job.company}" (${job.jobUrl})...`);
-
-      try {
-        if (!page || page.isClosed()) {
-          page = await ensureActivePage();
+      async function ensureActivePage() {
+        if (page) {
+          try { await page.close(); } catch (e) {}
         }
-
-        await page.goto(job.jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
-        await new Promise(r => setTimeout(r, 2000));
-
-        const jobItem = {
-          jobId: job.jobId || job.id,
-          jobTitle: job.jobTitle || 'Target Role',
-          company: job.company || 'Naukri Employer',
-          location: job.location || 'Remote',
-          experience: job.experience || '0-5 Yrs',
-          jobUrl: job.jobUrl
-        };
-
-        const result = await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, customAnswers);
-        if (result.isVerified) {
-          verifiedCount++;
-          console.log(`[UNCONFIRMED_BATCH] ✅ SUBMITTED & VERIFIED: "${job.jobTitle}" at "${job.company}"!`);
-        }
-      } catch (jobErr) {
-        console.warn(`[UNCONFIRMED_BATCH] Error on job ${job.company}: ${jobErr.message}`);
-        // Reset page on navigation/frame errors to prevent cascading failures
-        page = await ensureActivePage().catch(() => null);
+        page = await browser.newPage();
+        await setupPageOptimizations(page, { blockMedia: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        await restoreAndInjectNaukriSession(page, userKey);
+        return page;
       }
 
-      await new Promise(r => setTimeout(r, 1500));
-    }
+      page = await ensureActivePage();
 
-    return {
-      success: true,
-      count: processedCount,
-      verifiedCount,
-      message: `Processed ${processedCount} unconfirmed job(s). Successfully verified and submitted ${verifiedCount} application(s) on Naukri!`
-    };
-  } finally {
-    if (browser) {
-      try { await browser.close(); } catch (e) {}
+      for (const job of unconfirmed) {
+        if (!job.jobUrl) continue;
+        processedCount++;
+        console.log(`[UNCONFIRMED_BATCH] (${processedCount}/${unconfirmed.length}) Applying to: "${job.jobTitle}" at "${job.company}" (${job.jobUrl})...`);
+
+        try {
+          if (!page || page.isClosed()) {
+            page = await ensureActivePage();
+          }
+
+          await page.goto(job.jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          await new Promise(r => setTimeout(r, 2000));
+
+          const jobItem = {
+            jobId: job.jobId || job.id,
+            jobTitle: job.jobTitle || 'Target Role',
+            company: job.company || 'Naukri Employer',
+            location: job.location || 'Remote',
+            experience: job.experience || '0-5 Yrs',
+            jobUrl: job.jobUrl
+          };
+
+          const result = await executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedResume, customAnswers);
+          if (result.isVerified) {
+            verifiedCount++;
+            console.log(`[UNCONFIRMED_BATCH] ✅ SUBMITTED & VERIFIED: "${job.jobTitle}" at "${job.company}"!`);
+          }
+        } catch (jobErr) {
+          console.warn(`[UNCONFIRMED_BATCH] Error on job ${job.company}: ${jobErr.message}`);
+          // Reset page on navigation/frame errors to prevent cascading failures
+          page = await ensureActivePage().catch(() => null);
+        }
+
+        await new Promise(r => setTimeout(r, 1500));
+      }
+
+      return {
+        success: true,
+        count: processedCount,
+        verifiedCount,
+        message: `Processed ${processedCount} unconfirmed job(s). Successfully verified and submitted ${verifiedCount} application(s) on Naukri!`
+      };
+    } finally {
+      if (browser) {
+        await safeCloseBrowser(browser);
+      }
+      await releaseUserLockAsync(userKey, 'unconfirmed_batch_apply');
     }
-    await releaseUserLockAsync(userKey, 'unconfirmed_batch_apply');
-  }
+  });
 }
 
 /**
@@ -4433,33 +4430,26 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
 
   // Run in background
   (async () => {
-    let browser = null;
-    let page = null;
-    try {
-      await acquireUserLockAsync(userKey, 'batch_inspection', 1800);
+    await withSingleBrowserLock('inspectBatchJobQuestionsAsync', async () => {
+      let browser = null;
+      let page = null;
+      try {
+        await acquireUserLockAsync(userKey, 'batch_inspection', 1800);
 
-      const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
-      const launchOptions = {
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--no-zygote',
-          '--single-process'
-        ]
-      };
-      if (browserPath) launchOptions.executablePath = browserPath;
-      browser = await puppeteer.launch(launchOptions);
-      page = await browser.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+        const launchOptions = getOptimizedLaunchOptions({
+          headless: 'new',
+          executablePath: browserPath || undefined
+        });
+        browser = await puppeteer.launch(launchOptions);
+        page = await browser.newPage();
+        await setupPageOptimizations(page, { blockMedia: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-      if (!restoreResult.hasSession) {
-        throw new Error('Naukri session is missing or expired. Link session in settings before inspecting.');
-      }
+        const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+        if (!restoreResult.hasSession) {
+          throw new Error('Naukri session is missing or expired. Link session in settings before inspecting.');
+        }
 
       for (let idx = 0; idx < candidateJobs.length; idx++) {
         if (activeBatchInspectionState.isPaused) {
@@ -4744,7 +4734,7 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
       activeBatchInspectionState.completedAt = new Date().toISOString();
       activeBatchInspectionState.currentJob = null;
       if (browser) {
-        try { await browser.close(); } catch (e) {}
+        await safeCloseBrowser(browser);
       }
       await releaseUserLockAsync(userKey, 'batch_inspection').catch(() => {});
 
@@ -4753,6 +4743,7 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
       saveBatchScreeningData(userKey, data);
       console.log(`[BATCH_INSPECT] Finished! Inspected ${data.inspectedCount} jobs. Unique questions found: ${data.consolidatedQuestions.length}.`);
     }
+    });
   })().catch(e => console.error('[BATCH_INSPECT] Unhandled exception:', e));
 
   return {
@@ -4847,33 +4838,26 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
   activeBatchApplyState.error = null;
 
   (async () => {
-    let browser = null;
-    let page = null;
-    try {
-      await acquireUserLockAsync(userKey, 'batch_apply', 3600);
+    await withSingleBrowserLock('applyBatchWithAnswersAsync', async () => {
+      let browser = null;
+      let page = null;
+      try {
+        await acquireUserLockAsync(userKey, 'batch_apply', 3600);
 
-      const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
-      const launchOptions = {
-        headless: 'new',
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-gpu',
-          '--disable-software-rasterizer',
-          '--no-zygote',
-          '--single-process'
-        ]
-      };
-      if (browserPath) launchOptions.executablePath = browserPath;
-      browser = await puppeteer.launch(launchOptions);
-      page = await browser.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+        const browserPath = await ensureBrowserInstalled().catch(() => findBrowserExecutable());
+        const launchOptions = getOptimizedLaunchOptions({
+          headless: 'new',
+          executablePath: browserPath || undefined
+        });
+        browser = await puppeteer.launch(launchOptions);
+        page = await browser.newPage();
+        await setupPageOptimizations(page, { blockMedia: true });
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
 
-      const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
-      if (!restoreResult.hasSession) {
-        throw new Error('Naukri candidate session is missing or expired.');
-      }
+        const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
+        if (!restoreResult.hasSession) {
+          throw new Error('Naukri candidate session is missing or expired.');
+        }
 
       for (let idx = 0; idx < targetJobs.length; idx++) {
         if (activeBatchApplyState.isPaused) {
@@ -5093,11 +5077,12 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
       activeBatchApplyState.completedAt = new Date().toISOString();
       activeBatchApplyState.currentJob = null;
       if (browser) {
-        try { await browser.close(); } catch (e) {}
+        await safeCloseBrowser(browser);
       }
       await releaseUserLockAsync(userKey, 'batch_apply').catch(() => {});
       console.log(`[BATCH_APPLY] Completed run. Submitted: ${activeBatchApplyState.submittedCount}, Needs Attention: ${activeBatchApplyState.needsAttentionCount}, Failed: ${activeBatchApplyState.failedCount}`);
     }
+    });
   })().catch(e => console.error('[BATCH_APPLY] Unhandled error:', e));
 
   return {
