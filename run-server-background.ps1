@@ -5,6 +5,7 @@ if (-not $projectRoot) { $projectRoot = "c:\antigravity_projects\cold-mail-gener
 Set-Location $projectRoot
 
 $port = 5001
+$env:NAUKRI_FORCE_HEADLESS = "true"
 
 # 1. Check if server is already running
 $isRunning = $false

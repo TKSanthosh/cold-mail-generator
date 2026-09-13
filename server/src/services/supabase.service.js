@@ -806,6 +806,26 @@ async function supabaseSaveNaukriAppliedJobs(userKey, appliedJobs) {
   }
 }
 
+async function supabaseSaveBatchScreeningData(userKey, batchData) {
+  if (!isSupabaseConfigured() || !userKey) return false;
+  try {
+    return await supabaseSaveNaukriConfig(userKey, { batchScreeningData: batchData });
+  } catch (e) {
+    console.warn('[SUPABASE] saveBatchScreeningData error:', e.message);
+    return false;
+  }
+}
+
+async function supabaseGetBatchScreeningData(userKey) {
+  if (!isSupabaseConfigured() || !userKey) return null;
+  try {
+    const config = await supabaseGetNaukriConfig(userKey);
+    return config?.batchScreeningData || null;
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   isSupabaseConfigured,
   supabaseUpsertUser,
@@ -834,5 +854,7 @@ module.exports = {
   supabaseGetNaukriQueue,
   supabaseSaveNaukriQueue,
   supabaseGetNaukriAppliedJobs,
-  supabaseSaveNaukriAppliedJobs
+  supabaseSaveNaukriAppliedJobs,
+  supabaseSaveBatchScreeningData,
+  supabaseGetBatchScreeningData
 };

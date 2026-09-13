@@ -58,8 +58,9 @@ async function getUserLockInfoAsync(userKey = 'default_user') {
   }
   if (userLocks.has(userKey)) {
     const lock = userLocks.get(userKey);
-    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
-      return { locked: true, owner: lock.owner || null, expiresAt: null };
+    const effectiveTtlMs = (lock.ttl ? lock.ttl * 1000 : LOCK_TIMEOUT_MS);
+    if (Date.now() - lock.lockedAt < effectiveTtlMs) {
+      return { locked: true, owner: lock.owner || null, expiresAt: new Date(lock.lockedAt + effectiveTtlMs).toISOString() };
     }
     userLocks.delete(userKey);
   }
@@ -74,7 +75,8 @@ async function isUserLockedAsync(userKey = 'default_user') {
 function isUserLocked(userKey = 'default_user') {
   if (userLocks.has(userKey)) {
     const lock = userLocks.get(userKey);
-    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
+    const effectiveTtlMs = (lock.ttl ? lock.ttl * 1000 : LOCK_TIMEOUT_MS);
+    if (Date.now() - lock.lockedAt < effectiveTtlMs) {
       return true;
     }
     userLocks.delete(userKey);
@@ -97,12 +99,14 @@ async function acquireUserLockAsync(userKey = 'default_user', owner = `worker_${
   }
   if (userLocks.has(userKey) && !force) {
     const lock = userLocks.get(userKey);
-    if (Date.now() - lock.lockedAt < LOCK_TIMEOUT_MS) {
+    const effectiveTtlMs = (lock.ttl ? lock.ttl * 1000 : LOCK_TIMEOUT_MS);
+    if (Date.now() - lock.lockedAt < effectiveTtlMs) {
       return false;
     }
   }
   userLocks.set(userKey, {
     lockedAt: Date.now(),
+    ttl,
     owner
   });
   logStructured('LOCK', `Acquired exclusive automation lease lock for user "${userKey}" (Owner: ${owner})`);
@@ -2295,40 +2299,29 @@ async function triggerAutonomousNaukriApply(options = {}) {
           runStandaloneNaukriApply,
           getFilterConfig,
           applyAllUnconfirmedJobsAsync,
-          getNaukriAppliedJobs
+          getNaukriAppliedJobs,
+          getBatchScreeningData,
+          getBatchInspectionStatus,
+          getBatchApplyStatus,
+          inspectBatchJobQuestionsAsync,
+          applyBatchWithAnswersAsync,
+          getNaukriQueue
         } = require('./naukri_apply.service');
 
+        const { runBatchCycle, getOrchestratorStatus, BatchStage } = require('./batch_orchestrator.service');
+
+        // Execute unified 7-stage Batch Workflow
+        const batchCycleResult = await runBatchCycle(userKey, options);
+
+        if (batchCycleResult && (batchCycleResult.success || batchCycleResult.paused)) {
+          logStructured('AUTONOMOUS_BATCH', `[BATCH CYCLE COMPLETED] Stage: ${batchCycleResult.stage || 'ACTIVE'} for user "${userKey}".`);
+          continue; // CRITICAL FIX: Skip fall-through to prevent blind direct applications!
+        }
+
+        // Fallback for legacy direct apply (only if batch cycle returned unhandled)
         const filterCfg = getFilterConfig(userKey);
         const targetDaily = filterCfg.dailyTarget || 100;
         const stats = getTodayAppliedStats(userKey);
-
-        // 1. First, retry/verify any unconfirmed jobs whenever possible
-        const appliedJobs = getNaukriAppliedJobs(userKey);
-        const unconfirmed = appliedJobs.filter(j => 
-          j.status === 'SUBMISSION_UNCONFIRMED' || 
-          j.verificationStatus === 'UNVERIFIED' || 
-          j.verificationStatus === 'LEGACY_UNVERIFIED'
-        );
-
-        if (unconfirmed.length > 0 && !await isUserLockedAsync(userKey)) {
-          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Processing ${unconfirmed.length} unconfirmed jobs for "${userKey}"...`);
-          try {
-            await applyAllUnconfirmedJobsAsync(userKey);
-          } catch (unconfErr) {
-            console.warn(`[AUTONOMOUS UNCONFIRMED WARN for ${userKey}]`, unconfErr.message);
-          }
-        }
-
-        // 2. Discover and submit fresh matching 200+ employee jobs whenever under daily target
-        if (stats.todayCount < targetDaily && !await isUserLockedAsync(userKey)) {
-          const maxJobs = options.turbo ? Math.max(100, targetDaily - stats.todayCount) : (targetDaily - stats.todayCount);
-          logStructured('AUTONOMOUS_APPLY', `[24/7 AUTO-APPLY ENGINE] Automatically applying to matching 200+ employee jobs for "${userKey}" (${stats.todayCount}/${targetDaily} submitted today)...`);
-          
-          await runStandaloneNaukriApply(userKey, {
-            applyAllAtOnce: true,
-            maxJobsPerRun: Math.min(100, maxJobs)
-          });
-        }
 
         // 3. Perform non-destructive micro-touch on headline to keep candidate active timestamp fresh
         if (config.continuousPortfolioEnabled !== false) {

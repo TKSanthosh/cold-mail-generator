@@ -2006,6 +2006,142 @@ app.post('/api/naukri/batch/apply-pause', (req, res) => {
   res.json(result);
 });
 
+// BATCH ORCHESTRATOR: Get Unified 7-Stage Machine Status
+app.get('/api/naukri/batch/orchestrator-status', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { getOrchestratorStatus } = require('./services/batch_orchestrator.service');
+  try {
+    const status = await getOrchestratorStatus(userKey);
+    res.json({ success: true, status });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// BATCH ORCHESTRATOR: Manually Trigger Autonomous Cycle
+app.post('/api/naukri/batch/orchestrator-run', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { runBatchCycle } = require('./services/batch_orchestrator.service');
+  try {
+    const result = await runBatchCycle(userKey, req.body || {});
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// DAILY APPLICATION CAPACITY & LIMIT CONTROLS
+app.get('/api/naukri/daily-capacity', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { getDailyCapacity } = require('./services/daily_capacity.service');
+  try {
+    const capacity = getDailyCapacity(userKey);
+    res.json({ success: true, capacity });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/daily-capacity/target', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { setDailyTarget } = require('./services/daily_capacity.service');
+  try {
+    const target = req.body?.target || 50;
+    const capacity = setDailyTarget(userKey, target);
+    res.json({ success: true, capacity });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/daily-capacity/reset-limit', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { resetDailyLimitReached } = require('./services/daily_capacity.service');
+  try {
+    const capacity = resetDailyLimitReached(userKey);
+    res.json({ success: true, capacity });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// REMOTE SCREENING QUESTION ENDPOINTS
+app.get('/api/naukri/questions/pending', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { getPendingQuestionRequests } = require('./services/question_notification.service');
+  try {
+    const requests = getPendingQuestionRequests(userKey);
+    res.json({ success: true, count: requests.length, requests });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.get('/api/naukri/questions/:requestId', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { getQuestionRequestById } = require('./services/question_notification.service');
+  try {
+    const request = getQuestionRequestById(userKey, req.params.requestId);
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Question request not found' });
+    }
+    res.json({ success: true, request });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/naukri/questions/:requestId/answer', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { handleRemoteAnswer } = require('./services/question_notification.service');
+  try {
+    const { answer, source } = req.body || {};
+    if (answer === undefined || answer === null) {
+      return res.status(400).json({ success: false, error: 'Answer is required' });
+    }
+    const result = await handleRemoteAnswer(userKey, req.params.requestId, answer, source || 'WEB_APP');
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// WhatsApp / Push / Webhook Remote Answering Webhook
+app.post('/api/naukri/questions/webhook', async (req, res) => {
+  try {
+    const userKey = resolveUserKey(req, res);
+    const body = req.body || {};
+    let requestId = body.requestId;
+    let answer = body.answer;
+
+    if (body.Body) {
+      const twilioBody = String(body.Body).trim();
+      const match = twilioBody.match(/^(qr_[a-zA-Z0-9_-]+)[:\s]+(.*)$/i);
+      if (match) {
+        requestId = match[1];
+        answer = match[2].trim();
+      } else {
+        const { getPendingQuestionRequests } = require('./services/question_notification.service');
+        const pending = getPendingQuestionRequests(userKey);
+        if (pending.length > 0) {
+          requestId = pending[0].requestId;
+          answer = twilioBody;
+        }
+      }
+    }
+
+    if (!requestId || answer === undefined) {
+      return res.status(400).json({ success: false, error: 'Could not resolve requestId or answer from webhook payload' });
+    }
+
+    const { handleRemoteAnswer } = require('./services/question_notification.service');
+    const result = await handleRemoteAnswer(userKey, requestId, answer, 'WHATSAPP_WEBHOOK');
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
 // Real-time Push Notifications SSE Stream for Frontend Web App
 app.get('/api/notifications/stream', (req, res) => {
   const userKey = resolveUserKey(req, res);
@@ -2260,6 +2396,12 @@ async function initDatabaseStartupSync() {
         if (Array.isArray(naukriConf.sessionCookies) && naukriConf.sessionCookies.length > 0) {
           fs.writeFileSync(uPaths.naukriSessionPath, JSON.stringify(naukriConf.sessionCookies, null, 2), 'utf8');
         }
+        // Hydrate Batch Screening Data (Questions & Answers) from Supabase
+        if (naukriConf.batchScreeningData && typeof naukriConf.batchScreeningData === 'object') {
+          const batchPath = getBatchScreeningQuestionsFilePath(u.userKey);
+          fs.writeFileSync(batchPath, JSON.stringify(naukriConf.batchScreeningData, null, 2), 'utf8');
+          console.log(`[DATABASE PERSISTENCE] Restored batch screening data (${naukriConf.batchScreeningData.consolidatedQuestions?.length || 0} questions) from Supabase for "${u.userKey}".`);
+        }
       }
 
       // Hydrate Naukri history if present
@@ -2319,9 +2461,23 @@ async function startServer() {
   });
 
   // 3. Start HTTP Server immediately so endpoints are instantly available
-  app.listen(PORT, () => {
+  const server = app.listen(PORT, () => {
     console.log(`[INFO] Cold Email Backend running 24/7 on http://localhost:${PORT}`);
   });
+
+  // Graceful shutdown handling for cloud containers & background workers
+  const handleGracefulShutdown = async (signal) => {
+    console.log(`[SERVER] Received ${signal}. Initiating graceful shutdown...`);
+    server.close(() => {
+      console.log('[SERVER] HTTP server closed.');
+    });
+    setTimeout(() => {
+      console.log('[SERVER] Forced shutdown after timeout.');
+      process.exit(0);
+    }, 5000).unref();
+  };
+  process.on('SIGTERM', () => handleGracefulShutdown('SIGTERM'));
+  process.on('SIGINT', () => handleGracefulShutdown('SIGINT'));
 
   // 4. Background Database Hydration & Schedulers
   initDatabaseStartupSync()

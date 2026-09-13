@@ -25,7 +25,9 @@ const {
   supabaseGetNaukriQueue,
   supabaseSaveNaukriQueue,
   supabaseGetNaukriAppliedJobs,
-  supabaseSaveNaukriAppliedJobs
+  supabaseSaveNaukriAppliedJobs,
+  supabaseSaveBatchScreeningData,
+  supabaseGetBatchScreeningData
 } = require('./supabase.service');
 
 // Default initial Q&A knowledge base
@@ -70,7 +72,7 @@ const DEFAULT_FILTER_CONFIG = {
   maxJobsPerRun: 12,
   dailyTarget: 50,
   easyApplyOnly: true,
-  neverApplySameCompanyTwice: true, // Permanent company deduplication: never apply to the same company again
+  neverApplySameCompanyTwice: false, // Job-level deduplication active; permits distinct roles at same company while maxJobsPerCompanyPerRun enforces per-batch diversity
   minCompanyEmployees: 200, // Strictly verify company has at least 200+ employees
   excludeStartups: true, // Exclude early-stage startups (< 200 employees)
   excludedCompanies: [],
@@ -138,6 +140,17 @@ const NAUKRI_APPLY_SUCCESS_PHRASES = [
   'applied to this job',
   'you have applied',
   'applied on'
+];
+
+const NAUKRI_LIMIT_REACHED_PHRASES = [
+  'reached your daily limit',
+  'daily application limit reached',
+  'daily limit reached',
+  'maximum applications reached for today',
+  'exceeded your daily application quota',
+  'daily quota exceeded',
+  'daily apply limit reached',
+  'quota limit reached for today'
 ];
 
 function getQaFilePath(userKey) {
@@ -273,9 +286,9 @@ async function getQaDatabaseAsync(userKey) {
     } catch (e) {}
   }
 
-  // 3. Fallback: If and only if user has never saved any items, return DEFAULT_QA_ITEMS in-memory
-  // NEVER write DEFAULT_QA_ITEMS to Supabase on a transient fetch or container startup!
-  return DEFAULT_QA_ITEMS;
+  // 3. Fallback: If user has never saved any items, return empty list
+  // NEVER return hardcoded fabricated answers to prevent inaccurate profile submissions!
+  return [];
 }
 
 function getQaDatabase(userKey) {
@@ -286,8 +299,8 @@ function getQaDatabase(userKey) {
       if (Array.isArray(items) && items.length > 0) return items;
     } catch (e) {}
   }
-  // Return in-memory defaults ONLY - do NOT trigger side-effect writes to disk or Supabase!
-  return DEFAULT_QA_ITEMS;
+  // Return empty list - do NOT fabricate default answers!
+  return [];
 }
 
 async function saveQaDatabaseAsync(userKey, items) {
@@ -557,109 +570,15 @@ function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
     return resolveAnswerWithOptionMapping(bestMatch.answer, bestMatch, confidence, availableOptions);
   }
 
-  // 4. Smart Profile Fallback Inference (Location, CTC, Notice Period, Relocation, Shift, Role/Skill Experience)
-  const inferred = inferAnswerFromProfile(rawQuestionText, availableOptions);
-  if (inferred) {
-    return inferred;
-  }
-
+  // 4. Smart Profile Fallback Inference: Strictly disabled to prevent fabricated answers
   return null;
 }
 
 /**
  * Smart Profile Fallback Inference
- * Resolves standard recruiter screening questions automatically with high confidence
+ * Strictly returns null: no speculative or fabricated answers are ever submitted without candidate input.
  */
 function inferAnswerFromProfile(questionText, availableOptions = []) {
-  const normQ = (questionText || '').toLowerCase();
-
-  // 1. Relocation & Willingness
-  if (normQ.includes('relocate') || normQ.includes('relocation') || normQ.includes('willing to move') || normQ.includes('ready to relocate')) {
-    return resolveAnswerWithOptionMapping('Yes', { answer: 'Yes', category: 'Preferences' }, 90, availableOptions);
-  }
-
-  // 2. Preferred Location / Work Mode
-  if (normQ.includes('preferred work location') || normQ.includes('preferred location') || normQ.includes('current location') || normQ.includes('location preference')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const bangOpt = availableOptions.find(o => {
-        const lo = o.toLowerCase();
-        return lo.includes('bangalore') || lo.includes('bengaluru') || lo.includes('remote') || lo.includes('any');
-      });
-      if (bangOpt) return { answer: bangOpt, matchedItem: { answer: bangOpt }, confidence: 90, rawAnswer: bangOpt };
-    }
-    return { answer: 'Bangalore / Remote', matchedItem: { answer: 'Bangalore / Remote' }, confidence: 90, rawAnswer: 'Bangalore / Remote' };
-  }
-
-  // 3. Expected & Current CTC
-  if (normQ.includes('expected ctc') || normQ.includes('expected salary') || normQ.includes('expectation') || normQ.includes('expected annual ctc')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const ctcOpt = availableOptions.find(o => o.includes('18') || o.includes('15') || o.includes('16') || o.includes('20') || o.toLowerCase().includes('lpa'));
-      if (ctcOpt) return { answer: ctcOpt, matchedItem: { answer: ctcOpt }, confidence: 90, rawAnswer: ctcOpt };
-    }
-    return { answer: '1800000', matchedItem: { answer: '1800000' }, confidence: 90, rawAnswer: '1800000' };
-  }
-  if (normQ.includes('current ctc') || normQ.includes('present ctc') || normQ.includes('current salary') || normQ.includes('fixed ctc') || normQ.includes('current annual ctc')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const ctcOpt = availableOptions.find(o => o.includes('10') || o.includes('11') || o.includes('12') || o.toLowerCase().includes('lpa'));
-      if (ctcOpt) return { answer: ctcOpt, matchedItem: { answer: ctcOpt }, confidence: 90, rawAnswer: ctcOpt };
-    }
-    return { answer: '1078000', matchedItem: { answer: '1078000' }, confidence: 90, rawAnswer: '1078000' };
-  }
-
-  // 4. Notice Period & Joining Timeline
-  if (normQ.includes('notice period') || normQ.includes('how soon can you join') || normQ.includes('joining period') || normQ.includes('availability to join') || normQ.includes('serving notice')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const npOpt = availableOptions.find(o => {
-        const lo = o.toLowerCase();
-        return lo.includes('15 days') || lo.includes('15') || lo.includes('1 month') || lo.includes('serving') || lo.includes('immediate');
-      });
-      if (npOpt) return { answer: npOpt, matchedItem: { answer: npOpt }, confidence: 90, rawAnswer: npOpt };
-    }
-    return { answer: '15 days or less', matchedItem: { answer: '15 days or less' }, confidence: 90, rawAnswer: '15 days or less' };
-  }
-
-  // 5. Total Experience / Role Experience / Skill Experience (e.g., Golang, Backend Developer, Full Stack)
-  if (normQ.includes('experience') || normQ.includes('how many years') || normQ.includes('years in') || normQ.includes('years of') || normQ.includes('yoe')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const expOpt = availableOptions.find(o => {
-        const lo = o.toLowerCase();
-        return lo.includes('3-4') || lo.includes('>4') || lo.includes('4+') || lo.includes('4 years') || lo.includes('3-5') || lo.includes('2-3') || lo.includes('3+');
-      });
-      if (expOpt) return { answer: expOpt, matchedItem: { answer: expOpt }, confidence: 90, rawAnswer: expOpt };
-
-      const firstPositive = availableOptions.find(o => !o.toLowerCase().includes('no exp') && !o.toLowerCase().includes('0-'));
-      if (firstPositive) return { answer: firstPositive, matchedItem: { answer: firstPositive }, confidence: 85, rawAnswer: firstPositive };
-    }
-    return { answer: '4 Years', matchedItem: { answer: '4 Years' }, confidence: 90, rawAnswer: '4 Years' };
-  }
-
-  // 6. Work Shifts & Work Mode
-  if (normQ.includes('work mode') || normQ.includes('wfh') || normQ.includes('wfo') || normQ.includes('hybrid') || normQ.includes('office')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const modeOpt = availableOptions.find(o => {
-        const lo = o.toLowerCase();
-        return lo.includes('hybrid') || lo.includes('remote') || lo.includes('flexible') || lo.includes('office');
-      });
-      if (modeOpt) return { answer: modeOpt, matchedItem: { answer: modeOpt }, confidence: 90, rawAnswer: modeOpt };
-    }
-    return { answer: 'Hybrid / Remote', matchedItem: { answer: 'Hybrid / Remote' }, confidence: 90, rawAnswer: 'Hybrid / Remote' };
-  }
-  if (normQ.includes('shift') || normQ.includes('rotational') || normQ.includes('night shift')) {
-    if (Array.isArray(availableOptions) && availableOptions.length > 0) {
-      const shiftOpt = availableOptions.find(o => {
-        const lo = o.toLowerCase();
-        return lo.includes('flexible') || lo.includes('day') || lo.includes('general') || lo.includes('yes');
-      });
-      if (shiftOpt) return { answer: shiftOpt, matchedItem: { answer: shiftOpt }, confidence: 90, rawAnswer: shiftOpt };
-    }
-    return { answer: 'Day / General Shift (Flexible)', matchedItem: { answer: 'Day / General Shift (Flexible)' }, confidence: 90, rawAnswer: 'Day / General Shift (Flexible)' };
-  }
-
-  // 7. General confirmation & proficiency questions
-  if (normQ.includes('comfortable') || normQ.includes('agree') || normQ.includes('okay with') || normQ.includes('do you have experience')) {
-    return resolveAnswerWithOptionMapping('Yes', { answer: 'Yes', category: 'General' }, 85, availableOptions);
-  }
-
   return null;
 }
 
@@ -1317,6 +1236,12 @@ function getTodayAppliedStats(userKey) {
   const pending = getPendingQuestions(userKey);
   const config = getFilterConfig(userKey);
 
+  let capacity = null;
+  try {
+    const { getDailyCapacity } = require('./daily_capacity.service');
+    capacity = getDailyCapacity(userKey);
+  } catch (e) {}
+
   const todayStr = new Date().toISOString().split('T')[0];
   const todayApps = allApps.filter(a => (a.appliedAt || '').startsWith(todayStr));
 
@@ -1350,14 +1275,15 @@ function getTodayAppliedStats(userKey) {
 
   const waitingForUserQueue = queue.filter(q => q.state === ApplicationState.WAITING_FOR_USER);
 
-  const dailyTarget = config.dailyTarget || 50;
+  const dailyTarget = capacity ? capacity.dailyTarget : (config.dailyTarget || 50);
   const verifiedCount = verifiedToday.length;
+  const remainingTarget = capacity ? capacity.remainingCapacity : Math.max(0, dailyTarget - verifiedCount);
 
   return {
     todayCount: verifiedCount,
     verifiedCount,
     dailyTarget,
-    remainingTarget: Math.max(0, dailyTarget - verifiedCount),
+    remainingTarget,
     percentComplete: Math.min(100, Math.round((verifiedCount / dailyTarget) * 100)),
     inProgressCount: inProgressQueue.length,
     discoveredCount: queue.length,
@@ -1365,6 +1291,13 @@ function getTodayAppliedStats(userKey) {
     failedCount: failedToday.length,
     skippedCount: skippedToday.length,
     unconfirmedCount: unconfirmedToday.length,
+    capacity: capacity || {
+      dailyTarget,
+      applicationsVerified: verifiedCount,
+      remainingCapacity: remainingTarget,
+      canApply: remainingTarget > 0,
+      naukriReportedLimitReached: false
+    },
     todayApps
   };
 }
@@ -3434,7 +3367,23 @@ async function executeLiveNaukriApplyWorkflow(page, userKey, jobItem, resolvedRe
  * INSTANT RETRY & SINGLE-JOB APPLICATION WORKER
  * Full interactive submission with screening field auto-answering and DOM verification
  */
-async function retryAndApplySingleJobInstantAsync(userKey, { jobId, jobUrl, userAnswers = [] }) {
+async function retryAndApplySingleJobInstantAsync(userKey, options = {}) {
+  let jobId = typeof options === 'string' ? options : options.jobId;
+  let jobUrl = typeof options === 'object' ? options.jobUrl : null;
+  let userAnswers = typeof options === 'object' ? (options.userAnswers || []) : [];
+
+  if (!jobUrl && jobId) {
+    const data = getBatchScreeningData(userKey);
+    const mapped = data?.jobQuestionsMap?.[jobId];
+    if (mapped && mapped.jobUrl) {
+      jobUrl = mapped.jobUrl;
+    } else {
+      const queue = getNaukriQueue(userKey);
+      const qItem = queue.find(q => q.jobId === jobId);
+      if (qItem && qItem.jobUrl) jobUrl = qItem.jobUrl;
+    }
+  }
+
   if (!jobUrl) {
     throw new Error('Target job URL is required for instant application.');
   }
@@ -3727,10 +3676,10 @@ async function extractCurrentNaukriQuestionFromDom(page, jobItem = {}) {
 
         // 3. Extract Options & Determine Field Type
         const optionEls = Array.from(surface.querySelectorAll(
-          'label, input[type="radio"], [class*="radio" i], [role="radio"], .chip, [class*="chip" i], [class*="Chip" i], [class*="choice" i], [class*="option" i], li'
+          'label, input[type="radio"], [class*="radio" i], [role="radio"], .chip, [class*="chip" i], [class*="Chip" i], [class*="choice" i], [class*="option" i], li, select option'
         ));
 
-        const blockedOptionPattern = /^(send|skip|skip this question|close|x|submit|apply|save|cancel|continue|next)$/i;
+        const blockedOptionPattern = /^(send|skip|skip this question|close|x|submit|apply|save|cancel|continue|next|select|choose|please select|none)$/i;
         const rawOptions = [];
         const seenOptions = new Set();
 
@@ -3762,14 +3711,14 @@ async function extractCurrentNaukriQuestionFromDom(page, jobItem = {}) {
           fieldType = 'text';
         }
 
-        const hasActiveInput = rawOptions.length > 0 || textInputs.length > 0;
-        if (!cleanQ && !hasActiveInput) {
+        // REAL QUESTION ONLY: If no real question text could be extracted, do NOT fabricate one!
+        if (!cleanQ) {
           return null;
         }
 
         return {
           isComplete: false,
-          question: cleanQ || 'Recruiter Screening Question',
+          question: cleanQ,
           type: fieldType,
           options: rawOptions,
           isMandatory: cleanQ.includes('*') || !!surface.querySelector('.mandatory, .required, [required]'),
@@ -4230,13 +4179,35 @@ function getBatchScreeningData(userKey) {
   };
 }
 
-function saveBatchScreeningData(userKey, data) {
+async function getBatchScreeningDataAsync(userKey) {
+  // 1. Database (Supabase) is the single source of truth when configured
+  if (isSupabaseConfigured()) {
+    try {
+      const cloudData = await supabaseGetBatchScreeningData(userKey);
+      if (cloudData && typeof cloudData === 'object' && (cloudData.consolidatedQuestions || cloudData.answers)) {
+        // Cache to local sandbox for rapid local reads and debug
+        saveBatchScreeningData(userKey, cloudData, { skipCloud: true });
+        return cloudData;
+      }
+    } catch (e) {
+      console.warn('[BATCH_SCREENING] Cloud fetch failed, falling back to local sandbox:', e.message);
+    }
+  }
+
+  // 2. Local sandbox fallback when offline or Supabase unconfigured
+  return getBatchScreeningData(userKey);
+}
+
+function saveBatchScreeningData(userKey, data, options = {}) {
   ensureUserSandbox(userKey);
   const filePath = getBatchScreeningQuestionsFilePath(userKey);
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
   } catch (e) {
     console.error('[BATCH_SCREENING] Failed to save screening data:', e.message);
+  }
+  if (!options.skipCloud && isSupabaseConfigured()) {
+    supabaseSaveBatchScreeningData(userKey, data).catch(() => {});
   }
 }
 
@@ -4309,7 +4280,7 @@ function pauseBatchApply() {
 function normalizeQuestionKey(text) {
   return (text || '')
     .toLowerCase()
-    .replace(/[*?:\-_.]/g, '')
+    .replace(/[*?:\-_().]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -4428,9 +4399,9 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
   data.consolidatedQuestions = data.consolidatedQuestions || [];
   data.answers = data.answers || {};
 
-  // Run in background
-  (async () => {
-    await withSingleBrowserLock('inspectBatchJobQuestionsAsync', async () => {
+  // Run worker task (can be awaited synchronously by orchestrator or run detached for HTTP)
+  const runInspectionPromise = (async () => {
+    return await withSingleBrowserLock('inspectBatchJobQuestionsAsync', async () => {
       let browser = null;
       let page = null;
       try {
@@ -4445,6 +4416,19 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
         page = await browser.newPage();
         await setupPageOptimizations(page, { blockMedia: true });
         await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+
+        // CRITICAL SAFETY BARRIER: In INSPECTION_ONLY mode, intercept and prevent form submissions on the page
+        if (options.executionMode === 'INSPECTION_ONLY' || !options.executionMode) {
+          await page.evaluateOnNewDocument(() => {
+            window.__EXECUTION_MODE = 'INSPECTION_ONLY';
+            document.addEventListener('submit', (e) => {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              console.warn('[INSPECTION_ONLY SAFETY BARRIER] Form submission blocked during inspection.');
+              return false;
+            }, true);
+          });
+        }
 
         const restoreResult = await restoreAndInjectNaukriSession(page, userKey);
         if (!restoreResult.hasSession) {
@@ -4495,11 +4479,22 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
             });
 
             data.jobQuestionsMap[jId] = {
+              batchId: data.batchId || `batch_${Date.now()}`,
               jobId: jId,
               company,
               jobTitle,
               jobUrl,
               status: 'ALREADY_APPLIED',
+              inspectedAt: new Date().toISOString(),
+              questionCount: 0,
+              mandatoryCount: 0,
+              answerStatus: 'ALREADY_APPLIED',
+              attemptTimestamp: null,
+              verificationStatus: 'VERIFIED',
+              reconciliationStatus: 'VERIFIED',
+              retryCount: 0,
+              lastError: null,
+              lastSuccessfulStep: 'DOM_CONFIRMED_ALREADY_APPLIED',
               questions: []
             };
             activeBatchInspectionState.completed++;
@@ -4523,30 +4518,42 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
           if (isExternalSite) {
             recordExternalCompanyJob(userKey, { jobId: jId, company, jobTitle, jobUrl });
             data.jobQuestionsMap[jId] = {
+              batchId: data.batchId || `batch_${Date.now()}`,
               jobId: jId,
               company,
               jobTitle,
               jobUrl,
               status: 'EXTERNAL_APPLY',
+              inspectedAt: new Date().toISOString(),
+              questionCount: 0,
+              mandatoryCount: 0,
+              answerStatus: 'EXTERNAL',
+              attemptTimestamp: null,
+              verificationStatus: 'SKIPPED',
+              reconciliationStatus: 'NOT_APPLICABLE',
+              retryCount: 0,
+              lastError: null,
+              lastSuccessfulStep: 'EXTERNAL_APPLY_IDENTIFIED',
               questions: []
             };
             activeBatchInspectionState.completed++;
             continue;
           }
 
-          // 3. Click Apply / Easy Apply
+          // 3. Click Apply / Easy Apply (Strictly guarded: ignores any button with text "submit" or type="submit")
           await page.evaluate(() => {
             const buttons = Array.from(document.querySelectorAll('button, a'));
             const btn = buttons.find(el => {
               const t = (el.textContent || el.innerText || '').trim().toLowerCase();
               if (t.includes('save') && !t.includes('apply')) return false;
+              if (t.includes('submit')) return false; // STRICT BARRIER: never click submit
               if (t.includes('company site')) return false;
               return t === 'apply' || t.startsWith('apply') || t.includes('easy apply') || el.classList.contains('apply-button');
             });
             if (btn) {
               btn.click();
             } else {
-              const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i], button.apply-btn');
+              const fallback = document.querySelector('button#apply-button, button.apply-button, button[id*="apply" i]:not([type="submit"]), button.apply-btn:not([type="submit"])');
               if (fallback) fallback.click();
             }
           });
@@ -4618,11 +4625,22 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
             activeBatchInspectionState.questionsFoundCount++;
 
             data.jobQuestionsMap[jId] = {
+              batchId: data.batchId || `batch_${Date.now()}`,
               jobId: jId,
               company,
               jobTitle,
               jobUrl,
               status: 'QUESTIONS_FOUND',
+              inspectedAt: new Date().toISOString(),
+              questionCount: detectedQuestions.length,
+              mandatoryCount: detectedQuestions.filter(q => q.isMandatory).length,
+              answerStatus: 'PENDING_USER_ANSWERS',
+              attemptTimestamp: null,
+              verificationStatus: 'UNVERIFIED',
+              reconciliationStatus: 'PENDING',
+              retryCount: 0,
+              lastError: null,
+              lastSuccessfulStep: 'QUESTIONS_EXTRACTED',
               questions: detectedQuestions
             };
 
@@ -4667,11 +4685,22 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
             // No screening questions required for Easy Apply
             activeBatchInspectionState.noQuestionsCount++;
             data.jobQuestionsMap[jId] = {
+              batchId: data.batchId || `batch_${Date.now()}`,
               jobId: jId,
               company,
               jobTitle,
               jobUrl,
               status: 'READY_TO_APPLY',
+              inspectedAt: new Date().toISOString(),
+              questionCount: 0,
+              mandatoryCount: 0,
+              answerStatus: 'NO_QUESTIONS_REQUIRED',
+              attemptTimestamp: null,
+              verificationStatus: 'UNVERIFIED',
+              reconciliationStatus: 'PENDING',
+              retryCount: 0,
+              lastError: null,
+              lastSuccessfulStep: 'INSPECTED_NO_QUESTIONS',
               questions: []
             };
           }
@@ -4722,6 +4751,25 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
           await new Promise(r => setTimeout(r, 600));
         } catch (err) {
           console.warn(`[BATCH_INSPECT] Error inspecting ${company}:`, err.message);
+          data.jobQuestionsMap[jId] = {
+            batchId: data.batchId || `batch_${Date.now()}`,
+            jobId: jId,
+            company,
+            jobTitle,
+            jobUrl,
+            status: 'INSPECTION_FAILED',
+            inspectedAt: new Date().toISOString(),
+            questionCount: 0,
+            mandatoryCount: 0,
+            answerStatus: 'NOT_ANSWERED',
+            attemptTimestamp: null,
+            verificationStatus: 'UNVERIFIED',
+            reconciliationStatus: 'PENDING',
+            retryCount: 0,
+            lastError: err.message,
+            lastSuccessfulStep: 'NAVIGATED',
+            questions: []
+          };
           activeBatchInspectionState.failedCount++;
           activeBatchInspectionState.completed++;
         }
@@ -4742,9 +4790,21 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
       data.lastInspectedAt = new Date().toISOString();
       saveBatchScreeningData(userKey, data);
       console.log(`[BATCH_INSPECT] Finished! Inspected ${data.inspectedCount} jobs. Unique questions found: ${data.consolidatedQuestions.length}.`);
+      return {
+        success: true,
+        inspectedCount: data.inspectedCount,
+        uniqueQuestionsCount: data.consolidatedQuestions.length,
+        questionsFoundCount: activeBatchInspectionState.questionsFoundCount
+      };
     }
     });
-  })().catch(e => console.error('[BATCH_INSPECT] Unhandled exception:', e));
+  })();
+
+  if (options.waitForCompletion || options.sync) {
+    return await runInspectionPromise;
+  }
+
+  runInspectionPromise.catch(e => console.error('[BATCH_INSPECT] Unhandled exception:', e));
 
   return {
     success: true,
@@ -4826,6 +4886,29 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
     };
   }
 
+  const {
+    getDailyCapacity,
+    reserveApplicationSlot,
+    releaseApplicationSlot,
+    commitApplicationSlot,
+    setNaukriLimitReached
+  } = require('./daily_capacity.service');
+
+  const { dispatchQuestionRequest } = require('./question_notification.service');
+
+  const initialCapacity = getDailyCapacity(userKey);
+  if (!initialCapacity.canApply || initialCapacity.remainingCapacity <= 0) {
+    console.log(`[BATCH_APPLY] Daily capacity limit reached (${initialCapacity.applicationsVerified}/${initialCapacity.dailyTarget} verified). Halting batch apply.`);
+    return {
+      success: true,
+      limitReached: true,
+      capacity: initialCapacity,
+      message: initialCapacity.naukriReportedLimitReached
+        ? `Naukri daily limit reached: ${initialCapacity.naukriReportedLimitReason}`
+        : `Daily target of ${initialCapacity.dailyTarget} applications achieved for today.`
+    };
+  }
+
   activeBatchApplyState.isRunning = true;
   activeBatchApplyState.isPaused = false;
   activeBatchApplyState.total = targetJobs.length;
@@ -4837,8 +4920,8 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
   activeBatchApplyState.completedAt = null;
   activeBatchApplyState.error = null;
 
-  (async () => {
-    await withSingleBrowserLock('applyBatchWithAnswersAsync', async () => {
+  const runApplyPromise = (async () => {
+    return await withSingleBrowserLock('applyBatchWithAnswersAsync', async () => {
       let browser = null;
       let page = null;
       try {
@@ -4864,6 +4947,20 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
           console.log('[BATCH_APPLY] Batch application paused by user.');
           break;
         }
+
+        // Check remaining daily capacity dynamically before each application attempt
+        const liveCap = getDailyCapacity(userKey);
+        if (!liveCap.canApply || liveCap.remainingCapacity <= 0) {
+          console.log(`[BATCH_APPLY] 🛑 Reached daily application limit (${liveCap.applicationsVerified}/${liveCap.dailyTarget}). Stopping batch.`);
+          break;
+        }
+
+        const slotReservation = await reserveApplicationSlot(userKey);
+        if (!slotReservation.reserved) {
+          console.log(`[BATCH_APPLY] 🛑 Slot reservation halted: ${slotReservation.reason}`);
+          break;
+        }
+        const currentSlotId = slotReservation.slotId;
 
         const job = targetJobs[idx];
         const jId = job.jobId;
@@ -4895,6 +4992,7 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
             details: '[TEST_MODE] Safe mock submission completed without touching live employer job',
             verifiedAt: new Date().toISOString()
           });
+          await commitApplicationSlot(userKey, currentSlotId, 'VERIFIED');
           activeBatchApplyState.submittedCount++;
           activeBatchApplyState.completed++;
           if (notificationService && typeof notificationService.broadcastToSseClients === 'function') {
@@ -4906,11 +5004,48 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
           continue;
         }
 
+        // 1. Pre-application check: if already confirmed applied in database, skip immediately
+        const allApplied = getNaukriAppliedJobs(userKey);
+        const alreadyConfirmed = allApplied.find(a =>
+          (a.jobId === jId || (a.jobUrl && jobUrl && a.jobUrl.split('?')[0].toLowerCase() === jobUrl.split('?')[0].toLowerCase())) &&
+          isConfirmedAppliedRecord(a)
+        );
+        if (alreadyConfirmed) {
+          console.log(`[BATCH_APPLY] Job "${jId}" is already confirmed applied in database. Skipping duplicate application.`);
+          if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+            data.jobQuestionsMap[jId].status = 'ALREADY_APPLIED';
+            data.jobQuestionsMap[jId].verificationStatus = 'VERIFIED';
+            data.jobQuestionsMap[jId].lastSuccessfulStep = 'DB_CONFIRMED_ALREADY_APPLIED';
+          }
+          await releaseApplicationSlot(userKey, currentSlotId);
+          activeBatchApplyState.submittedCount++;
+          activeBatchApplyState.completed++;
+          continue;
+        }
+
         try {
+          if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+            data.jobQuestionsMap[jId].attemptTimestamp = new Date().toISOString();
+            data.jobQuestionsMap[jId].lastSuccessfulStep = 'NAVIGATING_TO_JOB';
+          }
+
           await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 25000 });
           await new Promise(r => setTimeout(r, 800));
 
-          // Check if already applied
+          // Check if Naukri daily application limit is displayed on DOM
+          const isLimitReached = await page.evaluate((limitPhrases) => {
+            const pageText = (document.body?.innerText || '').toLowerCase();
+            return limitPhrases.some(p => pageText.includes(p));
+          }, NAUKRI_LIMIT_REACHED_PHRASES);
+
+          if (isLimitReached) {
+            console.log(`[BATCH_APPLY] 🛑 Naukri reported daily application limit reached on live DOM.`);
+            setNaukriLimitReached(userKey, 'Daily limit reached banner detected on Naukri');
+            await releaseApplicationSlot(userKey, currentSlotId);
+            break;
+          }
+
+          // Check if already applied on live DOM
           const isAlreadyApplied = await page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button, a, span'));
             return btns.some(b => {
@@ -4926,6 +5061,12 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
               details: 'Verified as already applied on Naukri job page',
               verifiedAt: new Date().toISOString()
             });
+            if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+              data.jobQuestionsMap[jId].status = 'ALREADY_APPLIED';
+              data.jobQuestionsMap[jId].verificationStatus = 'VERIFIED';
+              data.jobQuestionsMap[jId].lastSuccessfulStep = 'DOM_CONFIRMED_ALREADY_APPLIED';
+            }
+            await commitApplicationSlot(userKey, currentSlotId, 'VERIFIED');
             activeBatchApplyState.submittedCount++;
             activeBatchApplyState.completed++;
             continue;
@@ -4950,6 +5091,7 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
 
           // Handle sequential chatbot turns (up to 6 turns)
           let confirmed = false;
+          let encounteredUnknownQuestion = false;
           for (let turn = 0; turn < 6; turn++) {
             await new Promise(r => setTimeout(r, 1000));
 
@@ -5001,55 +5143,127 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
             const normQ = normalizeQuestionKey(rawQ);
 
             let matchedAnswer = null;
-            // 1. Direct ID match if known
+            // 1. Direct ID match via consolidated questions (prioritizing this job's questions)
             const cqItem = (data.consolidatedQuestions || []).find(cq =>
-              cq.normKey === normQ ||
-              normalizeQuestionKey(cq.question) === normQ
+              (cq.jobIds && cq.jobIds.includes(jId)) &&
+              (cq.normKey === normQ || normalizeQuestionKey(cq.question) === normQ)
+            ) || (data.consolidatedQuestions || []).find(cq =>
+              cq.normKey === normQ || normalizeQuestionKey(cq.question) === normQ
             );
+
             if (cqItem && answers[cqItem.id] !== undefined) {
               matchedAnswer = answers[cqItem.id];
             } else if (answers[normQ] !== undefined) {
               matchedAnswer = answers[normQ];
+            } else if (answers[rawQ] !== undefined) {
+              matchedAnswer = answers[rawQ];
             } else {
-              // Fuzzy match across answers keys
-              for (const [k, v] of Object.entries(answers)) {
-                if (normQ.includes(k) || k.includes(normQ)) {
-                  matchedAnswer = v;
-                  break;
+              // Strict token set matching ONLY if >= 85% word overlap to prevent false positives
+              const normWords = new Set(normQ.split('_').filter(w => w.length > 2));
+              if (normWords.size > 0) {
+                for (const [k, v] of Object.entries(answers)) {
+                  const kNorm = normalizeQuestionKey(k);
+                  const kWords = new Set(kNorm.split('_').filter(w => w.length > 2));
+                  if (kWords.size === 0) continue;
+                  let overlap = 0;
+                  for (const kw of kWords) {
+                    if (normWords.has(kw)) overlap++;
+                  }
+                  const similarity = overlap / Math.max(kWords.size, normWords.size);
+                  if (similarity >= 0.85) {
+                    matchedAnswer = v;
+                    break;
+                  }
                 }
               }
             }
 
             if (matchedAnswer !== null && matchedAnswer !== undefined) {
               console.log(`[BATCH_APPLY] Injecting saved answer for "${rawQ.slice(0, 40)}...": "${matchedAnswer}"`);
+              if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+                data.jobQuestionsMap[jId].lastSuccessfulStep = `ANSWERED_${turn + 1}`;
+              }
               await sendNaukriChatbotAnswer(page, String(matchedAnswer), qData.options || []);
             } else {
-              // Unforeseen mandatory question with no answer
-              console.warn(`[BATCH_APPLY] Missing answer for mandatory question: "${rawQ}". Notifying user devices.`);
-              if (notificationService && typeof notificationService.broadcastMandatoryQuestionNotification === 'function') {
-                await notificationService.broadcastMandatoryQuestionNotification(userKey, {
-                  jobId: jId,
-                  jobTitle,
-                  company,
-                  jobUrl,
+              // NON-BLOCKING: Unforeseen mandatory question without answer -> Isolate ONLY this job, dispatch QuestionRequest, and continue next jobs!
+              console.warn(`[BATCH_APPLY] Missing answer for unexpected question: "${rawQ}". Isolating job "${jId}" (WAITING_FOR_USER_ANSWER) and continuing batch.`);
+              encounteredUnknownQuestion = true;
+              const normKey = normalizeQuestionKey(rawQ);
+              let existingCq = (data.consolidatedQuestions || []).find(cq =>
+                cq.normKey === normKey || normalizeQuestionKey(cq.question) === normKey
+              );
+              if (existingCq) {
+                if (!existingCq.jobIds.includes(jId)) existingCq.jobIds.push(jId);
+                existingCq.isMandatory = true;
+              } else {
+                data.consolidatedQuestions = data.consolidatedQuestions || [];
+                data.consolidatedQuestions.push({
+                  id: `cq_unforeseen_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
                   question: rawQ,
+                  normKey,
+                  type: qData.type || 'text',
                   options: qData.options || [],
-                  inputType: qData.type || 'text'
-                }).catch(() => {});
+                  isMandatory: true,
+                  jobIds: [jId],
+                  companies: [company],
+                  jobCount: 1,
+                  unforeseen: true,
+                  createdAt: new Date().toISOString()
+                });
               }
 
+              if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+                data.jobQuestionsMap[jId].status = 'WAITING_FOR_USER_ANSWER';
+                data.jobQuestionsMap[jId].lastError = `Missing answer for unexpected question: ${rawQ.slice(0, 80)}`;
+                data.jobQuestionsMap[jId].attemptTimestamp = new Date().toISOString();
+                data.jobQuestionsMap[jId].lastSuccessfulStep = 'PAUSED_ON_UNEXPECTED_QUESTION';
+              }
+              saveBatchScreeningData(userKey, data);
+
+              // Dispatch Question Request (Push, WhatsApp webhook, SSE, Email)
+              await dispatchQuestionRequest(userKey, {
+                jobId: jId,
+                jobTitle,
+                company,
+                jobUrl,
+                questionId: existingCq ? existingCq.id : null,
+                question: rawQ,
+                normKey,
+                type: qData.type || 'text',
+                options: qData.options || [],
+                isMandatory: true
+              }).catch(() => {});
+
               updateQueueItemState(userKey, jId, {
-                state: 'NEEDS_ATTENTION',
+                state: ApplicationState.WAITING_FOR_USER,
                 reason: `Missing answer for question: ${rawQ.slice(0, 80)}`
               });
               activeBatchApplyState.needsAttentionCount++;
+
+              // Release reserved slot since application was not submitted
+              await releaseApplicationSlot(userKey, currentSlotId);
+
+              // Dismiss / close drawer so page is clean
+              await page.evaluate(() => {
+                const closeBtn = document.querySelector('.chatbot_Drawer .crossIcon, .apply-dialog .close, button.close, [class*="close"]');
+                if (closeBtn) closeBtn.click();
+              }).catch(() => {});
+
+              // Break inner chatbot turn loop, but DO NOT pause entire batch: continue to NEXT job!
               break;
             }
           }
 
           if (confirmed) {
+            if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+              data.jobQuestionsMap[jId].status = 'SUBMITTED';
+              data.jobQuestionsMap[jId].verificationStatus = 'VERIFIED';
+              data.jobQuestionsMap[jId].lastSuccessfulStep = 'APPLICATION_CONFIRMED';
+            }
+            await commitApplicationSlot(userKey, currentSlotId, 'VERIFIED');
             activeBatchApplyState.submittedCount++;
-          } else {
+          } else if (!encounteredUnknownQuestion) {
+            await commitApplicationSlot(userKey, currentSlotId, 'FAILED');
             activeBatchApplyState.failedCount++;
           }
 
@@ -5065,7 +5279,24 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
           await new Promise(r => setTimeout(r, 600));
         } catch (jobErr) {
           console.warn(`[BATCH_APPLY] Error applying to ${company}:`, jobErr.message);
-          activeBatchApplyState.failedCount++;
+          const currentRetries = (data.jobQuestionsMap?.[jId]?.retryCount || 0) + 1;
+          const isTimeout = /timeout|navigation|net::/i.test(jobErr.message);
+          const canRetry = isTimeout && currentRetries < 2;
+
+          if (data.jobQuestionsMap && data.jobQuestionsMap[jId]) {
+            data.jobQuestionsMap[jId].status = canRetry ? 'RETRY_PENDING' : 'FAILED';
+            data.jobQuestionsMap[jId].retryCount = currentRetries;
+            data.jobQuestionsMap[jId].lastError = jobErr.message;
+            data.jobQuestionsMap[jId].attemptTimestamp = new Date().toISOString();
+          }
+
+          if (canRetry) {
+            console.log(`[BATCH_APPLY] Bounded retry scheduled for ${company} (Attempt ${currentRetries}/2).`);
+            await releaseApplicationSlot(userKey, currentSlotId);
+          } else {
+            await commitApplicationSlot(userKey, currentSlotId, 'FAILED');
+            activeBatchApplyState.failedCount++;
+          }
           activeBatchApplyState.completed++;
         }
       }
@@ -5081,9 +5312,26 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
       }
       await releaseUserLockAsync(userKey, 'batch_apply').catch(() => {});
       console.log(`[BATCH_APPLY] Completed run. Submitted: ${activeBatchApplyState.submittedCount}, Needs Attention: ${activeBatchApplyState.needsAttentionCount}, Failed: ${activeBatchApplyState.failedCount}`);
+      return {
+        success: !activeBatchApplyState.error,
+        completed: activeBatchApplyState.completed,
+        submittedCount: activeBatchApplyState.submittedCount,
+        failedCount: activeBatchApplyState.failedCount,
+        needsAttentionCount: activeBatchApplyState.needsAttentionCount,
+        error: activeBatchApplyState.error
+      };
     }
     });
-  })().catch(e => console.error('[BATCH_APPLY] Unhandled error:', e));
+  })().catch(e => {
+    console.error('[BATCH_APPLY] Unhandled error:', e);
+    activeBatchApplyState.isRunning = false;
+    activeBatchApplyState.error = e.message;
+    return { success: false, error: e.message };
+  });
+
+  if (options.waitForCompletion || options.sync) {
+    return await runApplyPromise;
+  }
 
   return {
     success: true,
@@ -5155,6 +5403,7 @@ module.exports = {
   cancelNaukriInteractiveSession,
   getBatchScreeningQuestionsFilePath,
   getBatchScreeningData,
+  getBatchScreeningDataAsync,
   saveBatchScreeningData,
   getBatchInspectionStatus,
   pauseBatchInspection,
@@ -5162,6 +5411,7 @@ module.exports = {
   pauseBatchApply,
   saveBatchScreeningAnswersAsync,
   inspectBatchJobQuestionsAsync,
-  applyBatchWithAnswersAsync
+  applyBatchWithAnswersAsync,
+  normalizeQuestionKey
 };
 
