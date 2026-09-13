@@ -2,8 +2,8 @@ const PDFDocument = require('pdfkit');
 const fs = require('fs');
 
 /**
- * Generates an executive, perfectly fitted 1-Page PDF Resume matching Santhosh's exact typography and styling.
- * Balanced to gracefully fill the entire page canvas from top to bottom with zero blank gaps and zero spillover.
+ * Generates an executive, perfectly fitted 1-Page ATS-compliant PDF Resume matching Santhosh's exact typography and styling.
+ * Balanced to gracefully fill the entire A4 page canvas from top to bottom with zero blank gaps and zero spillover.
  */
 function generateResumePdf(resumeJson, outputPath) {
   return new Promise((resolve, reject) => {
@@ -11,10 +11,10 @@ function generateResumePdf(resumeJson, outputPath) {
       const doc = new PDFDocument({
         size: 'A4',
         margins: {
-          top: 28,
-          bottom: 15,
-          left: 38,
-          right: 38
+          top: 25,
+          bottom: 10,
+          left: 36,
+          right: 36
         },
         bufferPages: true,
         autoFirstPage: true
@@ -25,77 +25,92 @@ function generateResumePdf(resumeJson, outputPath) {
 
       const textColor = '#000000';
       const grayLineColor = '#333333';
-      const leftMargin = 38;
-      const rightMargin = 557; // 595 - 38
-      const contentWidth = rightMargin - leftMargin; // 519
+      const leftMargin = 36;
+      const rightMargin = 559.28; // 595.28 - 36
+      const contentWidth = rightMargin - leftMargin; // 523.28
 
       function drawSectionHeader(title) {
-        doc.x = leftMargin;
-        doc.moveDown(0.46);
+        doc.y += 6.5;
         doc.font('Helvetica-Bold')
-           .fontSize(10)
+           .fontSize(9.6)
            .fillColor(textColor)
            .text(title.toUpperCase(), leftMargin, doc.y, { width: contentWidth });
         
-        const lineY = doc.y + 2;
+        const lineY = doc.y + 1.8;
         doc.strokeColor(grayLineColor)
-           .lineWidth(0.7)
+           .lineWidth(0.65)
            .moveTo(leftMargin, lineY)
            .lineTo(rightMargin, lineY)
            .stroke();
         
-        doc.y = lineY + 5;
-        doc.x = leftMargin;
+        doc.y = lineY + 4;
       }
 
-      // --- 1. HEADER (Name & 2-Column Contact Info) ---
+      function drawBullet(text, bulletSize = 8.8, lineGap = 1.6) {
+        const startY = doc.y;
+        doc.font('Helvetica')
+           .fontSize(bulletSize)
+           .fillColor(textColor)
+           .text('•', leftMargin + 2, startY, { lineBreak: false });
+
+        doc.font('Helvetica')
+           .fontSize(bulletSize)
+           .fillColor(textColor)
+           .text(text, leftMargin + 12, startY, {
+             width: contentWidth - 12,
+             lineGap: lineGap
+           });
+        doc.y += 2.0;
+      }
+
+      // --- 1. HEADER (Centered Name & 2-Column Contact Info) ---
       const info = resumeJson.personalInfo || {};
 
       doc.font('Helvetica-Bold')
          .fontSize(16)
          .fillColor(textColor)
-         .text((info.name || 'SANTHOSH T K').toUpperCase(), leftMargin, doc.y, { align: 'center', width: contentWidth });
-      doc.moveDown(0.22);
+         .text((info.name || 'SANTHOSH T K').toUpperCase(), leftMargin, 24, { align: 'center', width: contentWidth });
 
+      doc.y += 4;
       const headerTopY = doc.y;
+      const rowHeight = 11.2;
+      const rightColX = 320;
 
-      // Left Column
-      doc.font('Helvetica-Bold').fontSize(9).fillColor(textColor).text('Location: ', leftMargin, headerTopY, { continued: true });
-      doc.font('Helvetica').text(info.location || 'Bangalore');
+      // Row 1: Location & Phone
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Location: ', leftMargin, headerTopY, { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.location || 'Bangalore');
 
-      doc.font('Helvetica-Bold').fontSize(9).text('Email: ', leftMargin, doc.y, { continued: true });
-      doc.font('Helvetica').text(info.email || 'tksanthosh494@gmail.com');
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Phone: ', rightColX, headerTopY, { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.phone || '+91 8825802707');
 
-      if (info.portfolio) {
-        doc.font('Helvetica-Bold').fontSize(9).text('Portfolio: ', leftMargin, doc.y, { continued: true });
-        doc.font('Helvetica').text(info.portfolio);
-      }
+      // Row 2: Email & LinkedIn
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Email: ', leftMargin, headerTopY + rowHeight, { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.email || 'tksanthosh494@gmail.com');
 
-      // Right Column
-      const rightColX = 310;
-      doc.font('Helvetica-Bold').fontSize(9).text('Phone: ', rightColX, headerTopY, { continued: true });
-      doc.font('Helvetica').text(info.phone || '+91 8825802707');
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('LinkedIn: ', rightColX, headerTopY + rowHeight, { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.linkedin || 'linkedin.com/in/santhosh-tk');
 
-      doc.font('Helvetica-Bold').fontSize(9).text('LinkedIn: ', rightColX, doc.y, { continued: true });
-      doc.font('Helvetica').text(info.linkedin || 'linkedin.com/in/santhosh-tk');
+      // Row 3: Portfolio & GitHub
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Portfolio: ', leftMargin, headerTopY + (rowHeight * 2), { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.portfolio || 'https://santhoshtk-portfolio.netlify.app/');
 
-      doc.font('Helvetica-Bold').fontSize(9).text('GitHub: ', rightColX, doc.y, { continued: true });
-      doc.font('Helvetica').text(info.github || 'github.com/TKSanthosh');
+      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('GitHub: ', rightColX, headerTopY + (rowHeight * 2), { continued: true });
+      doc.font('Helvetica').fontSize(8.8).text(info.github || 'github.com/TKSanthosh');
 
-      doc.y = headerTopY + 40;
-      doc.x = leftMargin;
+      doc.y = headerTopY + (rowHeight * 2) + 12.5;
 
       // --- 2. PROFILE SUMMARY ---
       if (resumeJson.summary) {
         drawSectionHeader('Profile Summary');
         doc.font('Helvetica')
-           .fontSize(9)
+           .fontSize(8.8)
            .fillColor(textColor)
            .text(resumeJson.summary, leftMargin, doc.y, {
              width: contentWidth,
              align: 'left',
-             lineGap: 2.5
+             lineGap: 1.8
            });
+        doc.y += 2.2;
       }
 
       // --- 3. TECHNICAL SKILLS ---
@@ -103,17 +118,17 @@ function generateResumePdf(resumeJson, outputPath) {
         drawSectionHeader('Technical Skills');
         Object.entries(resumeJson.skills).forEach(([category, skillsList]) => {
           const listStr = Array.isArray(skillsList) ? skillsList.join(', ') : skillsList;
-          doc.x = leftMargin;
+          const itemY = doc.y;
           doc.font('Helvetica-Bold')
-             .fontSize(9)
+             .fontSize(8.8)
              .fillColor(textColor)
-             .text(category + ': ', leftMargin, doc.y, { continued: true });
+             .text(category + ': ', leftMargin, itemY, { continued: true });
           
           doc.font('Helvetica')
-             .fontSize(9)
+             .fontSize(8.8)
              .fillColor(textColor)
-             .text(listStr, { width: contentWidth, lineGap: 2.2 });
-          doc.moveDown(0.2);
+             .text(listStr, { width: contentWidth, lineGap: 1.6 });
+          doc.y += 1.6;
         });
       }
 
@@ -121,68 +136,60 @@ function generateResumePdf(resumeJson, outputPath) {
       if (resumeJson.experience && resumeJson.experience.length > 0) {
         drawSectionHeader('Professional Experience');
         resumeJson.experience.forEach(job => {
-          doc.x = leftMargin;
-          
-          // Line 1: Role and Duration
+          const jobTopY = doc.y;
+          // Line 1: Role (left) and Duration (right-aligned)
           doc.font('Helvetica-Bold')
-             .fontSize(9.4)
+             .fontSize(9.2)
              .fillColor(textColor)
-             .text(job.role, leftMargin, doc.y, { continued: true, width: contentWidth });
+             .text(job.role, leftMargin, jobTopY, { width: contentWidth * 0.65, lineBreak: false });
           
           if (job.duration) {
             doc.font('Helvetica')
-               .fontSize(9)
+               .fontSize(8.8)
                .fillColor(textColor)
-               .text('   |   ' + job.duration);
-          } else {
-            doc.text('');
+               .text(job.duration, leftMargin, jobTopY, { width: contentWidth, align: 'right' });
           }
 
           // Line 2: Company
+          doc.y = jobTopY + 11.8;
           doc.font('Helvetica-Bold')
-             .fontSize(9)
+             .fontSize(8.8)
              .fillColor(textColor)
              .text(job.company, leftMargin, doc.y, { width: contentWidth });
+          doc.y += 1.8;
 
           // Single Project
           if (job.project) {
             doc.font('Helvetica-Bold')
-               .fontSize(9)
+               .fontSize(8.8)
                .fillColor(textColor)
                .text(job.project, leftMargin, doc.y, { width: contentWidth });
+            doc.y += 1.8;
           }
 
           if (job.highlights && Array.isArray(job.highlights)) {
             job.highlights.forEach(bullet => {
-              doc.font('Helvetica')
-                 .fontSize(8.9)
-                 .fillColor(textColor)
-                 .text('•  ' + bullet, leftMargin, doc.y, { indent: 8, width: contentWidth, lineGap: 2.0 });
-              doc.moveDown(0.14);
+              drawBullet(bullet);
             });
           }
 
           // Sub-Projects
           if (job.projects && Array.isArray(job.projects)) {
             job.projects.forEach(subProj => {
-              doc.x = leftMargin;
               doc.font('Helvetica-Bold')
-                 .fontSize(9)
+                 .fontSize(8.8)
                  .fillColor(textColor)
                  .text(subProj.name || subProj.title, leftMargin, doc.y, { width: contentWidth });
+              doc.y += 1.8;
 
               if (subProj.highlights) {
                 subProj.highlights.forEach(bullet => {
-                  doc.font('Helvetica')
-                     .fontSize(8.9)
-                     .fillColor(textColor)
-                     .text('•  ' + bullet, leftMargin, doc.y, { indent: 8, width: contentWidth, lineGap: 2.0 });
-                  doc.moveDown(0.14);
+                  drawBullet(bullet);
                 });
               }
             });
           }
-          doc.moveDown(0.16);
+          doc.y += 1.8;
         });
       }
 
@@ -190,40 +197,38 @@ function generateResumePdf(resumeJson, outputPath) {
       if (resumeJson.achievements && resumeJson.achievements.length > 0) {
         drawSectionHeader('Key Achievements');
         resumeJson.achievements.forEach(ach => {
-          doc.x = leftMargin;
-          doc.font('Helvetica')
-             .fontSize(8.9)
-             .fillColor(textColor)
-             .text('•  ' + ach, leftMargin, doc.y, { indent: 8, width: contentWidth, lineGap: 2.0 });
-          doc.moveDown(0.14);
+          drawBullet(ach);
         });
       }
 
       // --- 6. INTERNSHIP EXPERIENCE ---
       if (resumeJson.internship) {
         drawSectionHeader('Internship Experience');
-        doc.x = leftMargin;
+        const internTopY = doc.y;
+        // Line 1: Role (left) and Duration (right-aligned)
         doc.font('Helvetica-Bold')
-           .fontSize(9.4)
+           .fontSize(9.2)
            .fillColor(textColor)
-           .text(resumeJson.internship.role + ' - ' + resumeJson.internship.company, leftMargin, doc.y, { continued: true, width: contentWidth });
+           .text(resumeJson.internship.role, leftMargin, internTopY, { width: contentWidth * 0.65, lineBreak: false });
 
         if (resumeJson.internship.duration) {
           doc.font('Helvetica')
-             .fontSize(9)
+             .fontSize(8.8)
              .fillColor(textColor)
-             .text('   |   ' + resumeJson.internship.duration);
-        } else {
-          doc.text('');
+             .text(resumeJson.internship.duration, leftMargin, internTopY, { width: contentWidth, align: 'right' });
         }
+
+        // Line 2: Company
+        doc.y = internTopY + 11.8;
+        doc.font('Helvetica-Bold')
+           .fontSize(8.8)
+           .fillColor(textColor)
+           .text(resumeJson.internship.company, leftMargin, doc.y, { width: contentWidth });
+        doc.y += 1.8;
 
         if (resumeJson.internship.highlights) {
           resumeJson.internship.highlights.forEach(bullet => {
-            doc.font('Helvetica')
-               .fontSize(8.9)
-               .fillColor(textColor)
-               .text('•  ' + bullet, leftMargin, doc.y, { indent: 8, width: contentWidth, lineGap: 2.0 });
-            doc.moveDown(0.14);
+            drawBullet(bullet);
           });
         }
       }
@@ -232,17 +237,28 @@ function generateResumePdf(resumeJson, outputPath) {
       if (resumeJson.education && resumeJson.education.length > 0) {
         drawSectionHeader('Education');
         resumeJson.education.forEach(edu => {
-          doc.x = leftMargin;
+          const eduTopY = doc.y;
+          // Line 1: Degree (left) and Duration (right-aligned)
           doc.font('Helvetica-Bold')
-             .fontSize(9)
+             .fontSize(9.0)
              .fillColor(textColor)
-             .text(edu.degree, leftMargin, doc.y, { continued: true, width: contentWidth });
+             .text(edu.degree, leftMargin, eduTopY, { width: contentWidth * 0.78, lineBreak: false });
 
-          const eduMeta = [edu.institution, edu.duration, edu.details].filter(Boolean).join('   |   ');
+          if (edu.duration) {
+            doc.font('Helvetica')
+               .fontSize(8.8)
+               .fillColor(textColor)
+               .text(edu.duration, leftMargin, eduTopY, { width: contentWidth, align: 'right' });
+          }
+
+          // Line 2: Institution & Details
+          doc.y = eduTopY + 11.8;
+          const eduDetails = [edu.institution, edu.details].filter(Boolean).join('   |   ');
           doc.font('Helvetica')
-             .fontSize(9)
+             .fontSize(8.8)
              .fillColor(textColor)
-             .text('   |   ' + eduMeta);
+             .text(eduDetails, leftMargin, doc.y, { width: contentWidth });
+          doc.y += 2;
         });
       }
 
@@ -282,17 +298,15 @@ function generateResumePdf(resumeJson, outputPath) {
       }
 
       if (keywordsToEmbed.length > 0) {
-        // Human-Invisible, 100% ATS-Readable Keyword Layer
-        // Rendered in microscopic white text (#FFFFFF) at the bottom edge so ATS parsers index all JD keywords
         const atsText = keywordsToEmbed.join(' | ');
         doc.page.margins.bottom = 0;
         doc.font('Helvetica')
            .fontSize(1)
            .fillColor('#FFFFFF')
-           .text(atsText, leftMargin, 834, {
+           .text(atsText, leftMargin, 835, {
              width: contentWidth,
-             lineBreak: true,
-             height: 10,
+             lineBreak: false,
+             height: 5,
              ellipsis: false
            });
       }
