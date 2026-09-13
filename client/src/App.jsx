@@ -1622,6 +1622,7 @@ function ResumeEditor({ showToast, currentUser }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [downloading, setDownloading] = useState(false);
   const fileInputRef = useRef(null);
 
   const fetchResume = async () => {
@@ -1644,6 +1645,32 @@ function ResumeEditor({ showToast, currentUser }) {
   useEffect(() => {
     fetchResume();
   }, [currentUser]);
+
+  const handleDownload = async () => {
+    setDownloading(true);
+    try {
+      const userKeyParam = currentUser?.email ? `?userKey=${encodeURIComponent(currentUser.email)}` : '';
+      const res = await apiFetch(`/api/resume/download${userKeyParam}`);
+      if (!res.ok) {
+        throw new Error('Failed to download resume PDF');
+      }
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      const candidateName = resumeData?.personalInfo?.name ? resumeData.personalInfo.name.replace(/[^a-zA-Z0-9]/g, '_') : 'Base_Resume';
+      a.download = `${candidateName}_Resume.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(blobUrl);
+      showToast('Base resume PDF downloaded successfully!', 'success');
+    } catch (e) {
+      showToast(e.message || 'Failed to download base resume PDF', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleFileUpload = (e) => {
     const file = e.target.files?.[0];
@@ -1740,7 +1767,7 @@ function ResumeEditor({ showToast, currentUser }) {
           </h2>
           <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 mt-0.5">Upload a new PDF resume or edit your baseline template details manually below.</p>
         </div>
-        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
+        <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end flex-wrap sm:flex-nowrap">
           <input
             type="file"
             ref={fileInputRef}
@@ -1748,6 +1775,15 @@ function ResumeEditor({ showToast, currentUser }) {
             accept=".pdf"
             className="hidden"
           />
+          <button
+            onClick={handleDownload}
+            disabled={downloading || loading || !resumeData}
+            title="Download compiled Base Resume PDF"
+            className="flex-1 sm:flex-none bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 border border-emerald-200 dark:border-emerald-800"
+          >
+            {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400" /> : <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
+            <span>{downloading ? 'Downloading...' : 'Download PDF'}</span>
+          </button>
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}

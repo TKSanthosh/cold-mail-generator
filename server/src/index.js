@@ -400,6 +400,27 @@ app.get('/api/resume', async (req, res) => {
   }
 });
 
+// Download compiled Base Resume PDF
+app.get('/api/resume/download', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  try {
+    const { resolveUserResumeFile } = require('./services/resume.service');
+    const result = await resolveUserResumeFile(userKey, { forceRefresh: true });
+    if (!result || !result.filePath || !fs.existsSync(result.filePath)) {
+      return res.status(404).json({ error: 'Base resume PDF not found or could not be generated' });
+    }
+
+    const filename = result.fileName || 'base_resume.pdf';
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Cache-Control', 'no-cache');
+    fs.createReadStream(result.filePath).pipe(res);
+  } catch (e) {
+    console.error('[BASE RESUME DOWNLOAD ERROR]', e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.post('/api/resume', (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
