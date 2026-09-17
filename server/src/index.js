@@ -111,8 +111,19 @@ const {
   applyBatchWithAnswersAsync
 } = require('./services/naukri_apply.service');
 
+const compression = require('compression');
+
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// HTTP Response Compression (Gzip / Deflate) to dramatically reduce outbound bandwidth
+app.use(compression({
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
 
 app.use(cors({
   origin: true, // Reflect request origin for cookies & credentials
@@ -1662,8 +1673,11 @@ app.post('/api/naukri/apply/start', async (req, res) => {
 
 app.get('/api/naukri/apply/history', (req, res) => {
   const userKey = resolveUserKey(req, res);
+  const allApps = getNaukriAppliedJobs(userKey);
+  const limit = req.query.all === 'true' ? allApps.length : parseInt(req.query.limit || '60', 10);
   res.json({
-    applications: getNaukriAppliedJobs(userKey),
+    totalCount: allApps.length,
+    applications: allApps.slice(0, limit),
     appliedCompanies: getNaukriCompanyApplicationSummary(userKey),
     todayStats: getTodayAppliedStats(userKey),
     queue: getNaukriQueue(userKey),
@@ -2408,29 +2422,6 @@ async function initDatabaseStartupSync() {
       if (!u.userKey) continue;
       ensureUserSandbox(u.userKey, { email: u.email, name: u.name, picture: u.picture });
       await hydrateUserSandboxFromDatabase(u.userKey);
-
-      // Hydrate Naukri config and session if present
-      const naukriConf = await supabaseGetNaukriConfig(u.userKey);
-      if (naukriConf) {
-        const uPaths = getUserPaths(u.userKey);
-        fs.writeFileSync(uPaths.naukriConfigPath, JSON.stringify(naukriConf, null, 2), 'utf8');
-        if (Array.isArray(naukriConf.sessionCookies) && naukriConf.sessionCookies.length > 0) {
-          fs.writeFileSync(uPaths.naukriSessionPath, JSON.stringify(naukriConf.sessionCookies, null, 2), 'utf8');
-        }
-        // Hydrate Batch Screening Data (Questions & Answers) from Supabase
-        if (naukriConf.batchScreeningData && typeof naukriConf.batchScreeningData === 'object') {
-          const batchPath = getBatchScreeningQuestionsFilePath(u.userKey);
-          fs.writeFileSync(batchPath, JSON.stringify(naukriConf.batchScreeningData, null, 2), 'utf8');
-          console.log(`[DATABASE PERSISTENCE] Restored batch screening data (${naukriConf.batchScreeningData.consolidatedQuestions?.length || 0} questions) from Supabase for "${u.userKey}".`);
-        }
-      }
-
-      // Hydrate Naukri history if present
-      const naukriHist = await supabaseGetNaukriHistory(u.userKey);
-      if (Array.isArray(naukriHist) && naukriHist.length > 0) {
-        const uPaths = getUserPaths(u.userKey);
-        fs.writeFileSync(uPaths.naukriHistoryPath, JSON.stringify(naukriHist, null, 2), 'utf8');
-      }
     }
 
     // Hydrate Scheduled Jobs from Supabase
@@ -2460,7 +2451,17 @@ async function startServer() {
   // 1. Serve production client assets
   const clientDistPath = path.join(__dirname, '../../client/dist');
   if (fs.existsSync(clientDistPath)) {
-    app.use(express.static(clientDistPath));
+    app.use(express.static(clientDistPath, {
+      maxAge: '7d',
+      etag: true,
+      setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.html')) {
+          res.setHeader('Cache-Control', 'no-cache');
+        } else {
+          res.setHeader('Cache-Control', 'public, max-age=604800, immutable');
+        }
+      }
+    }));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api')) return next();
       res.sendFile(path.join(clientDistPath, 'index.html'));

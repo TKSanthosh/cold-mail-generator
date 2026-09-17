@@ -2261,29 +2261,13 @@ async function triggerAutonomousNaukriApply(options = {}) {
   isAutonomousApplyRunning = true;
 
   try {
-    const userKeySet = new Set();
-    if (isSupabaseConfigured()) {
-      try {
-        const dbUsers = await supabaseGetAllUsers();
-        if (Array.isArray(dbUsers)) {
-          dbUsers.forEach(u => {
-            if (u && u.userKey && !u.userKey.startsWith('test_') && !u.userKey.startsWith('temp_')) {
-              userKeySet.add(u.userKey);
-            }
-          });
-        }
-      } catch (e) {}
-    }
-    getAllUserKeys().forEach(k => {
-      if (k && !k.startsWith('test_') && !k.startsWith('temp_')) userKeySet.add(k);
-    });
-    const targetUsers = Array.from(userKeySet);
+    const targetUsers = getAllUserKeys().filter(k => k && !k.startsWith('test_') && !k.startsWith('temp_'));
 
     for (const userKey of targetUsers) {
       try {
-        if (await isUserLockedAsync(userKey)) continue;
+        if (isUserLocked(userKey)) continue;
 
-        const config = await getNaukriConfigAsync(userKey);
+        const config = getNaukriConfig(userKey);
         const paths = getUserPaths(userKey);
         const hasSession = (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) || fs.existsSync(paths.naukriSessionPath) || Boolean(config.username);
         if (!hasSession) continue;
@@ -2291,7 +2275,7 @@ async function triggerAutonomousNaukriApply(options = {}) {
         // Auto-enable so user never needs to toggle manually
         if (!config.enabled) {
           config.enabled = true;
-          await saveNaukriConfigAsync(userKey, config);
+          saveNaukriConfig(userKey, config);
         }
 
         const {
@@ -2542,38 +2526,16 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
 
   logStructured('CRON', `Starting 24/7 Naukri Cron Execution (force: ${force}, targetUserKey: ${targetUserKey || 'ALL'})...`);
 
-  // 1. Discover all candidate users dynamically from Supabase database and local sandboxes
+  // 1. Discover all candidate users from local sandboxes
   let targetUsers = [];
 
   if (targetUserKey && targetUserKey !== 'all') {
     targetUsers = [targetUserKey];
   } else {
-    const userKeySet = new Set();
-
-    if (isSupabaseConfigured()) {
-      try {
-        const dbUsers = await supabaseGetAllUsers();
-        if (Array.isArray(dbUsers)) {
-          dbUsers.forEach(u => {
-            if (u && u.userKey && !u.userKey.startsWith('test_') && !u.userKey.startsWith('temp_')) {
-              userKeySet.add(u.userKey);
-            }
-          });
-        }
-      } catch (e) {
-        console.warn('[NAUKRI CRON TRIGGER WARNING] Error discovering users from Supabase:', e.message);
-      }
+    targetUsers = getAllUserKeys().filter(k => k && !k.startsWith('test_') && !k.startsWith('temp_'));
+    if (targetUsers.length === 0) {
+      targetUsers = ['default_user'];
     }
-
-    getAllUserKeys().forEach(k => {
-      if (k && !k.startsWith('test_') && !k.startsWith('temp_')) userKeySet.add(k);
-    });
-
-    if (userKeySet.size === 0) {
-      userKeySet.add('default_user');
-    }
-
-    targetUsers = Array.from(userKeySet);
   }
 
   logStructured('CRON', `Identified ${targetUsers.length} user account(s) to evaluate: [${targetUsers.join(', ')}]`);
@@ -2581,19 +2543,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
   for (const userKey of targetUsers) {
     logStructured('ACCOUNT', `Evaluating user account: "${userKey}"...`);
     try {
-      if (await isUserLockedAsync(userKey)) {
-        logStructured('LOCK', `Skipped "${userKey}": Account is locked by an ongoing automation process.`);
-        results.push({ userKey, skipped: true, reason: 'Account locked by ongoing process' });
-        continue;
-      }
-
-      if (isSupabaseConfigured()) {
-        try {
-          await hydrateUserSandboxFromDatabase(userKey);
-        } catch (e) {}
-      }
-
-      const config = await getNaukriConfigAsync(userKey);
+      const config = getNaukriConfig(userKey);
       if (!config.enabled && !targetUserKey) {
         logStructured('CRON', `Skipped "${userKey}": Scheduler disabled in config.`);
         results.push({ userKey, skipped: true, reason: 'Scheduler disabled in config' });
@@ -2610,32 +2560,33 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
 
       const now = new Date();
       const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
-
       const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 15 * 60 * 1000);
 
-      if (force || isDue) {
-        logStructured('CRON', `Executing slot workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
-        const uploadResult = await uploadResumeToNaukri(userKey);
-        const updatedConfig = await getNaukriConfigAsync(userKey);
-        const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
-
-        logStructured('CRON', `Auto-upload and Easy Apply completed successfully for user "${userKey}" (File: ${uploadedFileName})`);
-        results.push({
-          userKey,
-          status: 'success',
-          fileName: uploadedFileName,
-          uploadResult,
-          nextUploadAt: updatedConfig.nextUploadAt
-        });
-      } else {
-        logStructured('CRON', `Skipped "${userKey}": Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`);
-        results.push({
-          userKey,
-          skipped: true,
-          reason: `Next upload scheduled at ${config.nextUploadAt} (current time: ${now.toISOString()})`,
-          nextUploadAt: config.nextUploadAt
-        });
+      if (!force && !isDue) {
+        logStructured('CRON', `Skipped "${userKey}": Slot not yet due (Next run: ${config.nextUploadAt || 'Not scheduled'}).`);
+        results.push({ userKey, skipped: true, reason: 'Slot not yet due' });
+        continue;
       }
+
+      if (isUserLocked(userKey) || await isUserLockedAsync(userKey)) {
+        logStructured('LOCK', `Skipped "${userKey}": Account is locked by an ongoing automation process.`);
+        results.push({ userKey, skipped: true, reason: 'Account locked by ongoing process' });
+        continue;
+      }
+
+      logStructured('CRON', `Executing slot workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
+      const uploadResult = await uploadResumeToNaukri(userKey);
+      const updatedConfig = await getNaukriConfigAsync(userKey);
+      const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
+
+      logStructured('CRON', `Auto-upload and Easy Apply completed successfully for user "${userKey}" (File: ${uploadedFileName})`);
+      results.push({
+        userKey,
+        status: 'success',
+        fileName: uploadedFileName,
+        uploadResult,
+        nextUploadAt: updatedConfig.nextUploadAt
+      });
     } catch (err) {
       logStructured('ERROR', `Cron error for user "${userKey}": ${err.message}`);
       results.push({

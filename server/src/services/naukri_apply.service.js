@@ -292,15 +292,31 @@ async function getQaDatabaseAsync(userKey) {
 }
 
 function getQaDatabase(userKey) {
+  const idMap = new Map();
+  DEFAULT_QA_ITEMS.forEach(d => idMap.set(d.id, d));
+
   const filePath = getQaFilePath(userKey);
   if (fs.existsSync(filePath)) {
     try {
       const items = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      if (Array.isArray(items) && items.length > 0) return items;
+      if (Array.isArray(items) && items.length > 0) {
+        items.forEach(it => idMap.set(it.id || it.question, it));
+        return Array.from(idMap.values());
+      }
     } catch (e) {}
   }
-  // Return empty list - do NOT fabricate default answers!
-  return [];
+  const userPaths = getUserPaths(userKey);
+  if (fs.existsSync(userPaths.naukriConfigPath)) {
+    try {
+      const conf = JSON.parse(fs.readFileSync(userPaths.naukriConfigPath, 'utf8'));
+      const list = conf.qaItems || conf.qaDatabase;
+      if (Array.isArray(list) && list.length > 0) {
+        list.forEach(it => idMap.set(it.id || it.question, it));
+        return Array.from(idMap.values());
+      }
+    } catch (e) {}
+  }
+  return Array.from(idMap.values());
 }
 
 async function saveQaDatabaseAsync(userKey, items) {
@@ -5097,7 +5113,7 @@ async function applyBatchWithAnswersAsync(userKey = 'default_user', options = {}
 
             // Verify if completed
             const verification = await verifyNaukriSubmissionOnPage(page, job);
-            if (verification.isConfirmed) {
+            if (verification.isVerified || verification.isConfirmed) {
               confirmNaukriApplicationSubmission(userKey, job, {
                 status: VerificationStatus.VERIFIED,
                 source: verification.source || VerificationSource.NAUKRI_DOM_CONFIRMATION,

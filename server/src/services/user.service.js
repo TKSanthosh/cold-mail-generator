@@ -271,11 +271,20 @@ function syncUserApplications(userKey, clientApps = []) {
   return mergedApps;
 }
 
-async function hydrateUserSandboxFromDatabase(userKey) {
+async function hydrateUserSandboxFromDatabase(userKey, options = {}) {
+  const { force = false } = (typeof options === 'boolean' ? { force: options } : (options || {}));
   if (!isSupabaseConfigured() || !userKey) return false;
   try {
     const paths = getUserPaths(userKey);
     if (!fs.existsSync(paths.userDir)) fs.mkdirSync(paths.userDir, { recursive: true });
+
+    // Local-First Egress Guard: If local sandbox is already populated and not forced, skip network calls
+    const hasLocalConfig = fs.existsSync(paths.naukriConfigPath);
+    const hasLocalResume = fs.existsSync(paths.resumePath);
+    const hasLocalProfile = fs.existsSync(paths.profilePath);
+    if (hasLocalConfig && hasLocalResume && hasLocalProfile && !force) {
+      return true;
+    }
 
     // 1. Hydrate User Profile & OAuth Tokens
     const dbUser = await supabaseGetUser(userKey);

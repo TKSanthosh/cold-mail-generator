@@ -4547,6 +4547,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     let isMounted = true;
 
     const pollStatus = async () => {
+      if (typeof document !== 'undefined' && document.hidden) return; // Conserve bandwidth when tab is in background
       try {
         const res = await apiFetch('/api/naukri/apply/status');
         const data = await res.json();
@@ -4571,7 +4572,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     };
 
     pollStatus();
-    const interval = setInterval(pollStatus, 3000);
+    const interval = setInterval(pollStatus, 10000); // Bandwidth-optimized 10s interval (down from 3s)
     return () => {
       isMounted = false;
       clearInterval(interval);
@@ -8318,8 +8319,9 @@ function AdminDashboard({ showToast, isActive, currentUser }) {
     if (isActive) {
       fetchAdminData();
       const interval = setInterval(() => {
+        if (typeof document !== 'undefined' && document.hidden) return;
         fetchAdminData(true);
-      }, 15000); // 15-second live telemetry poll
+      }, 45000); // 45-second live telemetry poll
       return () => clearInterval(interval);
     }
   }, [isActive]);

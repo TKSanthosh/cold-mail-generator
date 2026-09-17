@@ -232,11 +232,12 @@ async function runBatchCycle(userKey = 'default_user', options = {}) {
 
     // --- DECISION TREE ---
 
-    // BRANCH 1: All mandatory answers are present -> AUTOMATICALLY APPLY
-    if (questions.length > 0 && unAnsweredMandatory.length === 0) {
-      const targetJobs = Object.values(data.jobQuestionsMap || {}).filter(j =>
-        j.status === 'QUESTIONS_FOUND' || j.status === 'READY_TO_APPLY'
-      );
+    const targetJobs = Object.values(data.jobQuestionsMap || {}).filter(j =>
+      j.status === 'QUESTIONS_FOUND' || j.status === 'READY_TO_APPLY'
+    );
+
+    // BRANCH 1: Target jobs exist and all mandatory answers are satisfied (or zero questions needed) -> AUTOMATICALLY APPLY
+    if (targetJobs.length > 0 && unAnsweredMandatory.length === 0) {
 
       if (targetJobs.length > 0) {
         console.log(`[BATCH_ORCHESTRATOR] 🚀 All answers satisfied! Automatically triggering Batch Apply across ${targetJobs.length} job(s)...`);
