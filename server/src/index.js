@@ -205,10 +205,10 @@ app.all('/api/health', (req, res) => {
   });
 });
 
-// Root landing page for browser visits
-app.get('/', (req, res) => {
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(`<!DOCTYPE html>
+
+
+function getFallbackDashboardHtml() {
+  return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -343,8 +343,8 @@ app.get('/', (req, res) => {
     </div>
   </div>
 </body>
-</html>`);
-});
+</html>`;
+}
 
 // Helper to resolve active user key from JWT Cookie, Authorization Header, or System Secret
 function resolveUserContext(req, res = null) {
@@ -2636,9 +2636,12 @@ async function initDatabaseStartupSync() {
 
 // Async Database-First Bootstrap
 async function startServer() {
-  // 1. Serve production client assets
+  // 1. Serve production client React application
   const clientDistPath = path.join(__dirname, '../../client/dist');
-  if (fs.existsSync(clientDistPath)) {
+  const clientIndexHtml = path.join(clientDistPath, 'index.html');
+
+  if (fs.existsSync(clientIndexHtml)) {
+    console.log('[CLIENT] Serving full React UI application from:', clientDistPath);
     app.use(express.static(clientDistPath, {
       maxAge: '7d',
       etag: true,
@@ -2652,7 +2655,14 @@ async function startServer() {
     }));
     app.get('*', (req, res, next) => {
       if (req.path.startsWith('/api')) return next();
-      res.sendFile(path.join(clientDistPath, 'index.html'));
+      res.sendFile(clientIndexHtml);
+    });
+  } else {
+    console.log('[CLIENT] No client build found at', clientDistPath, '- using fallback status dashboard');
+    app.get('*', (req, res, next) => {
+      if (req.path.startsWith('/api')) return next();
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(getFallbackDashboardHtml());
     });
   }
 
