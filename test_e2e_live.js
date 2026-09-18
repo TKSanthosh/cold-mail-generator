@@ -21,7 +21,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const TARGET_URL = (process.env.TARGET_URL || 'https://cold-mail-generator-7ytw.onrender.com').replace(/\/$/, '');
+const TARGET_URL = (process.env.TARGET_URL || 'https://cold-mail-generator-ul79.onrender.com').replace(/\/$/, '');
 const USER_KEY = process.env.TEST_USER_KEY || 'tksanthosh494_gmail_com';
 
 let totalTests = 0;

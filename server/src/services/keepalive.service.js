@@ -20,7 +20,7 @@ function getAppUrl(port = 5001) {
     if (process.env.RENDER_EXTERNAL_URL) {
       return process.env.RENDER_EXTERNAL_URL.replace(/\/$/, '');
     }
-    return 'https://ai-resume-tailor-backend-gldn.onrender.com';
+    return 'https://cold-mail-generator-ul79.onrender.com';
   }
   if (process.env.APP_URL) {
     return process.env.APP_URL.replace(/\/$/, '');

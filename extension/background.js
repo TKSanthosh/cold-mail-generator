@@ -4,7 +4,7 @@ const DEFAULT_SETTINGS = {
   serverMode: 'auto', // 'auto' | 'local' | 'cloud'
   serverUrl: 'http://localhost:5001',
   localUrl: 'http://localhost:5001',
-  renderUrl: 'https://ai-resume-tailor-backend-gldn.onrender.com',
+  renderUrl: 'https://cold-mail-generator-ul79.onrender.com',
   userKey: 'tksanthosh494_gmail_com',
   autoShowWidget: true,
   autoDownloadPdf: false,
@@ -150,7 +150,7 @@ async function checkUrlOnline(url, timeoutMs = null) {
 async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   const settings = await getStoredSettings();
   const mode = explicitMode || settings.serverMode || 'auto';
-  const renderUrl = (settings.renderUrl || 'https://ai-resume-tailor-backend-gldn.onrender.com').replace(/\/+$/, '');
+  const renderUrl = (settings.renderUrl || 'https://cold-mail-generator-ul79.onrender.com').replace(/\/+$/, '');
   const localUrl = (settings.localUrl || 'http://localhost:5001').replace(/\/+$/, '');
 
   // 1. FORCED LOCAL MODE
@@ -177,7 +177,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
     const cloudCandidates = [
       preferredUrl,
       renderUrl,
-      'https://ai-resume-tailor-backend-gldn.onrender.com'
+      'https://cold-mail-generator-ul79.onrender.com'
     ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
 
     for (const cloud of cloudCandidates) {
@@ -209,9 +209,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   const cloudCandidates = [
     preferredUrl,
     renderUrl,
-    'https://ai-resume-tailor-backend-gldn.onrender.com',
-    'https://ai-resume-tailor-backend.onrender.com',
-    'https://cold-mail-generator.onrender.com'
+    'https://cold-mail-generator-ul79.onrender.com'
   ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
 
   for (const cloud of cloudCandidates) {
@@ -275,10 +273,14 @@ async function handleTailorResume(data) {
 }
 
 async function handleDownloadPdf({ url, filename }) {
+  let cleanName = filename || 'Tailored_Resume.pdf';
+  if (!cleanName.toLowerCase().endsWith('.pdf')) {
+    cleanName = cleanName.replace(/\.[a-zA-Z0-9]+$/, '') + '.pdf';
+  }
   return new Promise((resolve, reject) => {
     chrome.downloads.download({
       url,
-      filename: filename || 'Tailored_Resume.pdf',
+      filename: cleanName,
       saveAs: false
     }, (downloadId) => {
       if (chrome.runtime.lastError) {
