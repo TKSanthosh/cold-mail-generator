@@ -178,9 +178,18 @@ function isSystemAuthorized(req) {
   return false;
 }
 
-// Health check endpoint for extension and monitoring
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', service: 'cold-mail-generator', version: '1.0.0', time: Date.now() });
+// Health check endpoint for extension and monitoring (Supports HEAD with 0-byte egress bandwidth)
+app.all('/api/health', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  if (req.method === 'HEAD') {
+    return res.status(200).end();
+  }
+  res.json({
+    status: 'ok',
+    uptime: Math.round(process.uptime()),
+    time: Date.now(),
+    service: 'cold-mail-generator'
+  });
 });
 
 // Helper to resolve active user key from JWT Cookie, Authorization Header, or System Secret
@@ -2276,7 +2285,7 @@ app.post('/api/naukri/apply/reconcile', async (req, res) => {
 });
 
 // --- 24/7 CONTAINER HEALTH & KEEP-ALIVE ENDPOINTS ---
-app.get('/api/health', (req, res) => {
+app.get('/api/health/full', (req, res) => {
   res.json({
     status: 'ok',
     uptime: Math.round(process.uptime()),
