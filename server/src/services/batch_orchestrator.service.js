@@ -241,6 +241,7 @@ async function runBatchCycle(userKey = 'default_user', options = {}) {
 
       if (targetJobs.length > 0) {
         console.log(`[BATCH_ORCHESTRATOR] 🚀 All answers satisfied! Automatically triggering Batch Apply across ${targetJobs.length} job(s)...`);
+        transitionBatchStage(data, BatchStage.READY_TO_APPLY);
         transitionBatchStage(data, BatchStage.APPLYING);
         saveBatchScreeningData(userKey, data);
 

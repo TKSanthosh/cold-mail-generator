@@ -62,7 +62,7 @@ async function getDomainMxRecords(domain) {
  * Performs a fast lightweight SMTP socket handshake (HELO -> MAIL FROM -> RCPT TO)
  * to verify if the remote mail exchange accepts the recipient mailbox.
  */
-async function checkSmtpMailbox(email, mxHost, timeoutMs = 250) {
+async function checkSmtpMailbox(email, mxHost, timeoutMs = 4000) {
   return new Promise((resolve) => {
     let socket;
     let step = 0;
@@ -230,7 +230,7 @@ async function verifyEmailDeliverability(email, userKey = null) {
   // Tier 5: Direct SMTP Handshake Check
   let smtpResult = null;
   try {
-    smtpResult = await checkSmtpMailbox(cleanEmail, primaryMx, 800);
+    smtpResult = await checkSmtpMailbox(cleanEmail, primaryMx, 4000);
   } catch (e) {
     smtpResult = { deliverable: true, checkedViaSmtp: false };
   }
@@ -303,7 +303,9 @@ async function generateAndVerifyRecruiterEmail(fullName, companyName, companyDom
 
   for (const candidate of candidates) {
     const verification = await verifyEmailDeliverability(candidate, userKey);
-    if (verification.isValid) {
+    // CRITICAL FIX: To prevent bouncing, only accept the generated email if we 100% verified it via SMTP 
+    // OR if we are very confident (score > 90). Timeouts on Render should NOT allow guessed emails.
+    if (verification.isValid && (verification.verifiedMailbox || verification.score >= 95)) {
       return {
         email: candidate,
         verification,
