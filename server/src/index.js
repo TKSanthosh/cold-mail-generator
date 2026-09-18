@@ -124,14 +124,19 @@ const compression = require('compression');
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// HTTP Response Compression (Gzip / Deflate) to dramatically reduce outbound bandwidth
+// Extreme Bandwidth Optimization: Maximum Compression (Gzip / Deflate level 9) across ALL endpoints
 app.use(compression({
-  threshold: 1024,
+  threshold: 0, // Compress everything, zero minimum threshold for maximal egress bandwidth savings
+  level: 9,     // Maximum compression ratio
+  memLevel: 9,
   filter: (req, res) => {
     if (req.headers['x-no-compression']) return false;
     return compression.filter(req, res);
   }
 }));
+
+app.disable('x-powered-by'); // Remove redundant headers to conserve bytes
+app.set('json spaces', 0);   // Compact JSON without whitespace padding
 
 app.use(cors({
   origin: true, // Reflect request origin for cookies & credentials
