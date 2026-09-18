@@ -2464,7 +2464,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
     try {
       await page.goto(jobItem.jobUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
       await Promise.race([
-        page.waitForSelector('button, a, .chatbot-container, #apply-button', { timeout: 2500 }).catch(() => null),
+        page.waitForSelector('button, a, .chatbot-container, #apply-button', { timeout: 15000 }).catch(() => null),
         new Promise(r => setTimeout(r, 600))
       ]);
 
@@ -2629,7 +2629,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       }
 
       await Promise.race([
-        page.waitForSelector('.chatbot-container, .chatbot_Drawer, .apply-dialog, .form-group', { timeout: 2000 }).catch(() => null),
+        page.waitForSelector('.chatbot-container, .chatbot_Drawer, .apply-dialog, .form-group', { timeout: 15000 }).catch(() => null),
         new Promise(r => setTimeout(r, 700))
       ]);
 
@@ -3599,8 +3599,8 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnsw
 // Active In-Memory Application Browser Sessions (sessionId -> SessionObject)
 const activeApplicationSessions = new Map();
 
-// Session Auto-Cleanup Timeout (10 minutes idle)
-const SESSION_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
+// Session Auto-Cleanup Timeout (24 hours idle - basically infinite so user can take their time answering questions in UI)
+const SESSION_IDLE_TIMEOUT_MS = 24 * 60 * 60 * 1000;
 
 function cleanupStaleApplicationSessions() {
   const now = Date.now();
@@ -4569,7 +4569,7 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
           // 4. Wait for drawer / modal to appear
           await page.waitForSelector(
             '.chatbot-container, .chatbot_Drawer, .chatbot-wrapper, div.chatbot, [class*="chatbot" i], [class*="drawer" i], .apply-dialog',
-            { timeout: 3500 }
+            { timeout: 12000 }
           ).catch(() => null);
           await new Promise(r => setTimeout(r, 1200));
 
