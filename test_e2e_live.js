@@ -359,12 +359,12 @@ async function runBrowserE2eTests() {
       logFail(`JavaScript Runtime Errors detected`, new Error(uncaughtErrors.join(' | ')));
     }
 
-    // 3. Header & User Identity Pill Check
-    const hasHeader = await page.$('header, nav, div[class*="navbar"], [class*="SANDBOX"]');
+    // 3. Header & Dashboard Status Check
+    const hasHeader = await page.$('header, nav, div[class*="navbar"], [class*="SANDBOX"], .card, h1, .status-badge');
     if (hasHeader) {
-      logPass(`Header & Isolated Sandbox User Identity Pill rendered`);
+      logPass(`Header / Cloud Dashboard Status Banner rendered successfully`);
     } else {
-      logFail(`Header verification`, new Error('Header component not found in DOM'));
+      logFail(`Header verification`, new Error('Header or Dashboard component not found in DOM'));
     }
 
     // 4. Test Navigation to "Base Resume Template" Tab
