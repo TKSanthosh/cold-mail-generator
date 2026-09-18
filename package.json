@@ -4,7 +4,7 @@
   "description": "Automated Cold Email & Dynamic Resume Tailor application powered by NVIDIA NIM and Google OAuth2",
   "main": "server/src/index.js",
   "scripts": {
-    "build": "cd server && npm install --no-audit --no-fund && cd ../client && npm install --no-audit --no-fund && npm run build && cd ..",
+    "build": "npm --prefix server install --omit=dev --no-audit --no-fund && npm --prefix client install --no-audit --no-fund && npm --prefix client run build",
     "start": "node server/src/index.js",
     "dev:server": "node server/src/index.js",
     "dev:client": "npm run dev --prefix client",
