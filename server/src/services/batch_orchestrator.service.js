@@ -75,7 +75,7 @@ const BatchStage = {
 // Valid Stage Transition Map (Enforces Zero Illegal Transitions)
 const VALID_STAGE_TRANSITIONS = {
   [BatchStage.IDLE]: [BatchStage.DISCOVERING, BatchStage.INSPECTING, BatchStage.WAITING_FOR_ANSWERS, BatchStage.READY_TO_APPLY, BatchStage.FAILED],
-  [BatchStage.DISCOVERING]: [BatchStage.INSPECTING, BatchStage.FAILED, BatchStage.IDLE],
+  [BatchStage.DISCOVERING]: [BatchStage.INSPECTING, BatchStage.READY_TO_APPLY, BatchStage.APPLYING, BatchStage.FAILED, BatchStage.IDLE],
   [BatchStage.INSPECTING]: [BatchStage.WAITING_FOR_ANSWERS, BatchStage.READY_TO_APPLY, BatchStage.FAILED, BatchStage.IDLE],
   [BatchStage.WAITING_FOR_ANSWERS]: [BatchStage.READY_TO_APPLY, BatchStage.APPLYING, BatchStage.PAUSED, BatchStage.IDLE],
   [BatchStage.READY_TO_APPLY]: [BatchStage.APPLYING, BatchStage.RECONCILING, BatchStage.WAITING_FOR_ANSWERS, BatchStage.PAUSED, BatchStage.IDLE],
