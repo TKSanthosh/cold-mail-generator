@@ -291,7 +291,10 @@ function generateResumePdf(resumeJson, outputPath) {
           'RBAC', 'Role-Based Access Control', 'HTML5', 'CSS3', 'Reusable Components',
           'MVC Architecture', 'Async/Await', 'WebSockets', 'Joins', 'Indexing',
           'Query Optimization', 'Performance Optimization', 'Structured Logging',
-          'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'Clean Code', 'Debugging'
+          'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'Clean Code', 'Debugging',
+          'Software Development Engineer', 'SDE 2', 'Full Stack Developer', 'Backend Developer',
+          'Frontend Developer', 'Web Developer', 'AWS', 'Cloud Computing', 'Microservices', 
+          'System Design', 'Data Structures', 'Algorithms', 'Agile', 'Scrum', 'CI/CD'
         ];
 
         keywordsToEmbed = Array.from(new Set([...skillsList, ...titleKeywords, ...verifiedCoreKeywords])).filter(Boolean);

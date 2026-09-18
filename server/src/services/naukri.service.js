@@ -2310,7 +2310,7 @@ async function triggerAutonomousNaukriApply(options = {}) {
         // 3. Perform non-destructive micro-touch on headline to keep candidate active timestamp fresh
         if (config.continuousPortfolioEnabled !== false) {
           try {
-            await applyNaukriMicroChanges(userKey, { mode: 'touch' });
+            await applyNaukriMicroChanges(userKey, { mode: 'rotate' });
           } catch (microErr) {}
         }
       } catch (userErr) {
