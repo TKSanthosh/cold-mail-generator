@@ -292,17 +292,11 @@ async function getQaDatabaseAsync(userKey) {
 }
 
 function getQaDatabase(userKey) {
-  const idMap = new Map();
-  DEFAULT_QA_ITEMS.forEach(d => idMap.set(d.id, d));
-
   const filePath = getQaFilePath(userKey);
   if (fs.existsSync(filePath)) {
     try {
       const items = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      if (Array.isArray(items) && items.length > 0) {
-        items.forEach(it => idMap.set(it.id || it.question, it));
-        return Array.from(idMap.values());
-      }
+      if (Array.isArray(items) && items.length > 0) return items;
     } catch (e) {}
   }
   const userPaths = getUserPaths(userKey);
@@ -310,13 +304,11 @@ function getQaDatabase(userKey) {
     try {
       const conf = JSON.parse(fs.readFileSync(userPaths.naukriConfigPath, 'utf8'));
       const list = conf.qaItems || conf.qaDatabase;
-      if (Array.isArray(list) && list.length > 0) {
-        list.forEach(it => idMap.set(it.id || it.question, it));
-        return Array.from(idMap.values());
-      }
+      if (Array.isArray(list) && list.length > 0) return list;
     } catch (e) {}
   }
-  return Array.from(idMap.values());
+  // Return empty list for unseeded users - zero fabricated questions
+  return [];
 }
 
 async function saveQaDatabaseAsync(userKey, items) {
