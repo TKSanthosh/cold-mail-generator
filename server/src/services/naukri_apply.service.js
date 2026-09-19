@@ -2367,7 +2367,7 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
   console.log(`[RESUME] Loading from DB for user "${userKey}"...`);
   let resolvedResume = null;
   try {
-    resolvedResume = await resolveUserResumeFile(userKey);
+    resolvedResume = await resolveUserResumeFile(userKey, { useMasterResume: true, forceRefresh: true });
     console.log(`[RESUME] Resume found for user "${userKey}".`);
     console.log(`[RESUME] Resolving storage reference & file formatting...`);
     console.log(`[RESUME] File ready: ${resolvedResume.fileName} (${(resolvedResume.fileSize / 1024).toFixed(1)} KB, source: ${resolvedResume.source})`);
@@ -3454,7 +3454,7 @@ async function retryAndApplySingleJobInstantAsync(userKey, options = {}) {
         throw new Error('Naukri candidate session is missing or expired. Please link your session in settings.');
       }
 
-      const resolvedResume = await resolveUserResumeFile(userKey);
+      const resolvedResume = await resolveUserResumeFile(userKey, { useMasterResume: true, forceRefresh: true });
 
       console.log(`[INSTANT_APPLY] Navigating to target job URL: ${jobUrl}...`);
       await page.goto(jobUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
@@ -3529,7 +3529,7 @@ async function applyAllUnconfirmedJobsAsync(userKey = 'default_user', customAnsw
       });
       browser = await puppeteer.launch(launchOptions);
 
-      const resolvedResume = await resolveUserResumeFile(userKey);
+      const resolvedResume = await resolveUserResumeFile(userKey, { useMasterResume: true, forceRefresh: true });
       let page = null;
 
       async function ensureActivePage() {

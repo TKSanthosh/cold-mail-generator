@@ -111,8 +111,19 @@ async function resolveUserResumeFile(userKey = 'default_user', options = {}) {
   let rawResumeData = null;
   let source = 'unknown';
 
+  // 0. Master Resume Constraint (e.g. for Naukri automated uploads)
+  if (options.useMasterResume && fs.existsSync(MASTER_RESUME_PATH)) {
+    try {
+      rawResumeData = JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8'));
+      source = 'master_template_json';
+      console.log(`[RESUME RESOLVER] Strict master resume constraint active: loading canonical template from ${MASTER_RESUME_PATH}`);
+    } catch (e) {
+      console.warn(`[RESUME RESOLVER WARNING] Failed loading master resume: ${e.message}`);
+    }
+  }
+
   // 1. Database Query: Attempt to fetch from Supabase Cloud Database first
-  if (isSupabaseConfigured()) {
+  if (!rawResumeData && isSupabaseConfigured()) {
     try {
       console.log(`[RESUME] Loading from DB for user "${userKey}"...`);
       const dbResult = await supabaseGetResume(userKey);

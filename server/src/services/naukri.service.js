@@ -182,15 +182,15 @@ function createDateFromIst(year, month, date, targetHour, targetMinute) {
 }
 
 /**
- * Calculates the next Quarter-Day schedule slot (10:00 AM, 04:00 PM, 10:00 PM, 04:00 AM IST)
+ * Calculates the next schedule slot (10:00 AM, 01:00 PM, 04:00 PM, 06:00 PM IST)
  */
 function getNextQuarterDayTime(baseDate = new Date()) {
   const istNow = getIstTime(baseDate);
   const slots = [
-    { hour: 4, minute: 0 },
     { hour: 10, minute: 0 },
+    { hour: 13, minute: 0 },
     { hour: 16, minute: 0 },
-    { hour: 22, minute: 0 }
+    { hour: 18, minute: 0 }
   ];
 
   for (const s of slots) {
@@ -1260,6 +1260,13 @@ function getNaukriConfig(userKey = 'default_user') {
         lastError: null,
         ...saved
       };
+      // Auto-upgrade legacy slots to user's preferred 10 AM, 1 PM, 4 PM, 6 PM
+      if (!conf.slots || conf.slots.includes('04:00 AM')) {
+        conf.slots = ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
+      }
+      if (!conf.customSlots || conf.customSlots.includes('09:30 AM') || conf.customSlots.includes('10:00 PM')) {
+        conf.customSlots = ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
+      }
       if (hasActiveSession) {
         conf.sessionCookies = activeCookies;
       } else if ((!conf.sessionCookies || conf.sessionCookies.length === 0) && envCookies) {
@@ -1282,11 +1289,11 @@ function getNaukriConfig(userKey = 'default_user') {
   const envCookies = process.env.NAUKRI_COOKIES ? (() => { try { return JSON.parse(process.env.NAUKRI_COOKIES); } catch (e) { return null; } })() : null;
   const defaultConf = {
     enabled: true,
-    scheduleMode: 'quarter_day',
-    slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-    customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
-    intervalHours: 6,
-    intervalMinutes: 360,
+    scheduleMode: 'custom',
+    slots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+    customSlots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+    intervalHours: 3,
+    intervalMinutes: 180,
     username: process.env.NAUKRI_USERNAME || '',
     password: process.env.NAUKRI_PASSWORD || '',
     hasSession: hasActiveSession || Boolean(envCookies) || Boolean(process.env.NAUKRI_PASSWORD),
@@ -1916,9 +1923,9 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
     const startTime = Date.now();
     logStructured('ACCOUNT', `Starting resume upload workflow for user "${userKey}"...`);
 
-    // 1. Dynamically Retrieve and Resolve Resume from Database (Zero hardcoding)
-    logStructured('RESUME', `Fetching resume from DB for user "${userKey}"...`);
-    const resolvedResume = await resolveUserResumeFile(userKey);
+    // 1. Strictly Resolve Master Canonical Resume (User rule: Naukri uploads always use master resume)
+    logStructured('RESUME', `Fetching master canonical resume for user "${userKey}"...`);
+    const resolvedResume = await resolveUserResumeFile(userKey, { useMasterResume: true, forceRefresh: true });
     const uploadPdfPath = resolvedResume.filePath;
     const resumeFileName = resolvedResume.fileName;
 

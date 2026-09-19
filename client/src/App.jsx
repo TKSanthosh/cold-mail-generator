@@ -3743,11 +3743,11 @@ function LinkedInAutoPilot({ isAuthorized, showToast, isActive }) {
 function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const [config, setConfig] = useState({
     enabled: true,
-    scheduleMode: 'quarter_day',
-    slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-    customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
-    intervalHours: 6,
-    intervalMinutes: 360,
+    scheduleMode: 'custom',
+    slots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+    customSlots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+    intervalHours: 3,
+    intervalMinutes: 180,
     username: '',
     password: '',
     hasSession: false,
@@ -4947,11 +4947,11 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
     if (!currentUser) {
       setConfig({
         enabled: true,
-        scheduleMode: 'quarter_day',
-        slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-        customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
-        intervalHours: 6,
-        intervalMinutes: 360,
+        scheduleMode: 'custom',
+        slots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+        customSlots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+        intervalHours: 3,
+        intervalMinutes: 180,
         username: '',
         password: '',
         hasSession: false,
@@ -5423,17 +5423,17 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <TrendingUp className="w-5 h-5 text-emerald-500" />
-              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">Naukri Quarter-Day Auto-Uploader & Profile Booster</h2>
+              <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100">Naukri Daily Auto-Uploader & Profile Booster</h2>
               <span className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border ${
                 config.enabled
                   ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800'
                   : 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700'
               }`}>
-                {config.enabled ? '● QUARTER-DAY AUTO-UPLOADER ACTIVE' : '○ PAUSED'}
+                {config.enabled ? '● DAILY AUTO-UPLOADER ACTIVE' : '○ PAUSED'}
               </span>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-              Automatically retrieves your latest ATS-tailored resume from the database and uploads it to Naukri.com every quarter of the day (<strong>10:00 AM</strong>, <strong>04:00 PM</strong>, <strong>10:00 PM</strong>, <strong>04:00 AM</strong>) and applies to matching Easy Apply jobs.
+              Automatically compiles your <strong>Master Canonical Resume</strong> into a clean 1-page PDF and uploads it to Naukri.com daily at peak recruiter hours (<strong>10:00 AM</strong>, <strong>01:00 PM</strong>, <strong>04:00 PM</strong>, <strong>06:00 PM IST</strong>) and applies to matching Easy Apply jobs.
             </p>
           </div>
 
@@ -5450,13 +5450,13 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
             </button>
 
             <select
-              value={config.scheduleMode || 'quarter_day'}
+              value={config.scheduleMode || 'custom'}
               onChange={(e) => handleScheduleModeChange(e.target.value)}
               className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 text-xs rounded-lg px-2.5 py-1.5 font-semibold focus:outline-none focus:border-indigo-500 cursor-pointer"
               title="Upload Schedule Mode"
             >
-              <option value="quarter_day">⏱️ Quarter-Day Resdex Hack (10 AM, 4 PM, 10 PM, 4 AM)</option>
-              <option value="custom">🎯 Custom Timings (Choose Your Own Exact Times)</option>
+              <option value="custom">⏱️ 4 Daily Peak Slots (10 AM, 1 PM, 4 PM, 6 PM)</option>
+              <option value="quarter_day">⏱️ 4 Daily Slots (10 AM, 1 PM, 4 PM, 6 PM)</option>
               <option value="hourly">⏱️ Every 1 Hour (Continuous Hourly)</option>
               <option value="half_hour">⏱️ Every 30 Minutes</option>
             </select>
@@ -5470,6 +5470,27 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
               {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <UploadCloud className="w-3.5 h-3.5" />}
               <span>{uploading ? 'Uploading to Naukri...' : 'Boost Profile Now'}</span>
             </button>
+          </div>
+        </div>
+
+        {/* Active Schedule Slots Display (10 AM, 1 PM, 4 PM, 6 PM) */}
+        <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-emerald-50/60 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-900/50 rounded-xl text-xs">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-bold text-emerald-900 dark:text-emerald-300 flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+              <span>Daily Upload Schedule (Master Resume):</span>
+            </span>
+            {(config.customSlots || config.slots || ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM']).map((slot, sIdx) => (
+              <span key={sIdx} className="bg-white dark:bg-slate-800 border border-emerald-300 dark:border-emerald-700 text-emerald-800 dark:text-emerald-200 px-2.5 py-0.5 rounded-md font-mono font-bold shadow-xs">
+                {slot}
+              </span>
+            ))}
+          </div>
+          <div className="flex items-center gap-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
+            <span>Next Auto-Upload:</span>
+            <strong className="text-emerald-700 dark:text-emerald-300 font-mono font-bold">
+              {config.nextUploadAt ? new Date(config.nextUploadAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Scheduled'}
+            </strong>
           </div>
         </div>
 

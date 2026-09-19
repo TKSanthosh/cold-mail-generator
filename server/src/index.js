@@ -2661,6 +2661,20 @@ async function initDatabaseStartupSync() {
       console.warn('[DATABASE PERSISTENCE] Error syncing canonical resume to Supabase:', e.message);
     }
 
+    // Ensure Naukri schedule for primary user uses 10 AM, 1 PM, 4 PM, 6 PM IST
+    try {
+      const primaryUserKey = 'tksanthosh494_gmail_com';
+      const userNaukriConf = await getNaukriConfigAsync(primaryUserKey);
+      const targetSlots = ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
+      userNaukriConf.slots = targetSlots;
+      userNaukriConf.customSlots = targetSlots;
+      userNaukriConf.scheduleMode = 'custom';
+      await saveNaukriConfigAsync(primaryUserKey, userNaukriConf);
+      console.log('[DATABASE PERSISTENCE] Synced Naukri daily schedule slots (10 AM, 1 PM, 4 PM, 6 PM) for', primaryUserKey);
+    } catch (e) {
+      console.warn('[DATABASE PERSISTENCE] Error syncing Naukri schedule slots:', e.message);
+    }
+
     // Hydrate Scheduled Jobs from Supabase
     const dbJobs = await supabaseGetScheduledJobs();
     if (Array.isArray(dbJobs) && dbJobs.length > 0) {
