@@ -361,7 +361,7 @@ async function runMasterRegressionSuite() {
   // 2b. Q&A Database Integrity (Experience must be 4 Years)
   try {
     const qaDb = naukriApplyService.getQaDatabase('tksanthosh494_gmail_com');
-    const totalExpItem = qaDb.find(q => q.id === 'qa_exp_total' || (q.question && q.question.toLowerCase().includes('total experience')));
+    const totalExpItem = qaDb.find(q => q.id === 'qa_exp_total' || (q.question && (q.question.toLowerCase().includes('total experience') || q.question.toLowerCase().includes('totalexperience'))));
     const expValue = totalExpItem ? String(totalExpItem.answer).trim() : '';
     assert('Mini Q&A Truth: Total Experience answer strictly equals "4"', expValue === '4' || expValue.includes('4'), `Found answer: "${expValue}"`);
   } catch (e) {
