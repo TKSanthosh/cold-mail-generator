@@ -307,6 +307,16 @@ function getQaDatabase(userKey) {
       if (Array.isArray(list) && list.length > 0) return list;
     } catch (e) {}
   }
+  const prodFallbackPath = path.join(__dirname, '../../users', userKey || 'default_user', 'naukri_qa.json');
+  if (fs.existsSync(prodFallbackPath)) {
+    try {
+      const items = JSON.parse(fs.readFileSync(prodFallbackPath, 'utf8'));
+      if (Array.isArray(items) && items.length > 0) return items;
+    } catch (e) {}
+  }
+  if (userKey === 'default_user' || userKey === 'tksanthosh494_gmail_com') {
+    return DEFAULT_QA_ITEMS;
+  }
   // Return empty list for unseeded users - zero fabricated questions
   return [];
 }

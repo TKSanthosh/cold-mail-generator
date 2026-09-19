@@ -1150,7 +1150,9 @@ function formatTailoredPdfName(candidateName, rawCompany, rawRole) {
     .replace(/\s+/g, '_')
     .replace(/[^a-zA-Z0-9_]/g, '')
     .replace(/_+/g, '_');
-  if (candidate === 'Santhosh_T_K') candidate = 'Santhosh_TK';
+  if (candidate.toUpperCase() === 'SANTHOSH_T_K' || candidate.toUpperCase() === 'SANTHOSH_TK') {
+    candidate = 'Santhosh_TK';
+  }
 
   // Clean company name
   let comp = (rawCompany || 'Company')
@@ -2653,6 +2655,7 @@ async function initDatabaseStartupSync() {
       if (fs.existsSync(masterResumePath)) {
         const masterResume = JSON.parse(fs.readFileSync(masterResumePath, 'utf8'));
         const primaryUserKey = 'tksanthosh494_gmail_com';
+        const { supabaseSaveResume } = require('./services/supabase.service');
         await supabaseSaveResume(primaryUserKey, masterResume);
         saveUserResume(primaryUserKey, masterResume);
         console.log('[DATABASE PERSISTENCE] Successfully pushed latest canonical resume to Supabase for', primaryUserKey);

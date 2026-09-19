@@ -265,6 +265,12 @@ function generateResumePdf(resumeJson, outputPath) {
         });
       }
 
+      // Microscopic ATS keyword layer (1pt white text at bottom of canvas)
+      doc.font('Helvetica')
+         .fontSize(1)
+         .fillColor('#FFFFFF')
+         .text('Full Stack Developer SDE 2 Node.js React JavaScript TypeScript REST APIs Microservices MySQL MongoDB AWS CI/CD', leftMargin, 800, { width: contentWidth, lineBreak: false });
+
       doc.end();
 
       writeStream.on('finish', () => {
