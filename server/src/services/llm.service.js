@@ -108,7 +108,7 @@ function generateDeterministicFallbackEmail(cleanHrName, company, jd, candidateI
   
   const body = `Hi ${cleanHrName},
 
-I’m ${name}, a Software Developer with 4+ years of experience in Full Stack engineering (React.js, Node.js, Express, MySQL, MongoDB, AWS), currently building high-throughput web applications and microservices.
+I’m ${name}, a Software Developer with 4+ years of experience in Full Stack engineering (React.js, Node.js, Express, MySQL, MongoDB, AWS), currently building high-throughput web applications and scalable backend systems.
 
 I’m reaching out regarding Software Developer opportunities at ${company}. Your team's engineering work caught my attention, and I believe my background could be a strong fit for your team.
 
@@ -116,7 +116,7 @@ I’m reaching out regarding Software Developer opportunities at ${company}. You
 • 4+ years of hands-on experience building high-performance Node.js, Express & React applications
 • Proven track record reducing API response latency by ~20% and cutting production issues by ~30%
 • Strong expertise in relational & NoSQL databases (MySQL, MongoDB) and REST API system design
-• Production deployment and infrastructure experience with AWS, Docker, and CI/CD pipelines
+• Production deployment and codebase reliability experience with AWS, Git, Postman, and structured logging
 
 I’d appreciate it if you could take a quick look at my profile and consider me for relevant openings.
 
@@ -373,7 +373,7 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
     if (job.company && job.company.includes('IQVIA')) {
       job.role = 'Software Development Engineer 2 (SDE2)';
       job.highlights = [
-        'Architected and deployed containerized Node.js microservices using Docker on AWS (EC2, S3, CloudWatch), accelerating client feature delivery turnaround by ~25% and cutting deployment rollbacks to zero.',
+        'Architected and scaled backend services and UI workflows using Node.js, React.js, and MySQL for enterprise event management on AWS, accelerating client feature delivery turnaround by ~25%.',
         'Diagnosed and resolved 20+ critical platform issues across backend APIs and UI workflows in Node.js, React.js, and MySQL, maintaining 99.9% uptime with a 95%+ first-pass code review approval rating.',
         'Mentored 2 junior engineers on RESTful API design principles, clean MVC architecture, and automated unit testing.'
       ];
@@ -382,7 +382,7 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
         job.projects.forEach(proj => {
           if (proj.name && proj.name.includes('Exam Engine')) {
             proj.highlights = [
-              'Migrated mission-critical legacy backend architecture from PHP to containerized Node.js and MongoDB microservices on AWS EC2, reducing recurring production outages by ~30% and decreasing memory overhead.',
+              'Migrated mission-critical legacy backend architecture from PHP to Node.js and MongoDB on AWS, reducing recurring production outages by ~30% and decreasing memory overhead.',
               'Strengthened system security and eliminated unauthorized workflow access by implementing end-to-end JWT authentication and granular Role-Based Access Control (RBAC) across 100,000+ candidates.',
               'Optimized high-frequency MySQL and MongoDB queries using custom indexing and schema adjustments, decreasing server load and improving query response times.',
               'Resolved critical asynchronous race conditions and user-interface latency bottlenecks, increasing concurrency throughput for live assessments.',
@@ -390,10 +390,10 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
             ];
           } else if (proj.name && proj.name.includes('QPTool')) {
             proj.highlights = [
-              'Engineered and maintained high-throughput backend microservices using Node.js, Express.js, MySQL, and MongoDB.',
+              'Engineered and maintained high-throughput backend services using Node.js, Express.js, MySQL, and MongoDB.',
               'Improved API response times by ~20% across the exam configuration system by designing RESTful endpoints and eliminating redundant database lookups.',
               'Authored reusable React.js UI components and modular backend services that improved overall codebase maintainability, achieving a 95%+ first-pass code review approval rating.',
-              'Enhanced API validation, data integrity, and centralized error handling with Docker containerized CI/CD pipelines to ensure rock-solid production stability.'
+              'Enhanced API validation, data integrity, and centralized error handling to ensure rock-solid production stability.'
             ];
           }
         });
@@ -422,8 +422,8 @@ function buildOptimizedSkills(baseSkills, jd) {
       'React.js', 'JavaScript (ES6+)', 'React Hooks', 'Reusable Component Architecture',
       'HTML5', 'CSS3'
     ],
-    'Tools, Infrastructure & Practices': [
-      'Git', 'GitHub', 'Postman', 'AWS', 'Docker',
+    'Tools & Development Practices': [
+      'Git', 'GitHub', 'Postman', 'AWS', 'npm', 'VS Code',
       'MVC Architecture', 'REST API Design', 'Structured Logging', 'Unit Testing', 'Agile/Scrum'
     ]
   };
@@ -468,12 +468,12 @@ async function tailorResume(standardResumeJson, jd) {
   const systemPrompt = `You are an expert ATS resume optimizer.
 CANDIDATE INFORMATION:
 - Name: Santhosh T K
-- Core Expertise: Full Stack Software Engineering (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, Git, Docker, System Design).
+- Core Expertise: Full Stack Software Engineering (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, Git, System Design).
 - Experience: 4+ years of software development experience.
 
 CRITICAL INSTRUCTIONS:
-1. PRESERVE ORIGINAL CONTENTS: Never remove or alter the candidate's authentic core skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS).
-2. ZERO HALLUCINATION: Do NOT add foreign languages or tools not known to the candidate (e.g. do NOT add Rust, Go, Kotlin, Swift, Scala, etc.).
+1. PRESERVE ORIGINAL CONTENTS: Never remove or alter the candidate's authentic core skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS). Keep AWS as AWS alone without listing specific services (e.g. do NOT list EC2, S3, CloudWatch, Lambda).
+2. ZERO HALLUCINATION: Do NOT add foreign languages or tools not known to the candidate (e.g. do NOT add Rust, Go, Kotlin, Swift, Scala, Docker, Kubernetes, etc.).
 3. SLIGHT REFINEMENT: Refine "targetTitle" and "summary" (2-3 concise sentences) using high-impact, results-driven language for this role.
 4. INVISIBLE ATS KEYWORDS: Extract 35 to 60 technical keywords directly from JD.
 

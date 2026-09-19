@@ -40,11 +40,10 @@
       "Git",
       "GitHub",
       "Postman",
-      "AWS (EC2, S3, CloudWatch)",
-      "Docker",
+      "AWS",
       "npm",
       "VS Code",
-      "CI/CD",
+      "JSON",
       "Structured Logging"
     ]
   },
@@ -56,7 +55,7 @@
       "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
       "highlights": [
         "Architecting and optimizing scalable backend services and UI workflows using Node.js, React.js, and MySQL for enterprise event management.",
-        "Architected and deployed containerized microservices using Docker on AWS (EC2, S3, CloudWatch), accelerating client feature delivery turnaround by ~25% and cutting deployment rollbacks to zero.",
+        "Accelerated client feature delivery turnaround by ~25% by refactoring monolithic services into modular, high-throughput RESTful APIs deployed on AWS.",
         "Resolved 20+ critical platform issues, improving application stability and maintaining 99.9% uptime with a 95%+ first-pass code review approval rating.",
         "Mentored 2 junior engineers on RESTful API design principles, clean MVC architecture, and automated unit testing."
       ]
@@ -69,7 +68,7 @@
         {
           "name": "Project: Exam Engine – Exam Delivery System",
           "highlights": [
-            "Migrated mission-critical legacy backend from PHP to containerized Node.js and MongoDB microservices on AWS EC2, reducing recurring production outages by ~30%.",
+            "Migrated mission-critical legacy backend from PHP to Node.js and MongoDB on AWS, reducing recurring production outages by ~30%.",
             "Implemented end-to-end JWT-based authentication and role-based access control (RBAC), securing high-concurrency exam workflows across 100,000+ candidates.",
             "Optimized MySQL and MongoDB queries via custom indexing and schema adjustments, improving data retrieval speed and reducing system load.",
             "Resolved asynchronous race conditions and UI rendering delays, increasing concurrency throughput for live assessments.",
@@ -82,7 +81,7 @@
             "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
             "Designed and implemented RESTful APIs integrated with React.js frontend, improving API response time by approximately 20%.",
             "Built reusable React.js components and modular backend services that improved codebase maintainability and readability.",
-            "Enhanced API validation, security, and centralized error handling with Docker containerized CI/CD pipelines to ensure production stability."
+            "Enhanced API validation, security, and centralized error handling to ensure production reliability."
           ]
         }
       ]
@@ -101,7 +100,7 @@
     "duration": "January 2022 – June 2022",
     "highlights": [
       "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
-      "Gained hands-on experience with production workflows, debugging, Docker, and version control using Git.",
+      "Gained hands-on experience with production workflows, debugging, and version control using Git.",
       "Built internal tools and modules used by engineering teams in real projects."
     ]
   },
