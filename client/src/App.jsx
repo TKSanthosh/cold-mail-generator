@@ -1688,7 +1688,7 @@ function ResumeEditor({ showToast, currentUser }) {
         const res = await apiFetch(`/api/resume/upload`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ pdfBase64: base64 })
+          body: JSON.stringify({ fileBase64: base64, pdfBase64: base64, filename: file.name })
         });
         const data = await res.json();
         if (data.error) throw new Error(data.error);
@@ -1703,6 +1703,22 @@ function ResumeEditor({ showToast, currentUser }) {
       }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleResetToCanonical = async () => {
+    setLoading(true);
+    try {
+      const res = await apiFetch(`/api/resume/reset`, { method: 'POST' });
+      const data = await res.json();
+      if (data.resume) {
+        setResumeData(data.resume);
+        showToast('Successfully synchronized latest canonical master resume!', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to reset resume template', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSave = async () => {
@@ -1783,6 +1799,15 @@ function ResumeEditor({ showToast, currentUser }) {
           >
             {downloading ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600 dark:text-emerald-400" /> : <Download className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />}
             <span>{downloading ? 'Downloading...' : 'Download PDF'}</span>
+          </button>
+          <button
+            onClick={handleResetToCanonical}
+            disabled={saving || uploading || loading}
+            title="Reset directly to the latest canonical master resume template"
+            className="flex-1 sm:flex-none bg-amber-50 dark:bg-amber-950/30 hover:bg-amber-100 dark:hover:bg-amber-900/40 text-amber-700 dark:text-amber-300 font-semibold py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg text-xs transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 border border-amber-200 dark:border-amber-800"
+          >
+            <RotateCw className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+            <span>Reset to Master</span>
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}

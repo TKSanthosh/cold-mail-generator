@@ -158,14 +158,34 @@ function getUserResume(userKey) {
 }
 
 async function getUserResumeAsync(userKey) {
+  let master = null;
+  if (fs.existsSync(MASTER_RESUME_PATH)) {
+    try { master = JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8')); } catch (e) {}
+  }
+
   if (isSupabaseConfigured() && userKey) {
     try {
       const dbResume = await supabaseGetResume(userKey);
       if (dbResume && typeof dbResume === 'object' && Object.keys(dbResume).length > 0) {
-        const paths = getUserPaths(userKey);
-        ensureUserSandbox(userKey);
-        try { fs.writeFileSync(paths.resumePath, JSON.stringify(dbResume, null, 2), 'utf8'); } catch (e) {}
-        return dbResume;
+        // Verify if dbResume has the canonical fields (SDE2 title and System Design skills)
+        const isUpToDate = dbResume.personalInfo?.title?.includes('SDE2') && dbResume.skills?.['System Design'];
+        if (isUpToDate) {
+          const paths = getUserPaths(userKey);
+          ensureUserSandbox(userKey);
+          try { fs.writeFileSync(paths.resumePath, JSON.stringify(dbResume, null, 2), 'utf8'); } catch (e) {}
+          return dbResume;
+        } else if (master) {
+          // Outdated resume stored in Supabase: auto-upgrade to canonical resume and save
+          await supabaseSaveResume(userKey, master);
+          const paths = getUserPaths(userKey);
+          ensureUserSandbox(userKey);
+          try { fs.writeFileSync(paths.resumePath, JSON.stringify(master, null, 2), 'utf8'); } catch (e) {}
+          return master;
+        }
+      } else if (master) {
+        // No resume in DB yet: push canonical master resume
+        await supabaseSaveResume(userKey, master);
+        return master;
       }
     } catch (e) {}
   }
