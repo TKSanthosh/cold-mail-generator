@@ -2645,22 +2645,10 @@ function JdResumeTailor({ showToast, currentUser }) {
                             href={job.url}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1.5 rounded-lg transition-colors shadow-xs"
-                            title="Open direct job posting & application requisition"
+                            className="inline-flex items-center gap-1.5 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg transition-colors shadow-xs"
+                            title={`Open direct verified job requisition for ${job.company}: ${job.url}`}
                           >
-                            <span>Direct Job Link</span>
-                            <ExternalLink className="w-3 h-3" />
-                          </a>
-                        )}
-                        {job.portalUrl && (
-                          <a
-                            href={job.portalUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-sky-600 dark:text-sky-400 hover:text-sky-800 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 dark:hover:bg-sky-900/50 px-2 py-1.5 rounded-lg transition-colors"
-                            title="Open company job openings on Naukri"
-                          >
-                            <span>Naukri</span>
+                            <span>Direct Company Apply</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
