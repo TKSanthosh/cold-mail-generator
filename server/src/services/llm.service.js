@@ -195,7 +195,7 @@ Target Company: ${company}
 Candidate Name: ${candidateName}
 Total Experience: 4+ years (full-stack & backend engineering)
 Core Stack: Node.js, Express.js, React.js (MERN), MySQL, MongoDB, AWS, REST APIs
-Notable Achievements: Reduced API response times by ~20% and cut production issues by ~30% at Sify Technologies; built clinical platforms at IQVIA.
+Notable Achievements: Delivered 8+ major features across production systems; reduced API response times by ~20% and cut production issues by ~30% at Sify Technologies; built engagement workflows at IQVIA.
 `;
 
   if (companyIntel && companyIntel.summary) {

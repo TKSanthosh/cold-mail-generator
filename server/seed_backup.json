@@ -60,14 +60,16 @@
         },
         "experience": [
           {
-            "role": "Software Development Engineer",
+            "role": "Software Development Engineer 2 (SDE2)",
             "company": "IQVIA, Bangalore",
-            "duration": "June 2026 - Present",
+            "duration": "June 2026 – Present",
             "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
             "highlights": [
-              "Working on an enterprise event management platform built using Node.js, React.js, and MySQL.",
-              "Involved in application enhancements and feature modifications based on client and business requirements.",
-              "Collaborating with team members to resolve issues and support ongoing application development."
+              "Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.",
+              "Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.",
+              "Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.",
+              "Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.",
+              "Followed CI/CD workflows using GitHub for automated builds and deployments across application environments."
             ]
           },
           {

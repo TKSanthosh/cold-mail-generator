@@ -578,7 +578,7 @@ app.get('/api/resume/download', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
     const { resolveUserResumeFile } = require('./services/resume.service');
-    const result = await resolveUserResumeFile(userKey, { forceRefresh: true });
+    const result = await resolveUserResumeFile(userKey, { forceRefresh: true, useMasterResume: true });
     if (!result || !result.filePath || !fs.existsSync(result.filePath)) {
       return res.status(404).json({ error: 'Base resume PDF not found or could not be generated' });
     }

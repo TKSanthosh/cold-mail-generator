@@ -167,8 +167,10 @@ async function getUserResumeAsync(userKey) {
     try {
       const dbResume = await supabaseGetResume(userKey);
       if (dbResume && typeof dbResume === 'object' && Object.keys(dbResume).length > 0) {
-        // Verify if dbResume has the canonical fields (SDE2 title and System Design skills)
-        const isUpToDate = dbResume.personalInfo?.title?.includes('SDE2') && dbResume.skills?.['System Design'];
+        const iqviaJob = (dbResume.experience || []).find(e => (e.company || '').toLowerCase().includes('iqvia'));
+        const hasAuthenticIqvia = iqviaJob && Array.isArray(iqviaJob.highlights) && iqviaJob.highlights.length === 5 && iqviaJob.highlights.some(h => h.includes('engagement-creation stepper'));
+        // Verify if dbResume has the canonical fields (SDE2 title, System Design skills, and authentic IQVIA points)
+        const isUpToDate = dbResume.personalInfo?.title?.includes('SDE2') && dbResume.skills?.['System Design'] && hasAuthenticIqvia;
         if (isUpToDate) {
           const paths = getUserPaths(userKey);
           ensureUserSandbox(userKey);
@@ -203,20 +205,47 @@ function saveUserResume(userKey, data) {
   }
 }
 
+const AUTHENTIC_IQVIA_HIGHLIGHTS = [
+  'Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.',
+  'Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.',
+  'Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.',
+  'Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.',
+  'Followed CI/CD workflows using GitHub for automated builds and deployments across application environments.'
+];
+
+function sanitizeApplicationEntry(app) {
+  if (!app) return app;
+  const resumesToCheck = [app.tailoredResume, app.resume].filter(Boolean);
+  resumesToCheck.forEach(resObj => {
+    if (Array.isArray(resObj.experience)) {
+      resObj.experience.forEach(exp => {
+        if ((exp.company || '').toLowerCase().includes('iqvia')) {
+          exp.role = 'Software Development Engineer 2 (SDE2)';
+          exp.project = 'Project: Expert Events – Clinical Event & Engagement Management Platform';
+          exp.highlights = [...AUTHENTIC_IQVIA_HIGHLIGHTS];
+        }
+      });
+    }
+  });
+  return app;
+}
+
 function getUserApplications(userKey) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  return readCompressedJson(paths.applicationsPathGz, paths.applicationsPath, []);
+  const rawApps = readCompressedJson(paths.applicationsPathGz, paths.applicationsPath, []);
+  return (rawApps || []).map(sanitizeApplicationEntry);
 }
 
 function saveUserApplications(userKey, apps) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, apps);
+  const sanitized = (apps || []).map(sanitizeApplicationEntry);
+  writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, sanitized);
 
   // Supabase cloud sync
   if (isSupabaseConfigured()) {
-    supabaseSaveApplications(userKey, apps).catch(() => {});
+    supabaseSaveApplications(userKey, sanitized).catch(() => {});
   }
 }
 
@@ -284,7 +313,9 @@ function syncUserApplications(userKey, clientApps = []) {
     }
   });
 
-  const mergedApps = Array.from(appMap.values()).sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+  const mergedApps = Array.from(appMap.values())
+    .map(sanitizeApplicationEntry)
+    .sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
   writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, mergedApps);
@@ -333,7 +364,8 @@ async function hydrateUserSandboxFromDatabase(userKey, options = {}) {
     // 3. Hydrate Applications
     const dbApps = await supabaseGetApplications(userKey);
     if (Array.isArray(dbApps) && dbApps.length > 0) {
-      writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, dbApps);
+      const cleanedDbApps = dbApps.map(sanitizeApplicationEntry);
+      writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, cleanedDbApps);
     }
 
     // 4. Hydrate Logs
