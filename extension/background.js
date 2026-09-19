@@ -14,16 +14,26 @@ const DEFAULT_SETTINGS = {
 // Initialize extension defaults on install
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.sync.get(Object.keys(DEFAULT_SETTINGS), (stored) => {
+    const _ = chrome.runtime.lastError;
     const updated = { ...DEFAULT_SETTINGS, ...stored };
-    chrome.storage.sync.set(updated);
+    chrome.storage.sync.set(updated, () => {
+      const _err = chrome.runtime.lastError;
+    });
   });
 
-  // Context menu for selected text
-  chrome.contextMenus.create({
-    id: 'air_optimize_selection',
-    title: '⚡ Optimize Resume for Selected JD',
-    contexts: ['selection']
-  });
+  // Context menu for selected text - removeAll first to prevent duplicate ID errors
+  if (chrome.contextMenus && typeof chrome.contextMenus.removeAll === 'function') {
+    chrome.contextMenus.removeAll(() => {
+      const _ = chrome.runtime.lastError;
+      chrome.contextMenus.create({
+        id: 'air_optimize_selection',
+        title: '⚡ Optimize Resume for Selected JD',
+        contexts: ['selection']
+      }, () => {
+        const _cmErr = chrome.runtime.lastError;
+      });
+    });
+  }
 });
 
 // Context menu click listener
@@ -96,7 +106,10 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
 
 async function getStoredSettings() {
   return new Promise(resolve => {
-    chrome.storage.sync.get(DEFAULT_SETTINGS, resolve);
+    chrome.storage.sync.get(DEFAULT_SETTINGS, (stored) => {
+      const _ = chrome.runtime.lastError;
+      resolve(stored || DEFAULT_SETTINGS);
+    });
   });
 }
 

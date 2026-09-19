@@ -225,7 +225,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     btnTogglePause.style.display = 'inline-block';
     chrome.storage.sync.get({ pausedSites: [] }, (data) => {
-      const list = data.pausedSites || [];
+      const _err = chrome.runtime.lastError;
+      const list = data?.pausedSites || [];
       const isPaused = list.some(d => d.toLowerCase() === activeDomain);
       if (isPaused) {
         btnTogglePause.classList.add('paused');
@@ -243,7 +244,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnTogglePause.addEventListener('click', () => {
       if (!activeDomain) return;
       chrome.storage.sync.get({ pausedSites: [] }, (data) => {
-        let list = data.pausedSites || [];
+        const _err1 = chrome.runtime.lastError;
+        let list = data?.pausedSites || [];
         const index = list.findIndex(d => d.toLowerCase() === activeDomain);
         if (index >= 0) {
           list.splice(index, 1);
@@ -251,6 +253,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           list.push(activeDomain);
         }
         chrome.storage.sync.set({ pausedSites: list }, () => {
+          const _err2 = chrome.runtime.lastError;
           updatePauseButtonState(`https://${activeDomain}`);
           chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
             if (tabs[0] && tabs[0].id) {
@@ -411,6 +414,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentSettings.autoDownloadPdf = setAutoDownload.checked;
 
     chrome.storage.sync.set(currentSettings, () => {
+      const _ = chrome.runtime.lastError;
       checkServerConnection();
       viewSettings.classList.add('hidden');
       viewMain.classList.remove('hidden');
@@ -421,7 +425,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Generate button click
   function formatTailoredPdfName(candidateName, rawCompany, rawRole) {
     let candidate = (candidateName || 'Santhosh_TK').trim().replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_]/g, '').replace(/_+/g, '_');
-    if (candidate === 'Santhosh_T_K') candidate = 'Santhosh_TK';
+    if (candidate.toUpperCase() === 'SANTHOSH_T_K' || candidate.toUpperCase() === 'SANTHOSH_TK') candidate = 'Santhosh_TK';
 
     let comp = (rawCompany || 'Company').trim().replace(/^(the|inc|corp|corporation|llc|ltd|pvt|technologies|solutions)\s+/i, '').replace(/[\,\|\-].*$/, '').replace(/\s+(inc|corp|corporation|llc|ltd|pvt|technologies|solutions|india|usa)\.?$/i, '').trim();
     const compUpper = comp.toUpperCase();

@@ -64,48 +64,88 @@
     }
   }
 
+  /** Safe runtime messaging helper that always consumes lastError to prevent 'No SW' warnings */
+  function safeSendMessage(msg, callback) {
+    if (typeof chrome === 'undefined' || !chrome.runtime || !chrome.runtime.id) {
+      if (typeof callback === 'function') callback({ success: false, error: 'Extension reloaded or inactive' });
+      return;
+    }
+    try {
+      chrome.runtime.sendMessage(msg, (response) => {
+        const _err = chrome.runtime.lastError;
+        if (_err) {
+          if (typeof callback === 'function') callback({ success: false, error: _err.message, noSw: true });
+          return;
+        }
+        if (typeof callback === 'function') callback(response);
+      });
+    } catch (e) {
+      if (typeof callback === 'function') callback({ success: false, error: e.message });
+    }
+  }
+
+  /** Safe storage get helper that always consumes lastError */
+  function safeStorageGet(defaults, callback) {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.runtime || !chrome.runtime.id) {
+      if (typeof callback === 'function') callback(defaults);
+      return;
+    }
+    try {
+      chrome.storage.sync.get(defaults, (res) => {
+        const _ = chrome.runtime.lastError;
+        if (typeof callback === 'function') callback(res || defaults);
+      });
+    } catch (_) {
+      if (typeof callback === 'function') callback(defaults);
+    }
+  }
+
+  /** Safe storage set helper that always consumes lastError */
+  function safeStorageSet(items, callback) {
+    if (typeof chrome === 'undefined' || !chrome.storage || !chrome.storage.sync || !chrome.runtime || !chrome.runtime.id) {
+      if (typeof callback === 'function') callback();
+      return;
+    }
+    try {
+      chrome.storage.sync.set(items, () => {
+        const _ = chrome.runtime.lastError;
+        if (typeof callback === 'function') callback();
+      });
+    } catch (_) {
+      if (typeof callback === 'function') callback();
+    }
+  }
+
   /** Boot: load paused state from storage synchronously-ish on page load */
   function loadPausedStateFromStorage() {
     const domain = getDomainFromUrl();
-    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync && typeof chrome.storage.sync.get === 'function') {
-      try {
-        chrome.storage.sync.get({ pausedSites: [] }, (res) => {
-          const list = res ? (res.pausedSites || []) : [];
-          const paused = list.some(d => d.toLowerCase() === domain);
-          applyPauseState(paused);
-        });
-      } catch (_) {}
-    }
+    safeStorageGet({ pausedSites: [] }, (res) => {
+      const list = res ? (res.pausedSites || []) : [];
+      const paused = list.some(d => d.toLowerCase() === domain);
+      applyPauseState(paused);
+    });
   }
 
   /** Toggle the paused state for this site */
   async function toggleSitePause() {
     const domain = getDomainFromUrl();
     return new Promise(resolve => {
-      if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.sync && typeof chrome.storage.sync.get === 'function') {
-        try {
-          chrome.storage.sync.get({ pausedSites: [] }, (res) => {
-            let list = res ? (res.pausedSites || []) : [];
-            const idx = list.findIndex(d => d.toLowerCase() === domain);
-            let nowPaused = false;
-            if (idx >= 0) {
-              list.splice(idx, 1);
-              nowPaused = false;
-            } else {
-              list.push(domain);
-              nowPaused = true;
-            }
-            chrome.storage.sync.set({ pausedSites: list }, () => {
-              applyPauseState(nowPaused);
-              resolve({ paused: nowPaused, domain });
-            });
-          });
-        } catch (_) {
-          resolve({ paused: false, domain });
+      safeStorageGet({ pausedSites: [] }, (res) => {
+        let list = res ? (res.pausedSites || []) : [];
+        const idx = list.findIndex(d => d.toLowerCase() === domain);
+        let nowPaused = false;
+        if (idx >= 0) {
+          list.splice(idx, 1);
+          nowPaused = false;
+        } else {
+          list.push(domain);
+          nowPaused = true;
         }
-      } else {
-        resolve({ paused: false, domain });
-      }
+        safeStorageSet({ pausedSites: list }, () => {
+          applyPauseState(nowPaused);
+          resolve({ paused: nowPaused, domain });
+        });
+      });
     });
   }
 
@@ -969,18 +1009,17 @@
     document.getElementById('air-error').classList.add('air-hidden');
     document.getElementById('air-loading').classList.remove('air-hidden');
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'TAILOR_RESUME',
       role,
       company,
       jd
     }, (response) => {
-      const _lastErr = chrome.runtime.lastError;
       document.getElementById('air-loading').classList.add('air-hidden');
 
       if (!response || !response.success) {
         document.getElementById('air-action-box').classList.remove('air-hidden');
-        showError(response?.error || (_lastErr ? _lastErr.message : 'Failed to connect to backend server. Make sure it is accessible.'));
+        showError(response?.error || 'Failed to connect to backend server. Make sure it is accessible.');
         return;
       }
 
@@ -1017,12 +1056,11 @@
   }
 
   function triggerDownload(url, filename) {
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'DOWNLOAD_PDF',
       url,
       filename
     }, (res) => {
-      const _dlErr = chrome.runtime.lastError;
       if (!res || !res.success) {
         const a = document.createElement('a');
         a.href = url;
@@ -1212,15 +1250,14 @@
     `;
 
     // 2. Call backend server
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'TAILOR_RESUME',
       role: data.role || '',
       company: data.company || '',
       jd: data.jd || ''
     }, (resp) => {
-      const _pErr = chrome.runtime.lastError;
       if (!resp || !resp.success) {
-        showPromptError(resp?.error || (_pErr ? _pErr.message : 'Failed to connect to backend server. Ensure backend is running.'));
+        showPromptError(resp?.error || 'Failed to connect to backend server. Ensure backend is running.');
         return;
       }
 
@@ -1320,7 +1357,7 @@
       return; // Never run or scan on non-job websites (Gmail, YouTube, etc.)
     }
 
-    chrome.storage.sync.get({ autoShowWidget: true }, (items) => {
+    safeStorageGet({ autoShowWidget: true }, (items) => {
       const checkPage = () => {
         if (!isJobDomainOrPath() || isScanning) return;
         const currentHref = window.location.href;
@@ -1417,8 +1454,7 @@
   let formObserver = null;
 
   function syncQaMemory(onComplete) {
-    chrome.runtime.sendMessage({ action: 'GET_QA_ITEMS' }, (resp) => {
-      const _qaErr = chrome.runtime.lastError;
+    safeSendMessage({ action: 'GET_QA_ITEMS' }, (resp) => {
       if (resp && resp.success && Array.isArray(resp.qaItems)) {
         localQaMemory = resp.qaItems;
         console.log(`[AI Tailor Q&A] Loaded ${localQaMemory.length} questions from Supabase memory.`);
@@ -1851,13 +1887,12 @@
     const cleanA = String(newAnswer).trim();
     if (cleanQ.length < 3 || cleanA.length === 0) return;
 
-    chrome.runtime.sendMessage({
+    safeSendMessage({
       action: 'SAVE_QA_ITEM',
       id: existingId,
       question: cleanQ,
       answer: cleanA
     }, (resp) => {
-      const _saveErr = chrome.runtime.lastError;
       if (resp && resp.success) {
         showQaFeedbackBadge(`✓ Saved to Supabase: "${cleanQ.slice(0, 30)}${cleanQ.length > 30 ? '...' : ''}"`);
         syncQaMemory();
