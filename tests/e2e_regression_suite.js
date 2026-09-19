@@ -669,9 +669,10 @@ async function runMasterRegressionSuite() {
 
       let tamperDetected = false;
       try {
-        // Tamper with payload ciphertext
+        // Tamper with payload ciphertext deterministically
         const parts = encrypted.split(':');
-        parts[4] = parts[4].replace(/a/g, 'b');
+        const lastPart = parts[parts.length - 1];
+        parts[parts.length - 1] = (lastPart.charAt(0) === 'a' ? 'b' : 'a') + lastPart.slice(1);
         cryptoService.decryptText(parts.join(':'));
       } catch (e) {
         tamperDetected = true;

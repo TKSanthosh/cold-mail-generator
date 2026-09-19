@@ -176,28 +176,40 @@ export default function App() {
     }
   }, [isDarkMode]);
 
-  // Check auth status on load for the active user
+  // Check auth status on load for the active user with restart resilience
   const checkAuthStatus = async (user = currentUser) => {
+    let savedUser = user;
+    try {
+      if (!savedUser) {
+        savedUser = JSON.parse(localStorage.getItem('cold_email_user') || 'null');
+      }
+    } catch (e) {}
+
     try {
       const res = await apiFetch('/api/auth/status', {
-        headers: { 'x-user-key': user?.userKey || '' }
+        headers: { 'x-user-key': savedUser?.userKey || '' }
       });
-      const data = await res.json();
-      if (data.authorized && data.user) {
-        setIsAuthorized(true);
-        const updated = { ...user, ...data.user, userKey: data.userKey || user?.userKey };
-        setCurrentUser(updated);
-        localStorage.setItem('cold_email_user', JSON.stringify(updated));
-      } else {
-        setIsAuthorized(false);
-        setCurrentUser(null);
-        localStorage.removeItem('cold_email_user');
-        localStorage.removeItem('cold_email_jwt');
+      if (res && res.ok) {
+        const data = await res.json();
+        if (data.authorized && data.user) {
+          setIsAuthorized(true);
+          const updated = { ...savedUser, ...data.user, userKey: data.userKey || savedUser?.userKey };
+          setCurrentUser(updated);
+          localStorage.setItem('cold_email_user', JSON.stringify(updated));
+        } else if (data.authorized === false && !savedUser && !localStorage.getItem('cold_email_jwt')) {
+          setIsAuthorized(false);
+          setCurrentUser(null);
+          localStorage.removeItem('cold_email_user');
+          localStorage.removeItem('cold_email_jwt');
+        }
       }
     } catch (e) {
-      console.error('Failed to check auth status', e);
-      setIsAuthorized(false);
-      setCurrentUser(null);
+      // Server is restarting/rebuilding or network is temporarily offline - NEVER wipe session!
+      console.warn('[AUTH RESILIENCE] Server temporarily unreachable during build/restart. Preserving active user session.');
+      if (savedUser) {
+        setIsAuthorized(true);
+        setCurrentUser(savedUser);
+      }
     } finally {
       setCheckingAuth(false);
     }
