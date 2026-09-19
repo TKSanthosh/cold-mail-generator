@@ -217,20 +217,6 @@ const ENTERPRISE_JOB_BANK = [
 
   // --- PUNE ---
   {
-    company: 'Finastra',
-    role: 'Software Development Engineer - Full Stack & Platform',
-    category: 'Global Fintech Enterprise',
-    employeeCount: '8,000+ Employees',
-    location: 'Pune, Maharashtra',
-    workMode: 'Hybrid',
-    experience: '3-6 Years',
-    salaryRange: '₹22 - 34 LPA',
-    skills: ['JavaScript', 'Node.js', 'React.js', 'RESTful APIs', 'SQL', 'Azure PaaS', 'Microservices'],
-    url: 'https://finastra.wd3.myworkdayjobs.com/en-US/FINC/job/Software-Development_REQ0626_0037590-1',
-    portalUrl: 'https://www.naukri.com/finastra-jobs-in-pune',
-    jd: 'Reporting to the Senior Engineering Manager, designs and develops mission-critical financial applications across Lending, Payments, and Universal Banking. Hands-on coding in JavaScript/Node.js, React, RESTful APIs, and cloud infrastructure.'
-  },
-  {
     company: 'Siemens Technology',
     role: 'Software Development Engineer - Web & Cloud',
     category: 'Enterprise MNC',
@@ -582,16 +568,15 @@ function getDiscoveredJobs(userKey) {
     try {
       const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
       if (data && Array.isArray(data.jobs) && data.jobs.length >= 20) {
-        const hasFinastra = data.jobs.some(j => (j.company || '').toLowerCase().includes('finastra'));
         const hasSearchQueryUrls = data.jobs.some(j => j.url && (j.url.includes('?q=') || j.url.includes('?keyword=') || j.url.includes('careers?query=')));
-        if (hasFinastra && !hasSearchQueryUrls) {
+        if (!hasSearchQueryUrls) {
           return data;
         }
       }
     } catch (e) {}
   }
   
-  // If not discovered yet, under 20, missing Finastra, or holding query URLs, seed immediately
+  // If not discovered yet, under 20, or holding query URLs, seed immediately
   return refreshDiscoveredJobsSync(key);
 }
 
