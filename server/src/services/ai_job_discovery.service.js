@@ -376,6 +376,24 @@ function refreshDiscoveredJobs(userKey) {
     };
   });
 
+  // Sort strictly by India priority first (Bangalore -> Chennai/Hyd/Pune -> India Remote -> Global)
+  enrichedJobs.sort((a, b) => {
+    const locA = (a.location || '').toLowerCase();
+    const locB = (b.location || '').toLowerCase();
+
+    const isBlrA = locA.includes('bangalore') || locA.includes('bengaluru');
+    const isBlrB = locB.includes('bangalore') || locB.includes('bengaluru');
+    if (isBlrA && !isBlrB) return -1;
+    if (!isBlrA && isBlrB) return 1;
+
+    const isIndiaA = locA.includes('india') || locA.includes('karnataka') || locA.includes('chennai') || locA.includes('hyderabad') || locA.includes('pune') || locA.includes('mumbai') || locA.includes('noida') || locA.includes('gurgaon');
+    const isIndiaB = locB.includes('india') || locB.includes('karnataka') || locB.includes('chennai') || locB.includes('hyderabad') || locB.includes('pune') || locB.includes('mumbai') || locB.includes('noida') || locB.includes('gurgaon');
+    if (isIndiaA && !isIndiaB) return -1;
+    if (!isIndiaA && isIndiaB) return 1;
+
+    return (b.atsScore || 0) - (a.atsScore || 0);
+  });
+
   const now = Date.now();
   const nextRefresh = now + (2 * 60 * 60 * 1000); // +2 hours
 

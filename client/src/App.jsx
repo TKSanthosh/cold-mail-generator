@@ -2082,6 +2082,7 @@ function JdResumeTailor({ showToast, currentUser }) {
   const [feedNextRefreshAt, setFeedNextRefreshAt] = useState('');
   const [tailoringJobId, setTailoringJobId] = useState(null);
   const [feedSearch, setFeedSearch] = useState('');
+  const [locationFilter, setLocationFilter] = useState('india'); // 'india' | 'bangalore' | 'all'
 
   const fetchDiscoveredFeed = async (isManual = false) => {
     if (isManual) setRefreshingFeed(true);
@@ -2308,6 +2309,44 @@ function JdResumeTailor({ showToast, currentUser }) {
           </div>
         </div>
 
+        {/* Quick Location Priority Filters */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">Location Priority:</span>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('india')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'india'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            🇮🇳 India Roles (Priority)
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('bangalore')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'bangalore'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Bangalore / Bengaluru
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('all')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'all'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            🌐 All Roles
+          </button>
+        </div>
+
         {/* Discovered Jobs Grid */}
         {loadingFeed ? (
           <div className="flex items-center justify-center p-12 text-slate-400 text-xs gap-2">
@@ -2327,13 +2366,20 @@ function JdResumeTailor({ showToast, currentUser }) {
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 max-h-[520px] overflow-y-auto pr-1">
             {discoveredJobs
               .filter(job => {
+                const loc = (job.location || '').toLowerCase();
+                if (locationFilter === 'bangalore') {
+                  if (!loc.includes('bangalore') && !loc.includes('bengaluru')) return false;
+                } else if (locationFilter === 'india') {
+                  const isIndia = loc.includes('india') || loc.includes('karnataka') || loc.includes('bangalore') || loc.includes('bengaluru') || loc.includes('chennai') || loc.includes('hyderabad') || loc.includes('pune') || loc.includes('mumbai') || loc.includes('noida') || loc.includes('gurgaon');
+                  if (!isIndia) return false;
+                }
                 if (!feedSearch) return true;
                 const q = feedSearch.toLowerCase();
                 return (
                   (job.company || '').toLowerCase().includes(q) ||
                   (job.role || '').toLowerCase().includes(q) ||
                   (job.skills || []).some(s => s.toLowerCase().includes(q)) ||
-                  (job.location || '').toLowerCase().includes(q)
+                  loc.includes(q)
                 );
               })
               .map((job) => {
