@@ -1456,7 +1456,7 @@ app.delete('/api/applications/:id', (req, res) => {
 });
 
 // --- ENTERPRISE JOB DISCOVERY & 2-HOUR REFRESH FEED ---
-app.get(['/api/jobs/feed', '/api/discovery/feed'], (req, res) => {
+app.get(['/api/jobs/feed', '/api/discovery/feed'], async (req, res) => {
   const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
   try {
     const feed = getDiscoveredJobs(userKey);
@@ -1466,10 +1466,10 @@ app.get(['/api/jobs/feed', '/api/discovery/feed'], (req, res) => {
   }
 });
 
-app.post(['/api/jobs/refresh', '/api/discovery/refresh'], (req, res) => {
+app.post(['/api/jobs/refresh', '/api/discovery/refresh'], async (req, res) => {
   const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
   try {
-    const feed = refreshDiscoveredJobs(userKey);
+    const feed = await refreshDiscoveredJobs(userKey);
     res.json({ success: true, ...feed });
   } catch (e) {
     res.status(500).json({ error: e.message });

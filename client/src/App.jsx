@@ -2082,7 +2082,7 @@ function JdResumeTailor({ showToast, currentUser }) {
   const [feedNextRefreshAt, setFeedNextRefreshAt] = useState('');
   const [tailoringJobId, setTailoringJobId] = useState(null);
   const [feedSearch, setFeedSearch] = useState('');
-  const [locationFilter, setLocationFilter] = useState('india'); // 'india' | 'bangalore' | 'all'
+  const [locationFilter, setLocationFilter] = useState('all_india'); // 'all_india' | 'bangalore' | 'hyderabad' | 'chennai' | 'pune' | 'delhi_ncr' | 'mumbai' | 'remote' | 'all'
 
   const fetchDiscoveredFeed = async (isManual = false) => {
     if (isManual) setRefreshingFeed(true);
@@ -2311,17 +2311,17 @@ function JdResumeTailor({ showToast, currentUser }) {
 
         {/* Quick Location Priority Filters */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">Location Priority:</span>
+          <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">India Tech Hubs:</span>
           <button
             type="button"
-            onClick={() => setLocationFilter('india')}
+            onClick={() => setLocationFilter('all_india')}
             className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
-              locationFilter === 'india'
+              locationFilter === 'all_india'
                 ? 'bg-indigo-600 text-white shadow-xs'
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
-            🇮🇳 India Roles (Priority)
+            🇮🇳 All India (All Hubs)
           </button>
           <button
             type="button"
@@ -2332,7 +2332,73 @@ function JdResumeTailor({ showToast, currentUser }) {
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
-            📍 Bangalore / Bengaluru
+            📍 Bangalore
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('hyderabad')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'hyderabad'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Hyderabad
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('chennai')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'chennai'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Chennai
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('pune')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'pune'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Pune
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('delhi_ncr')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'delhi_ncr'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Delhi NCR / Noida / Gurgaon
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('mumbai')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'mumbai'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            📍 Mumbai
+          </button>
+          <button
+            type="button"
+            onClick={() => setLocationFilter('remote')}
+            className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+              locationFilter === 'remote'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
+            }`}
+          >
+            🌐 Remote (India)
           </button>
           <button
             type="button"
@@ -2343,14 +2409,14 @@ function JdResumeTailor({ showToast, currentUser }) {
                 : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'
             }`}
           >
-            🌐 All Roles
+            🌍 All
           </button>
         </div>
 
         {/* Discovered Jobs Grid */}
         {loadingFeed ? (
           <div className="flex items-center justify-center p-12 text-slate-400 text-xs gap-2">
-            <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> Discovering verified enterprise openings...
+            <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> Discovering & verifying Pan-India enterprise openings...
           </div>
         ) : discoveredJobs.length === 0 ? (
           <div className="text-center p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
@@ -2367,11 +2433,24 @@ function JdResumeTailor({ showToast, currentUser }) {
             {discoveredJobs
               .filter(job => {
                 const loc = (job.location || '').toLowerCase();
-                if (locationFilter === 'bangalore') {
-                  if (!loc.includes('bangalore') && !loc.includes('bengaluru')) return false;
-                } else if (locationFilter === 'india') {
-                  const isIndia = loc.includes('india') || loc.includes('karnataka') || loc.includes('bangalore') || loc.includes('bengaluru') || loc.includes('chennai') || loc.includes('hyderabad') || loc.includes('pune') || loc.includes('mumbai') || loc.includes('noida') || loc.includes('gurgaon');
+                const mode = (job.workMode || '').toLowerCase();
+                if (locationFilter === 'all_india') {
+                  const isIndia = loc.includes('india') || loc.includes('karnataka') || loc.includes('bangalore') || loc.includes('bengaluru') || loc.includes('chennai') || loc.includes('tamil nadu') || loc.includes('hyderabad') || loc.includes('telangana') || loc.includes('pune') || loc.includes('maharashtra') || loc.includes('mumbai') || loc.includes('noida') || loc.includes('gurgaon') || loc.includes('delhi');
                   if (!isIndia) return false;
+                } else if (locationFilter === 'bangalore') {
+                  if (!loc.includes('bangalore') && !loc.includes('bengaluru') && !loc.includes('karnataka')) return false;
+                } else if (locationFilter === 'hyderabad') {
+                  if (!loc.includes('hyderabad') && !loc.includes('telangana')) return false;
+                } else if (locationFilter === 'chennai') {
+                  if (!loc.includes('chennai') && !loc.includes('tamil nadu')) return false;
+                } else if (locationFilter === 'pune') {
+                  if (!loc.includes('pune')) return false;
+                } else if (locationFilter === 'delhi_ncr') {
+                  if (!loc.includes('noida') && !loc.includes('gurgaon') && !loc.includes('delhi')) return false;
+                } else if (locationFilter === 'mumbai') {
+                  if (!loc.includes('mumbai')) return false;
+                } else if (locationFilter === 'remote') {
+                  if (!loc.includes('remote') && !mode.includes('remote')) return false;
                 }
                 if (!feedSearch) return true;
                 const q = feedSearch.toLowerCase();
@@ -2398,6 +2477,10 @@ function JdResumeTailor({ showToast, currentUser }) {
                             </span>
                             <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-semibold px-1.5 py-0.5 rounded border border-indigo-200/60 dark:border-indigo-800/60">
                               {job.employeeCount || job.category}
+                            </span>
+                            <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-200/60 dark:border-emerald-800/60 flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Live Opening
                             </span>
                           </div>
                           <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
