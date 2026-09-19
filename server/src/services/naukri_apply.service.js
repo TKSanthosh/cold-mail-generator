@@ -197,7 +197,8 @@ function getNaukriExternalJobs(userKey) {
 function recordExternalCompanyJob(userKey, jobItem) {
   try {
     const existing = getNaukriExternalJobs(userKey);
-    const alreadySaved = existing.some(j => j.jobId === jobItem.jobId || (j.jobUrl && j.jobUrl === jobItem.jobUrl));
+    const resolvedUrl = jobItem.directJobUrl || jobItem.jobUrl || jobItem.url;
+    const alreadySaved = existing.some(j => j.jobId === jobItem.jobId || (j.jobUrl && j.jobUrl === resolvedUrl));
     if (!alreadySaved) {
       existing.unshift({
         jobId: jobItem.jobId || `ext_${Date.now()}`,
@@ -205,7 +206,7 @@ function recordExternalCompanyJob(userKey, jobItem) {
         company: jobItem.company,
         location: jobItem.location || '',
         experience: jobItem.experience || jobItem.exp || '',
-        jobUrl: jobItem.jobUrl || jobItem.url,
+        jobUrl: resolvedUrl,
         detectedAt: new Date().toISOString()
       });
       const filePath = getExternalJobsFilePath(userKey);
@@ -2577,11 +2578,20 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
         const isExternal = textLower.includes('company site') || textLower.includes('external') || textLower.includes('visit employer');
         const isAlreadyApplied = textLower.includes('already applied') || textLower === 'applied';
 
+        let externalUrl = null;
+        if (isExternal) {
+          externalUrl = applyEl.getAttribute('href') || applyEl.href || applyEl.getAttribute('data-href') || applyEl.getAttribute('data-url') || null;
+          if (externalUrl && (externalUrl.startsWith('javascript:') || externalUrl.startsWith('#'))) {
+            externalUrl = null;
+          }
+        }
+
         return {
           exists: true,
           text,
           isExternal,
-          isAlreadyApplied
+          isAlreadyApplied,
+          externalUrl
         };
       });
 
@@ -2617,9 +2627,10 @@ async function applyToNaukriJobsWithPuppeteer(page, userKey, customOptions = {})
       }
 
       if (applyBtnData.isExternal) {
-        console.log(`[EXTERNAL_CAREER_SITE] Collected "Apply on company site" job for manual review: "${jobItem.jobTitle}" at "${jobItem.company}".`);
-        recordExternalCompanyJob(userKey, jobItem);
-        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'Collected for Manual Application (Company Site)' });
+        const resolvedDirectUrl = applyBtnData.externalUrl || jobItem.jobUrl;
+        console.log(`[EXTERNAL_CAREER_SITE] Collected "Apply on company site" job for direct requisition: "${jobItem.jobTitle}" at "${jobItem.company}" -> ${resolvedDirectUrl}`);
+        recordExternalCompanyJob(userKey, { ...jobItem, jobUrl: resolvedDirectUrl, directJobUrl: resolvedDirectUrl });
+        updateQueueItemState(userKey, jobItem.jobId, { state: ApplicationState.SKIPPED, stage: 'Collected for Direct Application (Company Site)' });
         continue;
       }
 
@@ -4527,21 +4538,28 @@ async function inspectBatchJobQuestionsAsync(userKey = 'default_user', options =
           }
 
           // 2. Check if external site apply
-          const isExternalSite = await page.evaluate(() => {
+          const externalSiteData = await page.evaluate(() => {
             const btns = Array.from(document.querySelectorAll('button, a'));
             const hasDirectApply = btns.some(b => {
               const t = (b.textContent || b.innerText || '').toLowerCase();
               return t === 'apply' || t.startsWith('apply') || t.includes('easy apply');
             });
-            const hasExternal = btns.some(b => {
+            const extBtn = btns.find(b => {
               const t = (b.textContent || b.innerText || '').toLowerCase();
-              return t.includes('company site') || t.includes('external');
+              return t.includes('company site') || t.includes('external') || t.includes('visit employer');
             });
-            return !hasDirectApply && hasExternal;
+            const isExternalSite = !hasDirectApply && Boolean(extBtn);
+            let directUrl = null;
+            if (extBtn) {
+              directUrl = extBtn.getAttribute('href') || extBtn.href || extBtn.getAttribute('data-href') || null;
+              if (directUrl && (directUrl.startsWith('javascript:') || directUrl.startsWith('#'))) directUrl = null;
+            }
+            return { isExternalSite, directUrl };
           });
 
-          if (isExternalSite) {
-            recordExternalCompanyJob(userKey, { jobId: jId, company, jobTitle, jobUrl });
+          if (externalSiteData.isExternalSite) {
+            const finalDirectUrl = externalSiteData.directUrl || jobUrl;
+            recordExternalCompanyJob(userKey, { jobId: jId, company, jobTitle, jobUrl: finalDirectUrl, directJobUrl: finalDirectUrl });
             data.jobQuestionsMap[jId] = {
               batchId: data.batchId || `batch_${Date.now()}`,
               jobId: jId,

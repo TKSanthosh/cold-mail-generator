@@ -2561,9 +2561,22 @@ function JdResumeTailor({ showToast, currentUser }) {
                               Live Opening
                             </span>
                           </div>
-                          <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
-                            {job.role}
-                          </div>
+                          {job.url ? (
+                            <a
+                              href={job.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5 hover:underline inline-flex items-center gap-1 group"
+                              title={`Open direct job requisition: ${job.url}`}
+                            >
+                              <span>{job.role}</span>
+                              <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 transition-opacity" />
+                            </a>
+                          ) : (
+                            <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                              {job.role}
+                            </div>
+                          )}
                         </div>
 
                         <div className="text-right shrink-0">
@@ -2635,7 +2648,7 @@ function JdResumeTailor({ showToast, currentUser }) {
                             className="inline-flex items-center gap-1 text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-2.5 py-1.5 rounded-lg transition-colors shadow-xs"
                             title="Open direct job posting & application requisition"
                           >
-                            <span>Job Portal</span>
+                            <span>Direct Job Link</span>
                             <ExternalLink className="w-3 h-3" />
                           </a>
                         )}
@@ -7236,9 +7249,22 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                       </span>
                     </td>
                     <td className="p-3">
-                      <span className="font-semibold text-slate-800 dark:text-slate-200">
-                        {item.jobTitle || item.title}
-                      </span>
+                      {item.jobUrl ? (
+                        <a
+                          href={item.jobUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 inline-flex items-center gap-1 group transition-colors"
+                          title={`Open direct job requisition: ${item.jobUrl}`}
+                        >
+                          <span>{item.jobTitle || item.title}</span>
+                          <ExternalLink className="w-3 h-3 opacity-60 group-hover:opacity-100 transition-opacity" />
+                        </a>
+                      ) : (
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          {item.jobTitle || item.title}
+                        </span>
+                      )}
                     </td>
                     <td className="p-3 text-slate-600 dark:text-slate-400">
                       <span>{item.location || 'Bengaluru'} • {item.experience || 'Experienced'}</span>
@@ -7253,7 +7279,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
                           target="_blank"
                           rel="noopener noreferrer"
                           className="inline-flex items-center gap-1 text-xs px-2.5 py-1 bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900 border border-amber-200 dark:border-amber-800 rounded font-semibold transition-all"
-                          title="Open job posting on Naukri to apply on company site"
+                          title="Open direct job requisition on company site"
                         >
                           <span>Apply on Company Site</span>
                           <ExternalLink className="w-3 h-3" />
