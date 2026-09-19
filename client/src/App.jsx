@@ -503,6 +503,14 @@ function SingleSender({ isAuthorized, showToast }) {
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
 
+  // Auto-detect and purge accidental resume JSON in JD field
+  useEffect(() => {
+    if (jd && jd.trim().startsWith('{') && (jd.includes('"skills"') || jd.includes('"Databases"') || jd.includes('"experience"') || jd.includes('"candidateInfo"'))) {
+      setJd('');
+      showToast('Cleared resume JSON from Job Description field.', 'info');
+    }
+  }, [jd]);
+
   // Generated results
   const [parsedName, setParsedName] = useState('');
   const [parsedCompany, setParsedCompany] = useState('');
@@ -809,12 +817,26 @@ function SingleSender({ isAuthorized, showToast }) {
         )}
 
         <div>
-          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Job Description (JD) <span className="text-slate-400 font-normal">(Optional)</span></label>
+          <div className="flex items-center justify-between mb-2">
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Job Description (JD) <span className="text-slate-400 font-normal">(Optional)</span></label>
+            {jd && (
+              <button
+                type="button"
+                onClick={() => setJd('')}
+                className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"
+                title="Clear Job Description"
+              >
+                <Trash2 className="w-3 h-3" /> Clear JD
+              </button>
+            )}
+          </div>
           <textarea
             value={jd}
             onChange={(e) => setJd(e.target.value)}
             placeholder="Paste the job description here to tailor your resume & email to this specific role..."
             rows={5}
+            autoComplete="off"
+            spellCheck="false"
             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs"
           />
           <p className="text-slate-400 text-xs mt-1">If left blank, a standard cold email template and default resume PDF will be used.</p>
@@ -980,6 +1002,14 @@ function BulkSender({ isAuthorized, showToast }) {
   const [parsedItems, setParsedItems] = useState([]);
   const [campaignState, setCampaignState] = useState('idle'); // idle, sending, complete
   const [currentIndex, setCurrentIndex] = useState(0);
+
+  // Auto-detect and purge accidental resume JSON in JD field
+  useEffect(() => {
+    if (jd && jd.trim().startsWith('{') && (jd.includes('"skills"') || jd.includes('"Databases"') || jd.includes('"experience"') || jd.includes('"candidateInfo"'))) {
+      setJd('');
+      showToast('Cleared resume JSON from Common Job Description field.', 'info');
+    }
+  }, [jd]);
 
   const handleParseEmails = async () => {
     if (!emailsText) return;
@@ -1178,12 +1208,26 @@ function BulkSender({ isAuthorized, showToast }) {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Common Job Description (JD)</label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Common Job Description (JD)</label>
+              {jd && (
+                <button
+                  type="button"
+                  onClick={() => setJd('')}
+                  className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"
+                  title="Clear Job Description"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear JD
+                </button>
+              )}
+            </div>
             <textarea
               value={jd}
               onChange={(e) => setJd(e.target.value)}
               placeholder="Paste the job description here. Every outgoing resume and cold email in the campaign will be tailored dynamically using this JD as context..."
               rows={10}
+              autoComplete="off"
+              spellCheck="false"
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all font-mono text-xs resize-y"
             />
           </div>
@@ -1956,6 +2000,14 @@ function JdResumeTailor({ showToast, currentUser }) {
   const [tailoring, setTailoring] = useState(false);
   const [currentTailored, setCurrentTailored] = useState(null);
 
+  // Auto-detect and purge accidental resume JSON in JD field
+  useEffect(() => {
+    if (jd && jd.trim().startsWith('{') && (jd.includes('"skills"') || jd.includes('"Databases"') || jd.includes('"experience"') || jd.includes('"candidateInfo"'))) {
+      setJd('');
+      showToast('Cleared resume JSON from Job Description field.', 'info');
+    }
+  }, [jd]);
+
   // Application logs
   const [applications, setApplications] = useState([]);
   const [loadingApps, setLoadingApps] = useState(false);
@@ -2175,7 +2227,19 @@ function JdResumeTailor({ showToast, currentUser }) {
 
           <div className="flex-1 flex flex-col">
             <div className="flex items-center justify-between mb-1">
-              <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Paste Job Description (JD) *</label>
+              <div className="flex items-center gap-2">
+                <label className="block text-xs font-bold text-slate-700 dark:text-slate-300">Paste Job Description (JD) *</label>
+                {jd && (
+                  <button
+                    type="button"
+                    onClick={() => setJd('')}
+                    className="text-[11px] font-semibold text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 flex items-center gap-1 transition-colors"
+                    title="Clear Job Description"
+                  >
+                    <Trash2 className="w-3 h-3" /> Clear
+                  </button>
+                )}
+              </div>
               <span className="text-[11px] text-slate-400">{jd.length} chars</span>
             </div>
             <textarea
@@ -2183,6 +2247,8 @@ function JdResumeTailor({ showToast, currentUser }) {
               placeholder="Paste the complete Job Description here (key skills, responsibilities, required backend/frontend stack)..."
               value={jd}
               onChange={(e) => setJd(e.target.value)}
+              autoComplete="off"
+              spellCheck="false"
               className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg p-3 text-xs leading-relaxed text-slate-800 dark:text-slate-100 focus:bg-white dark:focus:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 resize-y font-sans"
             />
           </div>

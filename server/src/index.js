@@ -677,6 +677,11 @@ app.post('/api/generate', async (req, res) => {
   const userKey = resolveUserKey(req, res);
   const rawEmail = req.body.hrEmail || req.body.email;
   const { hrName, name, company, jd } = req.body;
+  let cleanJd = typeof jd === 'string' ? jd.trim() : '';
+  // If user accidentally passed resume JSON schema as JD, treat it as blank
+  if (cleanJd.startsWith('{') && (cleanJd.includes('"skills"') || cleanJd.includes('"Databases"') || cleanJd.includes('"experience"') || cleanJd.includes('"candidateInfo"'))) {
+    cleanJd = '';
+  }
 
   if (!rawEmail) {
     return res.status(400).json({ error: 'HR Email is required' });
@@ -693,8 +698,8 @@ app.post('/api/generate', async (req, res) => {
     // Parallel Concurrency: Run Scraping, Resume Tailoring, and Cold Email Generation in parallel
     const [companyIntel, tailoredResumeData, emailData] = await Promise.all([
       scrapeCompanyIntel(finalCompany, targetDomain).catch(() => null),
-      tailorResume(standardResume, jd).catch(() => standardResume),
-      generateColdEmail(finalHrName, finalCompany, jd, standardResume, null)
+      tailorResume(standardResume, cleanJd).catch(() => standardResume),
+      generateColdEmail(finalHrName, finalCompany, cleanJd, standardResume, null)
     ]);
 
     res.json({
@@ -1238,7 +1243,11 @@ app.post('/api/applications/tailor', async (req, res) => {
   }
 
   const { role, company, jd } = req.body;
-  if (!jd || jd.trim().length === 0) {
+  let cleanJd = typeof jd === 'string' ? jd.trim() : '';
+  if (cleanJd.startsWith('{') && (cleanJd.includes('"skills"') || cleanJd.includes('"Databases"') || cleanJd.includes('"experience"') || cleanJd.includes('"candidateInfo"'))) {
+    return res.status(400).json({ error: 'Please paste actual Job Description text, not resume JSON.' });
+  }
+  if (!cleanJd) {
     return res.status(400).json({ error: 'Job description (JD) is required.' });
   }
 
@@ -1248,7 +1257,7 @@ app.post('/api/applications/tailor', async (req, res) => {
       standardResume = getUserResume('default_user');
     }
 
-    const tailoredResume = await tailorResume(standardResume, jd);
+    const tailoredResume = await tailorResume(standardResume, cleanJd);
 
     if (role && role.trim().length > 0) {
       tailoredResume.personalInfo = tailoredResume.personalInfo || {};
