@@ -460,6 +460,8 @@ async function checkPendingQuestionNotifications() {
             message: `"${latest.question}"\nRole: ${latest.jobTitle || 'Role'}. Click to answer!`,
             priority: 2,
             requireInteraction: true
+          }, () => {
+            const _notifErr = chrome.runtime.lastError;
           });
         }
       }
@@ -473,7 +475,9 @@ if (chrome.notifications && chrome.notifications.onClicked) {
   chrome.notifications.onClicked.addListener(async () => {
     const settings = await getStoredSettings();
     const serverUrl = settings.serverUrl || 'http://localhost:5001';
-    chrome.tabs.create({ url: `${serverUrl}/?openPending=true` });
+    chrome.tabs.create({ url: `${serverUrl}/?openPending=true` }, () => {
+      const _tabErr = chrome.runtime.lastError;
+    });
   });
 }
 

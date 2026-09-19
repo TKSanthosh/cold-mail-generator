@@ -1916,6 +1916,8 @@
   }
 
   function initQaTracker() {
+    if (!isJobDomainOrPath() || isSitePaused()) return;
+
     // 1. Initial memory sync & prefill
     syncQaMemory(() => {
       autoPrefillPageQuestions(false);
