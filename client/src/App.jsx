@@ -2203,15 +2203,93 @@ function JdResumeTailor({ showToast, currentUser }) {
     }
   };
 
-  const handleDownloadPdf = (id, comp, rol) => {
+  const formatTailoredPdfName = (candidateName, rawCompany, rawRole) => {
+    let candidate = (candidateName || 'Santhosh_TK')
+      .trim()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-zA-Z0-9_]/g, '')
+      .replace(/_+/g, '_');
+    if (candidate.toUpperCase() === 'SANTHOSH_T_K' || candidate.toUpperCase() === 'SANTHOSH_TK') {
+      candidate = 'Santhosh_TK';
+    }
+
+    let comp = (rawCompany || 'Company')
+      .trim()
+      .replace(/^(the|inc|corp|corporation|llc|ltd|pvt|technologies|solutions)\s+/i, '')
+      .replace(/[\,\|\-].*$/, '')
+      .replace(/\s+(inc|corp|corporation|llc|ltd|pvt|technologies|solutions|india|usa)\.?$/i, '')
+      .trim();
+
+    const compUpper = comp.toUpperCase();
+    if (compUpper.includes('GOOGLE')) comp = 'Google';
+    else if (compUpper.includes('AMAZON') || compUpper.includes('AWS')) comp = 'Amazon';
+    else if (compUpper.includes('MICROSOFT')) comp = 'Microsoft';
+    else if (compUpper.includes('META') || compUpper.includes('FACEBOOK')) comp = 'Meta';
+    else if (compUpper.includes('APPLE')) comp = 'Apple';
+    else if (compUpper.includes('NETFLIX')) comp = 'Netflix';
+    else if (compUpper.includes('SIFY')) comp = 'Sify';
+    else if (compUpper.includes('IQVIA')) comp = 'IQVIA';
+    else if (compUpper.includes('LINKEDIN')) comp = 'LinkedIn';
+    else if (compUpper.includes('ORACLE')) comp = 'Oracle';
+    else {
+      comp = comp.split(/\s+/).slice(0, 2).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join('');
+    }
+    comp = comp.replace(/[^a-zA-Z0-9]/g, '') || 'Company';
+
+    const roleStr = (rawRole || 'SWE').trim();
+    const rLower = roleStr.toLowerCase();
+
+    let shortRole = 'SWE';
+    if (rLower.includes('full stack') || rLower.includes('fullstack')) {
+      shortRole = 'FullStack_SWE';
+    } else if (rLower.includes('backend')) {
+      shortRole = 'Backend_SWE';
+    } else if (rLower.includes('frontend') || rLower.includes('ui developer') || rLower.includes('web developer')) {
+      shortRole = 'Frontend_SWE';
+    } else if (rLower.includes('machine learning') || rLower.includes('ml ') || rLower.endsWith(' ml') || rLower.includes('ai ') || rLower.includes('deep learning')) {
+      shortRole = 'AI_MLE';
+    } else if (rLower.includes('data engineer') || rLower.includes('data platform')) {
+      shortRole = 'Data_Eng';
+    } else if (rLower.includes('devops') || rLower.includes('sre') || rLower.includes('site reliability')) {
+      shortRole = 'DevOps';
+    } else if (rLower.includes('cloud')) {
+      shortRole = 'Cloud_SWE';
+    } else if (rLower.includes('security')) {
+      shortRole = 'Security_Eng';
+    } else if (rLower.includes('system') || rLower.includes('architect')) {
+      shortRole = 'SysArch';
+    } else if (rLower.includes('software development engineer') || rLower.includes('sde')) {
+      const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+      shortRole = numMatch ? `SDE_${numMatch[1].toUpperCase()}` : 'SDE';
+    } else if (rLower.includes('software engineer') || rLower.includes('swe')) {
+      const numMatch = roleStr.match(/\b(viii|vii|iii|vi|iv|ix|ii|v|i|[1-9])\b/i);
+      shortRole = numMatch ? `SWE_${numMatch[1].toUpperCase()}` : 'SWE';
+    } else {
+      shortRole = roleStr
+        .replace(/[,|-].*$/, '')
+        .trim()
+        .split(/\s+/)
+        .slice(0, 2)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join('_')
+        .replace(/[^a-zA-Z0-9_]/g, '');
+    }
+
+    if (!shortRole) shortRole = 'SWE';
+    return `${candidate}_${comp}_${shortRole}.pdf`;
+  };
+
+  const handleDownloadPdf = (id, comp, rol, preferredDownloadName) => {
+    const candidateName = resumeData?.personalInfo?.name || 'Santhosh_TK';
+    const finalFilename = preferredDownloadName || formatTailoredPdfName(candidateName, comp, rol);
     const downloadUrl = `${BACKEND_URL}/api/applications/${id}/pdf`;
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.download = 'santhosh_t_k.pdf';
+    link.download = finalFilename;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    showToast('Downloading santhosh_t_k.pdf...', 'success');
+    showToast(`Downloading ${finalFilename}...`, 'success');
   };
 
   const handleExportJson = (resumeData, comp, rol) => {
@@ -2737,7 +2815,7 @@ function JdResumeTailor({ showToast, currentUser }) {
 
                 <div className="flex items-center gap-2 w-full sm:w-auto">
                   <button
-                    onClick={() => handleDownloadPdf(currentTailored.id, currentTailored.company, currentTailored.role)}
+                    onClick={() => handleDownloadPdf(currentTailored.id, currentTailored.company, currentTailored.role, currentTailored.downloadName || currentTailored.pdfFilename)}
                     className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3.5 py-2 rounded-lg shadow transition-all flex items-center justify-center gap-1.5"
                   >
                     <Download className="w-3.5 h-3.5" />
@@ -2911,7 +2989,7 @@ function JdResumeTailor({ showToast, currentUser }) {
                     <td className="p-3 text-right whitespace-nowrap">
                       <div className="flex items-center justify-end gap-1.5">
                         <button
-                          onClick={() => handleDownloadPdf(app.id, app.company, app.role)}
+                          onClick={() => handleDownloadPdf(app.id, app.company, app.role, app.downloadName || app.pdfFilename)}
                           className="bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 px-2.5 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1"
                           title="Download 1-Page Tailored PDF"
                         >
