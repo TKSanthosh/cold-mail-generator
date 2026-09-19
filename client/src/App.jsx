@@ -2062,8 +2062,65 @@ function JdResumeTailor({ showToast, currentUser }) {
     }
   };
 
+  // Discovered Enterprise Jobs Feed (2-hour auto-refresh & manual trigger)
+  const [discoveredJobs, setDiscoveredJobs] = useState([]);
+  const [loadingFeed, setLoadingFeed] = useState(false);
+  const [refreshingFeed, setRefreshingFeed] = useState(false);
+  const [feedLastRefreshed, setFeedLastRefreshed] = useState('');
+  const [feedNextRefreshAt, setFeedNextRefreshAt] = useState('');
+  const [tailoringJobId, setTailoringJobId] = useState(null);
+  const [feedSearch, setFeedSearch] = useState('');
+
+  const fetchDiscoveredFeed = async (isManual = false) => {
+    if (isManual) setRefreshingFeed(true);
+    else setLoadingFeed(true);
+    try {
+      const endpoint = isManual ? '/api/jobs/refresh' : '/api/jobs/feed';
+      const method = isManual ? 'POST' : 'GET';
+      const res = await apiFetch(endpoint, { method });
+      const data = await res.json();
+      if (data && Array.isArray(data.jobs)) {
+        setDiscoveredJobs(data.jobs);
+        if (data.lastRefreshed) setFeedLastRefreshed(data.lastRefreshed);
+        if (data.nextRefreshAt) setFeedNextRefreshAt(data.nextRefreshAt);
+        if (isManual) showToast(`Refreshed ${data.jobs.length} verified enterprise openings!`, 'success');
+      }
+    } catch (e) {
+      if (isManual) showToast('Failed to refresh enterprise jobs', 'error');
+    } finally {
+      setLoadingFeed(false);
+      setRefreshingFeed(false);
+    }
+  };
+
+  const handle1ClickTailor = async (job) => {
+    setTailoringJobId(job.id);
+    try {
+      const res = await apiFetch(`/api/jobs/${job.id}/tailor`, { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        showToast(`Compiled 1-page ATS Resume for ${job.company}!`, 'success');
+        fetchApplications();
+      } else {
+        showToast(data.error || 'Failed to tailor resume', 'error');
+      }
+    } catch (e) {
+      showToast('Error generating tailored resume', 'error');
+    } finally {
+      setTailoringJobId(null);
+    }
+  };
+
+  const handlePreFillJob = (job) => {
+    setRole(job.role);
+    setCompany(job.company);
+    setJd(job.jd);
+    showToast(`Loaded ${job.company} - ${job.role} into form!`, 'info');
+  };
+
   useEffect(() => {
     fetchApplications();
+    fetchDiscoveredFeed();
   }, [currentUser]);
 
   const handlePasteClipboard = async () => {
@@ -2182,6 +2239,194 @@ function JdResumeTailor({ showToast, currentUser }) {
           <div className="text-xl sm:text-2xl font-black text-white">{applications.length}</div>
           <div className="text-[10px] sm:text-xs text-indigo-200 font-medium">Logged Resumes</div>
         </div>
+      </div>
+
+      {/* AI-Discovered Enterprise Jobs Feed (2-Hour Auto-Refresh & Manual Trigger) */}
+      <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col gap-4 transition-colors">
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 border-b border-slate-100 dark:border-slate-800 pb-3">
+          <div>
+            <div className="flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-indigo-600 dark:text-indigo-400 shrink-0" />
+              <h3 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span>Discovered Enterprise & MNC Roles</span>
+                <span className="bg-indigo-100 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 text-xs px-2.5 py-0.5 rounded-full font-semibold border border-indigo-200 dark:border-indigo-800">
+                  {discoveredJobs.length} Available
+                </span>
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-2 flex-wrap">
+              <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-medium">
+                <ShieldCheck className="w-3.5 h-3.5" /> Established Enterprises (500+ to 100,000+ Employees)
+              </span>
+              <span>•</span>
+              <span className="text-slate-400">0 Startups</span>
+              <span>•</span>
+              <span className="inline-flex items-center gap-1 text-slate-500 dark:text-slate-400">
+                <Clock className="w-3.5 h-3.5" /> Auto-refreshes every 2 hours
+              </span>
+              {feedLastRefreshed && (
+                <span className="text-[11px] text-slate-400">
+                  (Updated: {new Date(feedLastRefreshed).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                </span>
+              )}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2 w-full md:w-auto">
+            <div className="relative flex-1 md:w-56">
+              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Filter enterprise jobs..."
+                value={feedSearch}
+                onChange={(e) => setFeedSearch(e.target.value)}
+                className="pl-8 pr-3 py-1.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg text-xs w-full focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => fetchDiscoveredFeed(true)}
+              disabled={refreshingFeed}
+              className="inline-flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded-lg font-semibold transition-all shadow-sm shrink-0 cursor-pointer"
+              title="Trigger instant AI discovery refresh for enterprise jobs"
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${refreshingFeed ? 'animate-spin' : ''}`} />
+              <span>{refreshingFeed ? 'Refreshing...' : 'Refresh Jobs'}</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Discovered Jobs Grid */}
+        {loadingFeed ? (
+          <div className="flex items-center justify-center p-12 text-slate-400 text-xs gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> Discovering verified enterprise openings...
+          </div>
+        ) : discoveredJobs.length === 0 ? (
+          <div className="text-center p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+            <p className="text-xs text-slate-500 dark:text-slate-400">No enterprise jobs discovered yet.</p>
+            <button
+              onClick={() => fetchDiscoveredFeed(true)}
+              className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline inline-flex items-center gap-1"
+            >
+              <RotateCw className="w-3 h-3" /> Fetch Enterprise Openings Now
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 max-h-[520px] overflow-y-auto pr-1">
+            {discoveredJobs
+              .filter(job => {
+                if (!feedSearch) return true;
+                const q = feedSearch.toLowerCase();
+                return (
+                  (job.company || '').toLowerCase().includes(q) ||
+                  (job.role || '').toLowerCase().includes(q) ||
+                  (job.skills || []).some(s => s.toLowerCase().includes(q)) ||
+                  (job.location || '').toLowerCase().includes(q)
+                );
+              })
+              .map((job) => {
+                const isTailoringThis = tailoringJobId === job.id;
+                return (
+                  <div
+                    key={job.id}
+                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all flex flex-col justify-between gap-3 shadow-sm hover:shadow"
+                  >
+                    <div className="flex flex-col gap-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                              {job.company}
+                            </span>
+                            <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-semibold px-1.5 py-0.5 rounded border border-indigo-200/60 dark:border-indigo-800/60">
+                              {job.employeeCount || job.category}
+                            </span>
+                          </div>
+                          <div className="font-semibold text-xs text-indigo-600 dark:text-indigo-400 mt-0.5">
+                            {job.role}
+                          </div>
+                        </div>
+
+                        <div className="text-right shrink-0">
+                          <span className="inline-flex items-center gap-1 text-[11px] font-bold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800/60 shadow-xs">
+                            <Sparkles className="w-3 h-3 text-emerald-500" />
+                            {job.atsScore}% ATS
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-400 flex-wrap">
+                        <span>📍 {job.location}</span>
+                        {job.experience && <span>• ⏳ {job.experience}</span>}
+                        {job.salaryRange && <span>• 💰 {job.salaryRange}</span>}
+                      </div>
+
+                      {/* Tech Skills Badges */}
+                      <div className="flex items-center gap-1 flex-wrap mt-0.5">
+                        {(job.skills || []).slice(0, 5).map((sk, i) => (
+                          <span
+                            key={i}
+                            className="text-[10px] bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700"
+                          >
+                            {sk}
+                          </span>
+                        ))}
+                        {(job.skills || []).length > 5 && (
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            +{job.skills.length - 5}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-between gap-1.5 pt-2 border-t border-slate-200/60 dark:border-slate-700/60">
+                      <button
+                        type="button"
+                        onClick={() => handle1ClickTailor(job)}
+                        disabled={isTailoringThis}
+                        className="inline-flex items-center gap-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-[11px] font-bold px-2.5 py-1.5 rounded-lg transition-colors cursor-pointer shadow-xs"
+                        title="Compile 1-page ATS Resume tailored specifically to this job"
+                      >
+                        {isTailoringThis ? (
+                          <>
+                            <Loader2 className="w-3 h-3 animate-spin" /> Tailoring...
+                          </>
+                        ) : (
+                          <>
+                            <Zap className="w-3 h-3" /> 1-Click Tailor
+                          </>
+                        )}
+                      </button>
+
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handlePreFillJob(job)}
+                          className="text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 px-2 py-1.5 rounded-lg transition-colors cursor-pointer"
+                          title="Load role, company, and JD into the custom tailoring editor"
+                        >
+                          Fill Form
+                        </button>
+                        {job.url && (
+                          <a
+                            href={job.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 px-2 py-1.5 rounded-lg transition-colors"
+                            title="Open direct careers portal link"
+                          >
+                            <span>Apply</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+          </div>
+        )}
       </div>
 
       {/* Input Section */}

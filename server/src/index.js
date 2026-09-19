@@ -118,6 +118,12 @@ const {
   inspectBatchJobQuestionsAsync,
   applyBatchWithAnswersAsync
 } = require('./services/naukri_apply.service');
+const {
+  getDiscoveredJobs,
+  refreshDiscoveredJobs,
+  tailorDiscoveredJob,
+  initDiscoveryScheduler
+} = require('./services/ai_job_discovery.service');
 
 const compression = require('compression');
 
@@ -1449,6 +1455,38 @@ app.delete('/api/applications/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// --- ENTERPRISE JOB DISCOVERY & 2-HOUR REFRESH FEED ---
+app.get(['/api/jobs/feed', '/api/discovery/feed'], (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  try {
+    const feed = getDiscoveredJobs(userKey);
+    res.json(feed);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post(['/api/jobs/refresh', '/api/discovery/refresh'], (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  try {
+    const feed = refreshDiscoveredJobs(userKey);
+    res.json({ success: true, ...feed });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post(['/api/jobs/:id/tailor', '/api/discovery/:id/tailor'], async (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  const { id } = req.params;
+  try {
+    const result = await tailorDiscoveredJob(userKey, id);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // --- COMPRESSED PERSISTENT STORAGE & BACKUP ENDPOINTS ---
 app.get('/api/backup/export', (req, res) => {
   try {
@@ -2777,6 +2815,7 @@ async function startServer() {
   initScheduler();
   initLinkedInScheduler();
   initNaukriScheduler();
+  initDiscoveryScheduler();
   initKeepAliveService(PORT);
 }
 
