@@ -553,28 +553,35 @@ function findBestAnswer(userKeyOrDb, rawQuestionText, availableOptions = []) {
     }
   }
 
-  // 3. Keyword Scoring Match
+  // 3. Keyword Scoring Match (ignoring generic conversational stop words)
+  const STOP_WORDS = new Set([
+    'what', 'your', 'have', 'with', 'from', 'this', 'that', 'will', 'does', 'much', 'many',
+    'please', 'enter', 'type', 'select', 'choose', 'about', 'some', 'tell', 'like', 'would',
+    'which', 'where', 'when', 'were', 'been', 'being', 'more', 'less', 'than', 'into', 'there'
+  ]);
+
   let bestMatch = null;
   let highestScore = 0;
 
   for (const item of db) {
-    const keywords = item.keywords || normalizeQuestionText(item.question).split(' ');
+    const rawKws = item.keywords || normalizeQuestionText(item.question).split(' ');
+    const keywords = rawKws.filter(k => k && k.length > 2 && !STOP_WORDS.has(k.toLowerCase()));
     let score = 0;
 
     for (const kw of keywords) {
-      if (kw.length > 2 && normalized.includes(kw.toLowerCase())) {
+      if (normalized.includes(kw.toLowerCase())) {
         score += kw.length > 5 ? 2 : 1;
       }
     }
 
-    if (score > highestScore && score >= 2) {
+    if (score > highestScore && score >= 3) {
       highestScore = score;
       bestMatch = item;
     }
   }
 
-  if (bestMatch && highestScore >= 2) {
-    const confidence = highestScore >= 3 ? 85 : 75;
+  if (bestMatch && highestScore >= 3) {
+    const confidence = highestScore >= 4 ? 85 : 75;
     return resolveAnswerWithOptionMapping(bestMatch.answer, bestMatch, confidence, availableOptions);
   }
 

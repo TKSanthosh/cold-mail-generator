@@ -127,26 +127,6 @@ const VERIFIED_RECRUITER_POSTS = [
     postedAt: daysAgoIso(1)
   },
   {
-    recruiterName: "CRED Engineering Talent",
-    company: "CRED",
-    postSnippet: "CRED is hiring Senior Full Stack Engineers (3+ years) with deep proficiency in React, Node.js, microservices architecture, and cloud infrastructure. Share your work and resume at eng-hiring@cred.club.",
-    email: "eng-hiring@cred.club",
-    role: "Full Stack Engineer",
-    sourceUrl: "https://www.linkedin.com/company/cred-club/jobs/",
-    postedDaysAgo: 4,
-    postedAt: daysAgoIso(4)
-  },
-  {
-    recruiterName: "Groww Tech Recruitment",
-    company: "Groww",
-    postSnippet: "Groww Engineering is expanding! Hiring Full Stack & Backend Developers with 3+ years building low-latency investment systems. Tech: Node.js, React.js, MySQL, Redis, AWS. Email profiles to careers@groww.in.",
-    email: "careers@groww.in",
-    role: "Full Stack Developer (Node.js & React)",
-    sourceUrl: "https://www.linkedin.com/company/groww.in/jobs/",
-    postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
-  },
-  {
     recruiterName: "Freshworks Talent Acquisition",
     company: "Freshworks",
     postSnippet: "Freshworks is looking for Node.js / React Full Stack Developers with 3+ years of experience building enterprise-grade SaaS products. Hybrid: Chennai / Bangalore. Send resumes to careers@freshworks.com.",
@@ -187,16 +167,6 @@ const VERIFIED_RECRUITER_POSTS = [
     postedAt: daysAgoIso(3)
   },
   {
-    recruiterName: "Dream11 Engineering Careers",
-    company: "Dream11",
-    postSnippet: "Dream Sports is hiring Backend and Full Stack Developers with 3+ years in Node.js, React, Redis, and high-concurrency architectures (10M+ concurrent users). Apply at careers@dream11.com.",
-    email: "careers@dream11.com",
-    role: "Software Development Engineer (Full Stack)",
-    sourceUrl: "https://www.linkedin.com/company/dream11/jobs/",
-    postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
-  },
-  {
     recruiterName: "Flipkart Tech Talent",
     company: "Flipkart",
     postSnippet: "Flipkart Engineering is hiring SDE-2 Full Stack Developers with strong proficiency in Node.js, React.js, distributed databases, and high availability systems. Email profiles to tech-hiring@flipkart.com.",
@@ -205,16 +175,6 @@ const VERIFIED_RECRUITER_POSTS = [
     sourceUrl: "https://www.linkedin.com/company/flipkart/jobs/",
     postedDaysAgo: 2,
     postedAt: daysAgoIso(2)
-  },
-  {
-    recruiterName: "Paytm Engineering Hiring",
-    company: "Paytm",
-    postSnippet: "Paytm Core Payments and Lending teams are actively hiring Full Stack and Backend Engineers with 3+ years experience in Node.js, Express, MongoDB, and Redis. Send CV to careers@paytm.com.",
-    email: "careers@paytm.com",
-    role: "Full Stack Software Engineer",
-    sourceUrl: "https://www.linkedin.com/company/paytm/jobs/",
-    postedDaysAgo: 1,
-    postedAt: daysAgoIso(1)
   },
   {
     recruiterName: "Urban Company Tech Team",
@@ -586,7 +546,7 @@ async function discoverTargetCompanyRecruiterLeads(keywords = "MERN Stack React 
         recruiterName: `${companyName} Talent Acquisition Team`,
         company: companyName,
         role: `Software Engineer / Full Stack Developer (${cleanKeywords.split(',')[0].trim()})`,
-        postSnippet: null,
+        postSnippet: `${companyName} is hiring for ${cleanKeywords} roles. Contact talent acquisition team at ${email}.`,
         sourceUrl: `https://www.linkedin.com/company/${compKey}/jobs/`,
         postedAt: new Date().toISOString(),
         postedDaysAgo: 0,
@@ -830,7 +790,7 @@ function calculateNextLinkedInRunTime(config = {}, baseDate = new Date()) {
 function getLinkedInConfig() {
   const nextRun = calculateNextLinkedInRunTime({ scheduleMode: 'interval', intervalMinutes: 240 });
   const defaultConfig = {
-    enabled: true,
+    enabled: false,
     scheduleMode: 'interval',
     intervalHours: 4,
     intervalMinutes: 240,
@@ -838,7 +798,7 @@ function getLinkedInConfig() {
     keywords: 'Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote',
     timeFrame: '3d',
     targetPerRun: 10,
-    mode: 'send',
+    mode: 'draft',
     lastRunAt: null,
     nextRunAt: nextRun.toISOString()
   };
@@ -938,8 +898,15 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
       // 3. Dispatch or Save Draft
       let dispatchResult = null;
       let statusLabel = '';
+      let effectiveMode = mode;
 
-      if (mode === 'draft') {
+      // CRITICAL SAFETY BARRIER: Never blast live emails to unverified generic or guessed addresses
+      if (effectiveMode === 'send' && (!preCheck.verifiedMailbox || preCheck.isGeneric || lead.leadType === 'DIRECT_COMPANY_INQUIRY')) {
+        console.warn(`[SAFETY GUARD] Recipient ${lead.email} (${lead.company}) has unconfirmed mailbox deliverability. Safely saving to Gmail Draft to prevent bounce-backs.`);
+        effectiveMode = 'draft';
+      }
+
+      if (effectiveMode === 'draft') {
         dispatchResult = await createGmailDraft(lead.email, emailData.subject, emailData.body, tempPdfPath, userKey);
         statusLabel = 'Draft Saved (LinkedIn Auto-Pilot)';
       } else {
@@ -1026,45 +993,20 @@ function initLinkedInScheduler() {
 
   console.log('[LINKEDIN SCHEDULER] Initialized automated 24/7 background LinkedIn Recruiter Auto-Pilot daemon.');
 
-  // Immediate server startup check (executes after 15 seconds if Auto-Pilot is enabled and due/fresh)
+  // Safe server startup check: Only scan Gmail for bounces to keep blacklist fresh (NO email dispatch)
   setTimeout(async () => {
     try {
-      const config = getLinkedInConfig();
-      if (!config.enabled) return;
-      const now = new Date();
-      const nextRun = config.nextRunAt ? new Date(config.nextRunAt) : new Date(0);
-
-      if (!config.lastRunAt || now >= nextRun) {
-        console.log('[LINKEDIN SCHEDULER] Immediate boot cycle triggered! Searching recruiter posts & dispatching emails...');
-        const discoveredUsers = getAllUserKeys();
-        const targetUsers = discoveredUsers;
-
-        for (const userKey of targetUsers) {
-          if (isUserAuthorized(userKey)) {
-            try {
-              // Auto-scan bounces first to clean blacklists
-              const { scanGmailBounces } = require('./bounce.service');
-              await scanGmailBounces(userKey).catch(() => {});
-
-              await runLinkedInOutreachJob(userKey, {
-                targetCount: config.targetPerRun || 10,
-                mode: config.mode || 'send',
-                query: config.keywords,
-                timeFrame: config.timeFrame || '3d'
-              });
-            } catch (err) {
-              console.warn('[LINKEDIN BOOT RUN WARN]', err.message);
-            }
-          }
+      const discoveredUsers = getAllUserKeys();
+      for (const userKey of discoveredUsers) {
+        if (isUserAuthorized(userKey)) {
+          try {
+            const { scanGmailBounces } = require('./bounce.service');
+            await scanGmailBounces(userKey).catch(() => {});
+          } catch (e) {}
         }
-
-        const nextRunDate = calculateNextLinkedInRunTime(config, now);
-        config.lastRunAt = now.toISOString();
-        config.nextRunAt = nextRunDate.toISOString();
-        saveLinkedInConfig(config);
       }
     } catch (e) {}
-  }, 15000);
+  }, 10000);
 
   schedulerTimer = setInterval(async () => {
     const config = getLinkedInConfig();

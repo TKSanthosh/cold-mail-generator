@@ -157,8 +157,31 @@ function initScheduler() {
 
       for (const job of jobs) {
         const targetTime = new Date(job.scheduledAt);
+        const userKey = job.userKey || 'default_user';
+
+        // 1. Purge stale jobs (older than 24 hours) to prevent mass dispatch on restarts
+        const ageMs = now.getTime() - targetTime.getTime();
+        if (ageMs > 24 * 60 * 60 * 1000) {
+          console.warn(`[SCHEDULER PURGE] Discarding stale scheduled job ${job.id} for ${job.email} (scheduled for ${job.scheduledAt})`);
+          if (isSupabaseConfigured() && job.id) {
+            supabaseDeleteScheduledJob(job.id).catch(() => {});
+          }
+          continue;
+        }
+
         if (targetTime <= now) {
-          const userKey = job.userKey || 'default_user';
+          // 2. Check bounce blacklist before dispatch
+          try {
+            const { isEmailBounced } = require('./bounce.service');
+            if (isEmailBounced(job.email, userKey)) {
+              console.warn(`[SCHEDULER SKIP] Recipient ${job.email} is blacklisted as bounced. Skipping.`);
+              if (isSupabaseConfigured() && job.id) {
+                supabaseDeleteScheduledJob(job.id).catch(() => {});
+              }
+              continue;
+            }
+          } catch (e) {}
+
           console.log(`[SCHEDULER] Triggering scheduled outreach dispatch for: ${job.email} (User: ${userKey})`);
 
           if (!isUserAuthorized(userKey)) {

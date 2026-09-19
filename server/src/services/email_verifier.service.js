@@ -146,13 +146,25 @@ async function checkSmtpMailbox(email, mxHost, timeoutMs = 4000) {
               verifiedMailbox: true
             });
           } else if (code >= 500 && code < 600) {
-            finish({
-              deliverable: false,
-              code,
-              response: msg.trim(),
-              checkedViaSmtp: true,
-              bounceRisk: 'HIGH - Remote server rejected mailbox'
-            });
+            const lowerMsg = msg.toLowerCase();
+            const isIpBlocked = lowerMsg.includes('spamhaus') || lowerMsg.includes('listed by') || lowerMsg.includes('zen.') || lowerMsg.includes('blocked') || lowerMsg.includes('blacklist') || lowerMsg.includes('reputation');
+            if (isIpBlocked) {
+              finish({
+                deliverable: true,
+                code,
+                response: msg.trim(),
+                checkedViaSmtp: false,
+                ipReputationBlocked: true
+              });
+            } else {
+              finish({
+                deliverable: false,
+                code,
+                response: msg.trim(),
+                checkedViaSmtp: true,
+                bounceRisk: 'HIGH - Remote server rejected mailbox'
+              });
+            }
           } else {
             finish({
               deliverable: true,
@@ -303,9 +315,7 @@ async function generateAndVerifyRecruiterEmail(fullName, companyName, companyDom
 
   for (const candidate of candidates) {
     const verification = await verifyEmailDeliverability(candidate, userKey);
-    // CRITICAL FIX: To prevent bouncing, only accept the generated email if we 100% verified it via SMTP 
-    // OR if we are very confident (score > 90). Timeouts on Render should NOT allow guessed emails.
-    if (verification.isValid && (verification.verifiedMailbox || verification.score >= 95)) {
+    if (verification.isValid && (verification.verifiedMailbox || verification.score >= 90)) {
       return {
         email: candidate,
         verification,

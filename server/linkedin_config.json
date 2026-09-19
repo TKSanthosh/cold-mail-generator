@@ -1,5 +1,5 @@
 {
-  "enabled": true,
+  "enabled": false,
   "scheduleMode": "interval",
   "intervalHours": 4,
   "intervalMinutes": 240,
@@ -12,7 +12,7 @@
   "keywords": "Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote",
   "timeFrame": "3d",
   "targetPerRun": 10,
-  "mode": "send",
-  "lastRunAt": "2026-09-18T17:30:40.503Z",
-  "nextRunAt": "2026-09-18T21:33:11.141Z"
+  "mode": "draft",
+  "lastRunAt": "2026-09-19T11:23:06.871Z",
+  "nextRunAt": "2026-09-19T15:25:14.278Z"
 }
