@@ -1,42 +1,65 @@
-# Dependencies
+# ==============================================================================
+#                      OPTIMIZED GITIGNORE FOR PRODUCTION
+# ==============================================================================
+
+# Dependencies & Package Managers
 node_modules/
-*/node_modules/
+**/node_modules/**
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Headless Browsers & Cache
 .cache/
-*/.cache/
+**/.cache/**
+.puppeteer/
+puppeteer/
+chrome/
 
-# Secrets & Authentication
+# Environment Variables & Sensitive Secrets
 .env
-*/.env
+.env.*
+!.env.example
+*.env
 token.json
-*/token.json
+**/token.json
 client_secret*.json
-server/naukri_session.json
-naukri_session.json
+naukri_session*.json
+**/naukri_session*.json
 
-# Generated PDFs & logs
-uploads/*.pdf
+# Generated User Files & PDFs
+uploads/
+**/uploads/**
 !uploads/.gitkeep
+*.pdf
+*.log
 logs.json
+**/logs.json
 
-# Build outputs
+# User Sandboxes & Dynamic Database Dumps
+server/users/
+server/data/
+**/test_sandboxes/**
+data/test_sandboxes/
+
+# Build Outputs (Compiled during deployment)
 dist/
 client/dist/
+**/dist/**
+build/
 
-# OS & Editor files
+# Temporary / Scratch Files
+*.png
+!extension/icons/*.png
+scratch/
+**/scratch/**
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 
-# User sandboxes & temporary files
-server/users/
-server/data/
-*.pdf
-*.png
-!extension/icons/*.png
-*.log
-test_*.js
+# Preserve Essential Test Files
 !test_e2e_live.js
 !test_suite.js
 !tests/**
-
+!tests/**/*.js
