@@ -29,7 +29,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹22 - 32 LPA',
     skills: ['Node.js', 'React.js', 'RESTful APIs', 'AWS', 'Microservices', 'MySQL'],
-    url: 'https://jobs.cisco.com',
+    url: 'https://jobs.cisco.com/jobs/SearchJobs/Software%20Engineer%20II%20Full%20Stack%20Node%20React%20Bangalore',
+    portalUrl: 'https://www.naukri.com/cisco-systems-jobs-in-bangalore-bengaluru',
     jd: 'Design, develop, and scale high-performance cloud applications. Build robust microservices with Node.js and RESTful APIs, and develop responsive frontends using React.js. Requirements: 3-5 years software engineering experience, strong JavaScript/TypeScript, database optimization, and AWS.'
   },
   {
@@ -42,7 +43,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹24 - 35 LPA',
     skills: ['Node.js', 'Express.js', 'React.js', 'TypeScript', 'MySQL', 'Caching'],
-    url: 'https://jobs.sap.com',
+    url: 'https://jobs.sap.com/search/?q=Senior+Developer+Full+Stack+Node.js+React&locationsearch=Bangalore',
+    portalUrl: 'https://www.naukri.com/sap-labs-india-jobs-in-bangalore-bengaluru',
     jd: 'Build modern cloud-native enterprise web applications in Bangalore. Design scalable backend services with Node.js/Express, reusable UI components in React, optimize complex SQL queries, and implement secure JWT/RBAC policies across enterprise suites.'
   },
   {
@@ -55,7 +57,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹26 - 38 LPA',
     skills: ['Node.js', 'React.js', 'Distributed Systems', 'MySQL', 'MongoDB', 'AWS'],
-    url: 'https://careers.walmart.com',
+    url: 'https://careers.walmart.com/results?q=Software%20Engineer%20II%20Full%20Stack%20Bangalore',
+    portalUrl: 'https://www.naukri.com/walmart-global-tech-india-jobs-in-bangalore-bengaluru',
     jd: 'Build large-scale e-commerce web applications using Node.js and React.js. Design scalable microservices, implement distributed caching, optimize database queries, and deliver high-throughput systems.'
   },
   {
@@ -68,7 +71,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹24 - 36 LPA',
     skills: ['Node.js', 'Express', 'React', 'JWT/RBAC', 'MySQL', 'REST APIs'],
-    url: 'https://careers.pypl.com',
+    url: 'https://paypal.eightfold.ai/careers?query=Software%20Development%20Engineer%20II%20Full%20Stack&location=Bangalore%2C%20India',
+    portalUrl: 'https://www.naukri.com/paypal-jobs-in-bangalore-bengaluru',
     jd: 'Implement high-throughput transaction processing APIs with Node.js, craft responsive payment interfaces in React, ensure secure authentication (JWT/RBAC), and optimize database indexing and transaction safety.'
   },
   {
@@ -81,7 +85,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹25 - 37 LPA',
     skills: ['Node.js', 'React.js', 'REST APIs', 'AWS', 'MongoDB', 'System Design'],
-    url: 'https://www.intuit.com/careers',
+    url: 'https://jobs.intuit.com/search-jobs/Software%20Engineer%202%20Full%20Stack/Bangalore%2C%20India/27595/1/2/1269750-1277333/12x9716/77x5946/50/2',
+    portalUrl: 'https://www.naukri.com/intuit-india-jobs-in-bangalore-bengaluru',
     jd: 'Lead development of customer-facing financial platforms. Architect robust RESTful APIs with Node.js, create smooth React user interfaces, manage MongoDB/relational data stores, and ensure high system uptime on AWS.'
   },
   {
@@ -94,7 +99,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹20 - 32 LPA',
     skills: ['Node.js', 'React', 'RESTful APIs', 'SQL Joins & Indexing', 'Cloud Infra'],
-    url: 'https://www.oracle.com/corporate/careers',
+    url: 'https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/requisitions?keyword=Software+Developer+2+Cloud+Platform+Node+React&location=Bangalore',
+    portalUrl: 'https://www.naukri.com/oracle-india-jobs-in-bangalore-bengaluru',
     jd: 'Develop cloud infrastructure dashboard tools and REST APIs using Node.js and React.js, perform SQL query optimization on Oracle/MySQL databases, and contribute to system design scalability.'
   },
   {
@@ -107,7 +113,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹28 - 40 LPA',
     skills: ['React.js', 'Node.js', 'TypeScript', 'RESTful APIs', 'AWS', 'CI/CD'],
-    url: 'https://careers.adobe.com',
+    url: 'https://adobe.wd5.myworkdayjobs.com/external_experienced?q=Computer+Scientist+Full+Stack+Node+React+Bangalore',
+    portalUrl: 'https://www.naukri.com/adobe-systems-jobs-in-bangalore-bengaluru',
     jd: 'Build creative cloud web experiences and collaborative workflow platforms. Requires deep proficiency in React, Node.js, asynchronous programming, microservice communication, and cloud infrastructure.'
   },
   {
@@ -120,7 +127,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹22 - 34 LPA',
     skills: ['Node.js', 'React.js', 'Express', 'MySQL', 'Docker', 'AWS'],
-    url: 'https://corporate.target.com/careers',
+    url: 'https://target.wd5.myworkdayjobs.com/targetcareers?q=Senior+Software+Engineer+Full+Stack+Bangalore',
+    portalUrl: 'https://www.naukri.com/target-corporation-jobs-in-bangalore-bengaluru',
     jd: 'Architect retail supply chain and inventory management systems using modern full-stack web technologies (Node.js, Express, React). Focus on low latency, distributed caching, and microservices.'
   },
   {
@@ -133,7 +141,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹26 - 36 LPA',
     skills: ['Node.js', 'React', 'TypeScript', 'REST APIs', 'Cloud Management'],
-    url: 'https://www.broadcom.com/company/careers',
+    url: 'https://broadcom.wd1.myworkdayjobs.com/External_Career?q=Member+of+Technical+Staff+2+Full+Stack+Bangalore',
+    portalUrl: 'https://www.naukri.com/vmware-software-india-jobs-in-bangalore-bengaluru',
     jd: 'Build next-generation cloud infrastructure dashboards and backend orchestration tools with Node.js and React. Manage complex state, optimize API latency, and integrate with enterprise hypervisors.'
   },
   {
@@ -146,7 +155,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹18 - 28 LPA',
     skills: ['Node.js', 'JavaScript', 'React', 'RESTful APIs', 'SQL', 'JWT/RBAC'],
-    url: 'https://www.finastra.com/careers',
+    url: 'https://finastra.wd3.myworkdayjobs.com/Careers/job/Pune/Software-Engineer_REQ0626_0037590',
+    portalUrl: 'https://www.naukri.com/finastra-software-solutions-jobs-in-pune',
     jd: 'Design, develop, and maintain high-quality fintech banking applications. Requires experience with Node.js, React, RESTful APIs, database optimization, and secure role-based access control.'
   },
   {
@@ -159,7 +169,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹16 - 25 LPA',
     skills: ['Node.js', 'Express', 'React.js', 'MySQL', 'MongoDB', 'AWS'],
-    url: 'https://careers.cognizant.com',
+    url: 'https://careers.cognizant.com/global-en/jobs/?q=Senior+Software+Engineer+Full+Stack+Node+React&location=Bangalore',
+    portalUrl: 'https://www.naukri.com/cognizant-technology-solutions-jobs-in-bangalore-bengaluru',
     jd: 'Deliver full-stack web solutions for global Fortune 500 clients. Develop RESTful APIs, build component-driven React UIs, and manage scalable cloud backend integrations.'
   },
   {
@@ -172,7 +183,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹15 - 24 LPA',
     skills: ['Node.js', 'React.js', 'JavaScript (ES6+)', 'REST APIs', 'SQL', 'Git'],
-    url: 'https://www.infosys.com/careers.html',
+    url: 'https://career.infosys.com/joblist?keyword=Full%20Stack%20Node%20React&country=India',
+    portalUrl: 'https://www.naukri.com/infosys-jobs-in-bangalore-bengaluru',
     jd: 'Analyze requirements, design and develop scalable full-stack applications. Experience in Node.js, Express, React, database queries, and automated testing.'
   },
   {
@@ -185,7 +197,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹20 - 32 LPA',
     skills: ['Node.js', 'TypeScript', 'React.js', 'RESTful APIs', 'AWS', 'Docker'],
-    url: 'https://www.epam.com/careers',
+    url: 'https://www.epam.com/careers/job-listings?recruitingUrl=%2Fcareers%2Fjob-listings&search=Full+Stack+Node+React+JavaScript&country=India',
+    portalUrl: 'https://www.naukri.com/epam-systems-jobs-in-bangalore-bengaluru',
     jd: 'Collaborate with international product teams to build scalable cloud-native web applications. Focus on clean code, unit testing, CI/CD pipelines, and microservice architecture.'
   },
   {
@@ -198,7 +211,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹18 - 30 LPA',
     skills: ['Node.js', 'React.js', 'Microservices', 'MongoDB', 'MySQL', 'AWS'],
-    url: 'https://www.nagarro.com/en/careers',
+    url: 'https://www.nagarro.com/en/careers?query=Staff+Engineer+Full+Stack+Node+React',
+    portalUrl: 'https://www.naukri.com/nagarro-software-jobs-in-bangalore-bengaluru',
     jd: 'Drive agile engineering for enterprise digital transformation projects. Build high-performance REST APIs, state-driven React frontends, and cloud deployment pipelines.'
   },
   {
@@ -211,7 +225,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹16 - 26 LPA',
     skills: ['Node.js', 'React.js', 'Express', 'SQL Joins', 'REST APIs', 'AWS'],
-    url: 'https://www.ltimindtree.com/careers',
+    url: 'https://careers.ltimindtree.com/search/?q=Specialist+Full+Stack+Development+Node+React&locationsearch=Bangalore',
+    portalUrl: 'https://www.naukri.com/ltimindtree-jobs-in-bangalore-bengaluru',
     jd: 'Develop mission-critical enterprise applications with Node.js and React. Troubleshoot production bottlenecks, optimize database queries, and implement robust API middleware.'
   },
   {
@@ -224,7 +239,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹20 - 30 LPA',
     skills: ['Node.js', 'React.js', 'TypeScript', 'RESTful APIs', 'Docker', 'AWS'],
-    url: 'https://jobs.siemens.com',
+    url: 'https://jobs.siemens.com/careers?query=Software%20Development%20Engineer%20Full%20Stack%20Cloud&location=Bangalore',
+    portalUrl: 'https://www.naukri.com/siemens-technology-jobs-in-bangalore-bengaluru',
     jd: 'Build industrial IoT web dashboards and edge-to-cloud analytics platforms using Node.js and React. Focus on high reliability, real-time data streaming, and secure authentication.'
   },
   {
@@ -237,7 +253,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-5 Years',
     salaryRange: '₹20 - 32 LPA',
     skills: ['Node.js', 'React.js', 'REST APIs', 'MySQL', 'AWS', 'Security/RBAC'],
-    url: 'https://www.careers.philips.com',
+    url: 'https://www.careers.philips.com/global/en/search-results?keywords=Software%20Engineer%20II%20Full%20Stack%20Node%20React%20Bangalore',
+    portalUrl: 'https://www.naukri.com/philips-india-jobs-in-bangalore-bengaluru',
     jd: 'Develop clinical diagnostic web platforms and health informatics software. Ensure strict data privacy, HIPAA/GDPR compliance, fast API response times, and modular React components.'
   },
   {
@@ -250,7 +267,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹22 - 34 LPA',
     skills: ['Node.js', 'React.js', 'Express', 'TypeScript', 'Microservices', 'AWS'],
-    url: 'https://careers.publicissapient.com',
+    url: 'https://careers.publicissapient.com/job-search?keyword=Senior+Associate+Full+Stack+Developer+Node+React&location=Bangalore',
+    portalUrl: 'https://www.naukri.com/publicis-sapient-jobs-in-bangalore-bengaluru',
     jd: 'Engineer consumer-grade web applications for Fortune 100 brands. Leverage modern React patterns, Node.js microservices, caching layers, and CI/CD pipelines.'
   },
   {
@@ -263,7 +281,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹22 - 34 LPA',
     skills: ['Node.js', 'React.js', 'RESTful APIs', 'Database Optimization', 'AWS'],
-    url: 'https://jobs.dell.com',
+    url: 'https://jobs.dell.com/en/search-jobs/Software%20Senior%20Engineer%20Full%20Stack/Bangalore/375/1/2/1269750-1277333/12x9716/77x5946/50/2',
+    portalUrl: 'https://www.naukri.com/dell-international-services-jobs-in-bangalore-bengaluru',
     jd: 'Build enterprise e-commerce and internal developer tooling platforms. Enhance API performance, build reusable UI components, and maintain cloud infrastructure.'
   },
   {
@@ -276,7 +295,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹24 - 36 LPA',
     skills: ['Node.js', 'React.js', 'REST APIs', 'SQL/NoSQL', 'Linux', 'AWS'],
-    url: 'https://qualcomm.wd5.myworkdayjobs.com',
+    url: 'https://qualcomm.wd5.myworkdayjobs.com/External?q=Engineer+Full+Stack+Web+Applications+Node+React+Bangalore',
+    portalUrl: 'https://www.naukri.com/qualcomm-india-jobs-in-bangalore-bengaluru',
     jd: 'Design and build full-stack web platforms for semiconductor telemetry, chip validation analytics, and automated build dashboards using Node.js and React.'
   },
   {
@@ -289,7 +309,8 @@ const ENTERPRISE_JOB_BANK = [
     experience: '3-6 Years',
     salaryRange: '₹18 - 28 LPA',
     skills: ['Node.js', 'React.js', 'Express', 'MySQL', 'REST APIs', 'AWS'],
-    url: 'https://www.bosch.in/careers',
+    url: 'https://www.bosch.in/careers/job-opportunities/?query=Senior+Software+Engineer+Full+Stack+Node+React+Bangalore',
+    portalUrl: 'https://www.naukri.com/bosch-global-software-technologies-jobs-in-bangalore-bengaluru',
     jd: 'Engineer connected mobility and smart building web applications. Develop scalable backend APIs in Node.js, interactive user interfaces in React, and optimize relational databases.'
   }
 ];
