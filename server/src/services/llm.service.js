@@ -373,9 +373,11 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
     if (job.company && job.company.includes('IQVIA')) {
       job.role = 'Software Development Engineer 2 (SDE2)';
       job.highlights = [
-        'Architected and scaled backend services and UI workflows using Node.js, React.js, and MySQL for enterprise event management on AWS, accelerating client feature delivery turnaround by ~25%.',
-        'Diagnosed and resolved 20+ critical platform issues across backend APIs and UI workflows in Node.js, React.js, and MySQL, maintaining 99.9% uptime with a 95%+ first-pass code review approval rating.',
-        'Mentored 2 junior engineers on RESTful API design principles, clean MVC architecture, and automated unit testing.'
+        'Developed a dynamic engagement-creation stepper that adapts its steps and validation logic based on engagement type, using React.js for the UI and Node.js/Express.js for the backend workflow logic.',
+        'Built a multi-level approval workflow enabling engagement approvals to route through individual managers or a meeting-planner admin role, with admin-level override to approve across all pending levels — implemented with Node.js, Express.js, and MySQL.',
+        'Implemented end-to-end session lifecycle handling, covering session join through session completion, for live engagement events on the platform.',
+        'Participated in daily stand-ups with business analysts, project leads, and client stakeholders to clarify requirements and translate them into technical implementation.',
+        'Followed a CI/CD-based development workflow, pushing changes to GitHub with automated build and deployment to environments, ensuring consistent and reliable releases.'
       ];
     } else if (job.company && job.company.includes('Sify')) {
       if (Array.isArray(job.projects)) {
