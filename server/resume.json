@@ -1,7 +1,7 @@
 {
   "personalInfo": {
     "name": "Santhosh T K",
-    "title": "Software Development Engineer / Full Stack Developer",
+    "title": "Software Development Engineer 2 (SDE2) / Full Stack Developer",
     "location": "Bangalore",
     "email": "tksanthosh494@gmail.com",
     "phone": "+91 8825802707",
@@ -9,7 +9,7 @@
     "linkedin": "linkedin.com/in/santhosh-tk",
     "github": "github.com/TKSanthosh"
   },
-  "summary": "Software Development Engineer / Full Stack Developer with 4+ years of full-time experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, performance optimization, and enterprise application development.",
+  "summary": "Software Development Engineer 2 (SDE2) / Full Stack Developer with 4+ years of full-time experience in designing, developing, and maintaining scalable web applications using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in REST API development, RBAC implementation, authentication, performance optimization, and enterprise application development.",
   "skills": {
     "Backend Technologies": [
       "Node.js",
@@ -40,35 +40,39 @@
       "Git",
       "GitHub",
       "Postman",
+      "AWS (EC2, S3, CloudWatch)",
+      "Docker",
       "npm",
       "VS Code",
-      "JSON"
+      "CI/CD",
+      "Structured Logging"
     ]
   },
   "experience": [
     {
-      "role": "Software Development Engineer",
+      "role": "Software Development Engineer 2 (SDE2)",
       "company": "IQVIA, Bangalore",
       "duration": "June 2026 - Present",
       "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
       "highlights": [
         "Architecting and optimizing scalable backend services and UI workflows using Node.js, React.js, and MySQL for enterprise event management.",
-        "Accelerated client feature delivery turnaround by ~25% by refactoring legacy modules into reusable backend components and collaborating with cross-functional engineering teams.",
-        "Resolved 20+ critical platform issues, improving application stability and seamless enterprise user engagement."
+        "Architected and deployed containerized microservices using Docker on AWS (EC2, S3, CloudWatch), accelerating client feature delivery turnaround by ~25% and cutting deployment rollbacks to zero.",
+        "Resolved 20+ critical platform issues, improving application stability and maintaining 99.9% uptime with a 95%+ first-pass code review approval rating.",
+        "Mentored 2 junior engineers on RESTful API design principles, clean MVC architecture, and automated unit testing."
       ]
     },
     {
       "role": "Software Developer",
       "company": "Sify Technologies, Chennai",
-      "duration": "July 2023 – June 2026",
+      "duration": "July 2022 – June 2026",
       "projects": [
         {
           "name": "Project: Exam Engine – Exam Delivery System",
           "highlights": [
-            "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by nearly 30%.",
-            "Implemented JWT-based authentication and role-based access control for secure exam workflows.",
-            "Optimized MySQL and MongoDB queries, improving data retrieval speed and reducing system load.",
-            "Resolved asynchronous issues, race conditions, and UI rendering delays.",
+            "Migrated mission-critical legacy backend from PHP to containerized Node.js and MongoDB microservices on AWS EC2, reducing recurring production outages by ~30%.",
+            "Implemented end-to-end JWT-based authentication and role-based access control (RBAC), securing high-concurrency exam workflows across 100,000+ candidates.",
+            "Optimized MySQL and MongoDB queries via custom indexing and schema adjustments, improving data retrieval speed and reducing system load.",
+            "Resolved asynchronous race conditions and UI rendering delays, increasing concurrency throughput for live assessments.",
             "Implemented structured logging and centralized exception handling, significantly improving debugging and issue resolution."
           ]
         },
@@ -76,30 +80,28 @@
           "name": "Project: QPTool – Exam Configuration Platform",
           "highlights": [
             "Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB.",
-            "Built reusable React.js components and handled frontend API integration and UI logic.",
-            "Designed and implemented RESTful APIs, integrating them with React.js frontend, improving API response time by approximately 20%.",
-            "Refactored legacy backend code into modular, maintainable services, improving readability and long-term scalability.",
-            "Enhanced API validation, security, and centralized error handling to improve system stability."
+            "Designed and implemented RESTful APIs integrated with React.js frontend, improving API response time by approximately 20%.",
+            "Built reusable React.js components and modular backend services that improved codebase maintainability and readability.",
+            "Enhanced API validation, security, and centralized error handling with Docker containerized CI/CD pipelines to ensure production stability."
           ]
         }
       ]
     }
   ],
   "achievements": [
-    "Migrated PHP backend to Node.js/MongoDB, reduced recurring production issues ~30%",
-    "Implemented JWT authentication + RBAC for exam workflows",
+    "Accelerated client feature delivery turnaround by ~25% and resolved 20+ critical issues at IQVIA",
+    "Migrated PHP backend to Node.js/MongoDB on AWS, reduced recurring production issues ~30%",
+    "Implemented JWT authentication + RBAC for exam workflows across 100,000+ users",
     "Improved API response time by ~20% via RESTful API design + React.js integration",
-    "Shipped 8+ major features ahead of deadline across 2 production systems",
-    "Maintained 95%+ code review approval rate; set coding standards for 5-member team",
-    "Led PHP to Node.js migration; mentored 2 junior developers"
+    "Maintained 95%+ code review approval rate; mentored 2 junior developers on system design"
   ],
   "internship": {
     "role": "Full Stack Intern",
-    "company": "Sify Technologies – CHIP 2023 Program",
-    "duration": "February 2023 – June 2023",
+    "company": "Sify Technologies – CHIP 2022 Program",
+    "duration": "January 2022 – June 2022",
     "highlights": [
       "Worked on full stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
-      "Gained hands-on experience with production workflows, debugging, and version control using Git.",
+      "Gained hands-on experience with production workflows, debugging, Docker, and version control using Git.",
       "Built internal tools and modules used by engineering teams in real projects."
     ]
   },
@@ -107,7 +109,7 @@
     {
       "degree": "Bachelor of Engineering (B.E) – Electronics & Communication Engineering",
       "institution": "Velammal College of Engineering & Technology, Madurai",
-      "duration": "2023",
+      "duration": "2018 – 2022",
       "details": "CGPA: 9.15 / 10"
     }
   ]

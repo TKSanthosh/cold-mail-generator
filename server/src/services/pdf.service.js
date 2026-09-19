@@ -11,8 +11,8 @@ function generateResumePdf(resumeJson, outputPath) {
       const doc = new PDFDocument({
         size: 'A4',
         margins: {
-          top: 25,
-          bottom: 10,
+          top: 20,
+          bottom: 12,
           left: 36,
           right: 36
         },
@@ -30,23 +30,23 @@ function generateResumePdf(resumeJson, outputPath) {
       const contentWidth = rightMargin - leftMargin; // 523.28
 
       function drawSectionHeader(title) {
-        doc.y += 6.5;
+        doc.y += 4.0;
         doc.font('Helvetica-Bold')
-           .fontSize(9.6)
+           .fontSize(9.2)
            .fillColor(textColor)
            .text(title.toUpperCase(), leftMargin, doc.y, { width: contentWidth });
         
-        const lineY = doc.y + 1.8;
+        const lineY = doc.y + 1.5;
         doc.strokeColor(grayLineColor)
-           .lineWidth(0.65)
+           .lineWidth(0.6)
            .moveTo(leftMargin, lineY)
            .lineTo(rightMargin, lineY)
            .stroke();
         
-        doc.y = lineY + 4;
+        doc.y = lineY + 2.5;
       }
 
-      function drawBullet(text, bulletSize = 8.8, lineGap = 1.6) {
+      function drawBullet(text, bulletSize = 8.5, lineGap = 1.2) {
         const startY = doc.y;
         doc.font('Helvetica')
            .fontSize(bulletSize)
@@ -60,20 +60,20 @@ function generateResumePdf(resumeJson, outputPath) {
              width: contentWidth - 12,
              lineGap: lineGap
            });
-        doc.y += 2.0;
+        doc.y += 1.2;
       }
 
       // --- 1. HEADER (Centered Name & 2-Column Contact Info) ---
       const info = resumeJson.personalInfo || {};
 
       doc.font('Helvetica-Bold')
-         .fontSize(16)
+         .fontSize(15.5)
          .fillColor(textColor)
-         .text((info.name || 'SANTHOSH T K').toUpperCase(), leftMargin, 24, { align: 'center', width: contentWidth });
+         .text((info.name || 'SANTHOSH T K').toUpperCase(), leftMargin, 20, { align: 'center', width: contentWidth });
 
-      doc.y += 4;
+      doc.y += 3;
       const headerTopY = doc.y;
-      const rowHeight = 11.2;
+      const rowHeight = 11;
       const rightColX = 320;
 
       // Row 1: Location & Phone
@@ -97,20 +97,20 @@ function generateResumePdf(resumeJson, outputPath) {
       doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('GitHub: ', rightColX, headerTopY + (rowHeight * 2), { continued: true });
       doc.font('Helvetica').fontSize(8.8).text(info.github || 'github.com/TKSanthosh');
 
-      doc.y = headerTopY + (rowHeight * 2) + 12.5;
+      doc.y = headerTopY + (rowHeight * 2) + 9;
 
       // --- 2. PROFILE SUMMARY ---
       if (resumeJson.summary) {
         drawSectionHeader('Profile Summary');
         doc.font('Helvetica')
-           .fontSize(8.8)
+           .fontSize(8.6)
            .fillColor(textColor)
            .text(resumeJson.summary, leftMargin, doc.y, {
              width: contentWidth,
              align: 'left',
-             lineGap: 1.8
+             lineGap: 1.3
            });
-        doc.y += 2.2;
+        doc.y += 1.5;
       }
 
       // --- 3. TECHNICAL SKILLS ---
@@ -120,15 +120,15 @@ function generateResumePdf(resumeJson, outputPath) {
           const listStr = Array.isArray(skillsList) ? skillsList.join(', ') : skillsList;
           const itemY = doc.y;
           doc.font('Helvetica-Bold')
-             .fontSize(8.8)
+             .fontSize(8.6)
              .fillColor(textColor)
              .text(category + ': ', leftMargin, itemY, { continued: true });
           
           doc.font('Helvetica')
-             .fontSize(8.8)
+             .fontSize(8.6)
              .fillColor(textColor)
-             .text(listStr, { width: contentWidth, lineGap: 1.6 });
-          doc.y += 1.6;
+             .text(listStr, { width: contentWidth, lineGap: 1.2 });
+          doc.y += 1.0;
         });
       }
 
@@ -260,58 +260,6 @@ function generateResumePdf(resumeJson, outputPath) {
              .text(eduDetails, leftMargin, doc.y, { width: contentWidth });
           doc.y += 2;
         });
-      }
-
-      // --- 8. INVISIBLE ATS KEYWORDS OPTIMIZATION LAYER (Human-Invisible, 100% ATS-Readable) ---
-      let keywordsToEmbed = [];
-      if (Array.isArray(resumeJson.atsKeywords) && resumeJson.atsKeywords.length > 0) {
-        keywordsToEmbed = resumeJson.atsKeywords;
-      } else {
-        // Automatically compile comprehensive ATS keyword cloud from candidate skills, title, and industry standards
-        const skillsList = [];
-        if (resumeJson.skills && typeof resumeJson.skills === 'object') {
-          Object.values(resumeJson.skills).forEach(val => {
-            if (Array.isArray(val)) skillsList.push(...val);
-            else if (typeof val === 'string') skillsList.push(...val.split(',').map(s => s.trim()));
-          });
-        }
-        
-        const candidateTitle = resumeJson.personalInfo?.title || 'Software Development Engineer / Full Stack Developer';
-        const titleKeywords = [
-          candidateTitle,
-          'Software Engineer', 'Full Stack Developer', 'Software Development Engineer',
-          'SDE', 'Backend Engineer', 'Frontend Engineer', 'Node.js Developer',
-          'React Developer', 'Full Stack Software Engineer', 'Web Application Developer'
-        ];
-
-        // Only exact skills and competencies explicitly present in Santhosh's verified resume
-        const verifiedCoreKeywords = [
-          'Node.js', 'Express.js', 'React.js', 'JavaScript', 'JavaScript (ES6+)', 'React Hooks',
-          'RESTful APIs', 'REST API', 'MySQL', 'MongoDB', 'JWT Authentication', 'JWT',
-          'RBAC', 'Role-Based Access Control', 'HTML5', 'CSS3', 'Reusable Components',
-          'MVC Architecture', 'Async/Await', 'WebSockets', 'Joins', 'Indexing',
-          'Query Optimization', 'Performance Optimization', 'Structured Logging',
-          'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'Clean Code', 'Debugging',
-          'Software Development Engineer', 'SDE 2', 'Full Stack Developer', 'Backend Developer',
-          'Frontend Developer', 'Web Developer', 'AWS', 'Cloud Computing', 'Microservices', 
-          'System Design', 'Data Structures', 'Algorithms', 'Agile', 'Scrum', 'CI/CD'
-        ];
-
-        keywordsToEmbed = Array.from(new Set([...skillsList, ...titleKeywords, ...verifiedCoreKeywords])).filter(Boolean);
-      }
-
-      if (keywordsToEmbed.length > 0) {
-        const atsText = keywordsToEmbed.join(' | ');
-        doc.page.margins.bottom = 0;
-        doc.font('Helvetica')
-           .fontSize(1)
-           .fillColor('#FFFFFF')
-           .text(atsText, leftMargin, 835, {
-             width: contentWidth,
-             lineBreak: false,
-             height: 5,
-             ellipsis: false
-           });
       }
 
       doc.end();
