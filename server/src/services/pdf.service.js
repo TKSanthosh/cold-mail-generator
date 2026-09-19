@@ -63,41 +63,44 @@ function generateResumePdf(resumeJson, outputPath) {
         doc.y += 1.2;
       }
 
-      // --- 1. HEADER (Centered Name & 2-Column Contact Info) ---
+      // --- 1. HEADER (Centered Name & Contact Info matching exact PDF format) ---
       const info = resumeJson.personalInfo || {};
 
       doc.font('Helvetica-Bold')
-         .fontSize(15.5)
+         .fontSize(16)
          .fillColor(textColor)
          .text((info.name || 'SANTHOSH T K').toUpperCase(), leftMargin, 20, { align: 'center', width: contentWidth });
 
       doc.y += 3;
-      const headerTopY = doc.y;
-      const rowHeight = 11;
-      const rightColX = 320;
+      const locStr = info.location || 'Bangalore, Karnataka | Remote';
+      const phoneStr = info.phone || '+91 8825802707';
+      const emailStr = info.email || 'tksanthosh494@gmail.com';
+      const contactRow1 = `${locStr}  |  ${phoneStr}  |  ${emailStr}`;
 
-      // Row 1: Location & Phone
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Location: ', leftMargin, headerTopY, { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.location || 'Bangalore');
+      doc.font('Helvetica')
+         .fontSize(8.6)
+         .fillColor(textColor)
+         .text(contactRow1, leftMargin, doc.y, { align: 'center', width: contentWidth });
 
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Phone: ', rightColX, headerTopY, { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.phone || '+91 8825802707');
+      doc.y += 2;
+      const linkedinClean = (info.linkedin || 'linkedin.com/in/santhosh-tk').replace(/^https?:\/\//, '');
+      const githubClean = (info.github || 'github.com/TKSanthosh').replace(/^https?:\/\//, '');
+      const contactRow2 = `${linkedinClean}  |  Portfolio  |  ${githubClean}`;
 
-      // Row 2: Email & LinkedIn
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Email: ', leftMargin, headerTopY + rowHeight, { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.email || 'tksanthosh494@gmail.com');
+      doc.font('Helvetica')
+         .fontSize(8.6)
+         .fillColor(textColor)
+         .text(contactRow2, leftMargin, doc.y, { align: 'center', width: contentWidth });
 
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('LinkedIn: ', rightColX, headerTopY + rowHeight, { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.linkedin || 'linkedin.com/in/santhosh-tk');
+      doc.y += 4;
+      const headerLineY = doc.y;
+      doc.strokeColor(grayLineColor)
+         .lineWidth(0.6)
+         .moveTo(leftMargin, headerLineY)
+         .lineTo(rightMargin, headerLineY)
+         .stroke();
 
-      // Row 3: Portfolio & GitHub
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('Portfolio: ', leftMargin, headerTopY + (rowHeight * 2), { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.portfolio || 'https://santhoshtk-portfolio.netlify.app/');
-
-      doc.font('Helvetica-Bold').fontSize(8.8).fillColor(textColor).text('GitHub: ', rightColX, headerTopY + (rowHeight * 2), { continued: true });
-      doc.font('Helvetica').fontSize(8.8).text(info.github || 'github.com/TKSanthosh');
-
-      doc.y = headerTopY + (rowHeight * 2) + 9;
+      doc.y = headerLineY + 1;
 
       // --- 2. PROFILE SUMMARY ---
       if (resumeJson.summary) {

@@ -373,29 +373,30 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
     if (job.company && job.company.includes('IQVIA')) {
       job.role = 'Software Development Engineer 2 (SDE2)';
       job.highlights = [
-        'Developed a dynamic engagement-creation stepper that adapts its steps and validation logic based on engagement type, using React.js for the UI and Node.js/Express.js for the backend workflow logic.',
-        'Built a multi-level approval workflow enabling engagement approvals to route through individual managers or a meeting-planner admin role, with admin-level override to approve across all pending levels — implemented with Node.js, Express.js, and MySQL.',
-        'Implemented end-to-end session lifecycle handling, covering session join through session completion, for live engagement events on the platform.',
-        'Participated in daily stand-ups with business analysts, project leads, and client stakeholders to clarify requirements and translate them into technical implementation.',
-        'Followed a CI/CD-based development workflow, pushing changes to GitHub with automated build and deployment to environments, ensuring consistent and reliable releases.'
+        'Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.',
+        'Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.',
+        'Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.',
+        'Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.',
+        'Followed CI/CD workflows using GitHub for automated builds and deployments across application environments.'
       ];
     } else if (job.company && job.company.includes('Sify')) {
       if (Array.isArray(job.projects)) {
         job.projects.forEach(proj => {
           if (proj.name && proj.name.includes('Exam Engine')) {
             proj.highlights = [
-              'Migrated mission-critical legacy backend architecture from PHP to Node.js and MongoDB on AWS, reducing recurring production outages by ~30% and decreasing memory overhead.',
-              'Strengthened system security and eliminated unauthorized workflow access by implementing end-to-end JWT authentication and granular Role-Based Access Control (RBAC) across 100,000+ candidates.',
-              'Optimized high-frequency MySQL and MongoDB queries using custom indexing and schema adjustments, decreasing server load and improving query response times.',
-              'Resolved critical asynchronous race conditions and user-interface latency bottlenecks, increasing concurrency throughput for live assessments.',
-              'Accelerated incident resolution and debugging cycles by deploying centralized exception handling and structured logging mechanisms.'
+              'Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.',
+              'Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.',
+              'Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.',
+              'Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.',
+              'Implemented structured logging and centralized exception handling to improve debugging and issue resolution.'
             ];
           } else if (proj.name && proj.name.includes('QPTool')) {
             proj.highlights = [
-              'Engineered and maintained high-throughput backend services using Node.js, Express.js, MySQL, and MongoDB.',
-              'Improved API response times by ~20% across the exam configuration system by designing RESTful endpoints and eliminating redundant database lookups.',
-              'Authored reusable React.js UI components and modular backend services that improved overall codebase maintainability, achieving a 95%+ first-pass code review approval rating.',
-              'Enhanced API validation, data integrity, and centralized error handling to ensure rock-solid production stability.'
+              'Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.',
+              'Designed and implemented RESTful APIs and integrated backend services with React.js applications.',
+              'Built reusable React.js components and implemented frontend API integration and UI logic.',
+              'Improved API response time by approximately 20% through backend and database query optimization.',
+              'Refactored legacy backend code into modular services and enhanced API validation, security, and centralized error handling.'
             ];
           }
         });
@@ -411,22 +412,24 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
  */
 function buildOptimizedSkills(baseSkills, jd) {
   return {
-    'Backend Technologies': [
-      'Node.js', 'Express.js', 'RESTful APIs', 'Asynchronous Programming',
-      'Event-Driven Architecture', 'Microservices', 'Middleware', 'WebSockets',
-      'JWT Authentication', 'Role-Based Access Control (RBAC)'
+    'Backend': [
+      'Node.js', 'Express.js', 'RESTful APIs', 'API Development & Integration',
+      'JWT Authentication', 'Role-Based Access Control (RBAC)', 'Middleware',
+      'MVC Architecture', 'Asynchronous Programming'
     ],
-    'Databases & Data Management': [
-      'MySQL', 'MongoDB', 'Database Indexing', 'Query Optimization',
-      'Complex Joins', 'Schema Design', 'Data Caching'
+    'Frontend': [
+      'React.js', 'JavaScript (ES6+)', 'React Hooks', 'HTML5', 'CSS3',
+      'Reusable Components'
     ],
-    'Frontend Technologies': [
-      'React.js', 'JavaScript (ES6+)', 'React Hooks', 'Reusable Component Architecture',
-      'HTML5', 'CSS3'
+    'Databases': [
+      'MySQL', 'MongoDB', 'SQL Joins', 'Indexing', 'Query Optimization'
     ],
-    'Tools & Development Practices': [
-      'Git', 'GitHub', 'Postman', 'AWS', 'npm', 'VS Code',
-      'MVC Architecture', 'REST API Design', 'Structured Logging', 'Unit Testing', 'Agile/Scrum'
+    'System Design': [
+      'System Design Fundamentals', 'Scalability', 'Load Balancing',
+      'Caching', 'Database Scaling', 'Microservices Concepts'
+    ],
+    'Tools & Cloud': [
+      'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'AWS', 'CI/CD'
     ]
   };
 }
@@ -447,14 +450,17 @@ async function tailorResume(standardResumeJson, jd) {
   const atsKeywords = extractAtsKeywordsFromJd(jd);
   tailored.atsKeywords = atsKeywords;
 
-  // 3. Apply results-oriented X-Y-Z experience bullets & categorized skills
+  // 3. Apply results-oriented experience bullets & categorized skills
   tailored.experience = buildXyzOptimizedExperience(tailored.experience, jd);
   tailored.skills = buildOptimizedSkills(tailored.skills, jd);
-  // Omit duplicate achievements list since all accomplishments are already woven into X-Y-Z bullets
-  delete tailored.achievements;
+  tailored.achievements = tailored.achievements || [
+    'Delivered 8+ major features across two production systems',
+    'Mentored 2 junior developers on backend development and coding best practices.',
+    'Contributed to PHP-to-Node.js migration and backend modernization initiatives.'
+  ];
 
   // 4. Determine role title from JD if possible
-  let targetTitle = tailored.personalInfo?.title || 'Software Development Engineer / Full Stack Developer';
+  let targetTitle = tailored.personalInfo?.title || 'Software Development Engineer 2 (SDE2)';
   const titleMatch = jd.match(/(?:title|role|position):\s*([^\n\r]+)/i) ||
                      jd.match(/(Software Engineer(?:, [^\n\r,]+)?|Full Stack Developer|Backend Engineer|Software Development Engineer)/i);
   if (titleMatch && titleMatch[1]) {
@@ -464,7 +470,7 @@ async function tailorResume(standardResumeJson, jd) {
   tailored.personalInfo.title = targetTitle;
 
   // 5. Build human-tone, results-oriented summary
-  tailored.summary = `Software Development Engineer with 4+ years of full-time engineering experience building, scaling, and maintaining production backend systems and distributed web applications. Proven track record in high-throughput API architecture, database query optimization, and monolithic-to-microservice migrations using Node.js, Express.js, React.js, MySQL, and MongoDB. Strong focus on backend reliability, race-condition mitigation, and secure authentication workflows across enterprise platforms.`;
+  tailored.summary = standardResumeJson.summary || `Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in building RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.`;
 
   // 6. Optional LLM refinement for personalized title/summary nuance
   const systemPrompt = `You are an expert ATS resume optimizer.
