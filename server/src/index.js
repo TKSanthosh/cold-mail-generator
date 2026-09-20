@@ -122,7 +122,9 @@ const {
   getDiscoveredJobs,
   refreshDiscoveredJobs,
   tailorDiscoveredJob,
-  initDiscoveryScheduler
+  initDiscoveryScheduler,
+  resetShownJobsHistory,
+  unshowJob
 } = require('./services/ai_job_discovery.service');
 
 const compression = require('compression');
@@ -1470,6 +1472,42 @@ app.post(['/api/jobs/refresh', '/api/discovery/refresh'], async (req, res) => {
   const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
   try {
     const feed = await refreshDiscoveredJobs(userKey);
+    res.json({ success: true, ...feed });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get(['/api/jobs/shown-history', '/api/discovery/shown-history'], async (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  try {
+    const feed = getDiscoveredJobs(userKey);
+    res.json({
+      success: true,
+      shownHistory: feed.shownHistory || [],
+      shownCount: feed.shownCount || (feed.shownHistory || []).length,
+      totalPool: feed.totalPool || 47
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post(['/api/jobs/reset-shown', '/api/discovery/reset-shown'], async (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  try {
+    const feed = resetShownJobsHistory(userKey);
+    res.json({ success: true, ...feed });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post(['/api/jobs/unshow/:id', '/api/discovery/unshow/:id'], async (req, res) => {
+  const userKey = resolveUserKey(req, res) || 'tksanthosh494_gmail_com';
+  const { id } = req.params;
+  try {
+    const feed = unshowJob(userKey, id);
     res.json({ success: true, ...feed });
   } catch (e) {
     res.status(500).json({ error: e.message });

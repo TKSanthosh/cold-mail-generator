@@ -45,13 +45,29 @@ async function testEnterpriseJobDiscovery() {
   // 6. 1-Click Tailor & PDF Compilation
   const firstJob = feed.jobs[0];
   const tailoredResult = await tailorDiscoveredJob(userKey, firstJob.id);
-  console.log(`[PASS 6/6] 1-Click tailor succeeded for ${firstJob.company} (Download URL: ${tailoredResult.downloadUrl}).`);
+  console.log(`[PASS 6/7] 1-Click tailor succeeded for ${firstJob.company} (Download URL: ${tailoredResult.downloadUrl}).`);
   assert(tailoredResult.success === true, '1-Click tailor failed');
   assert(Boolean(tailoredResult.application.pdfFilename), 'Missing PDF filename in application');
 
+  // 7. Refresh Rotation Test: Refreshing MUST NOT repeat already shown jobs!
+  console.log('[TEST 7/7] Testing Non-Repeating Refresh Rotation & Shown History Log...');
+  const initialJobIds = new Set(feed.jobs.map(j => j.id));
+  const refreshedFeed = await refreshDiscoveredJobs(userKey);
+  console.log(`Refreshed feed received ${refreshedFeed.jobs.length} active jobs, ${refreshedFeed.shownHistory.length} in shownHistory.`);
+  assert(refreshedFeed.jobs.length >= 20, `Expected at least 20 jobs after refresh, got ${refreshedFeed.jobs.length}`);
+  assert(refreshedFeed.shownHistory.length >= initialJobIds.size, 'Shown history must contain initial batch');
+  
+  // Ensure that every job in refreshedFeed is NOT in the initial batch (zero repeats on first refresh)
+  const repeated = refreshedFeed.jobs.filter(j => initialJobIds.has(j.id));
+  console.log(`Repeated jobs after refresh: ${repeated.length} (must be 0)`);
+  assert(repeated.length === 0, `Expected 0 repeated jobs after refresh, found: ${repeated.map(j => j.company + '-' + j.role).join(', ')}`);
+  
+  console.log(`[PASS 7/7] Strictly 0 repeats on refresh! All ${refreshedFeed.shownHistory.length} previous jobs logged in shownHistory.`);
+
   console.log('================================================================');
-  console.log('  ALL 6/6 PAN-INDIA ENTERPRISE DISCOVERY ASSERTIONS PASSED!     ');
+  console.log('  ALL 7/7 PAN-INDIA ENTERPRISE DISCOVERY ASSERTIONS PASSED!     ');
   console.log('================================================================');
+  process.exit(0);
 }
 
 testEnterpriseJobDiscovery().catch(err => {

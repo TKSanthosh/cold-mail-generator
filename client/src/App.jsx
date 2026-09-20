@@ -2074,8 +2074,10 @@ function JdResumeTailor({ showToast, currentUser }) {
     }
   };
 
-  // Discovered Enterprise Jobs Feed (2-hour auto-refresh & manual trigger)
+  // Discovered Enterprise Jobs Feed (2-hour auto-refresh, non-repeating rotation & shown log)
   const [discoveredJobs, setDiscoveredJobs] = useState([]);
+  const [shownJobs, setShownJobs] = useState([]);
+  const [feedViewMode, setFeedViewMode] = useState('active'); // 'active' | 'shown_log'
   const [loadingFeed, setLoadingFeed] = useState(false);
   const [refreshingFeed, setRefreshingFeed] = useState(false);
   const [feedLastRefreshed, setFeedLastRefreshed] = useState('');
@@ -2094,15 +2096,50 @@ function JdResumeTailor({ showToast, currentUser }) {
       const data = await res.json();
       if (data && Array.isArray(data.jobs)) {
         setDiscoveredJobs(data.jobs);
+        if (Array.isArray(data.shownHistory)) {
+          setShownJobs(data.shownHistory);
+        }
         if (data.lastRefreshed) setFeedLastRefreshed(data.lastRefreshed);
         if (data.nextRefreshAt) setFeedNextRefreshAt(data.nextRefreshAt);
-        if (isManual) showToast(`Refreshed ${data.jobs.length} verified enterprise openings!`, 'success');
+        if (isManual) {
+          const shownCount = (data.shownHistory || []).length;
+          showToast(`Refreshed! Showing ${data.jobs.length} new jobs (${shownCount} moved to Shown Log)`, 'success');
+        }
       }
     } catch (e) {
       if (isManual) showToast('Failed to refresh enterprise jobs', 'error');
     } finally {
       setLoadingFeed(false);
       setRefreshingFeed(false);
+    }
+  };
+
+  const handleResetShown = async () => {
+    try {
+      const res = await apiFetch('/api/jobs/reset-shown', { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        setDiscoveredJobs(data.jobs || []);
+        setShownJobs([]);
+        setFeedViewMode('active');
+        showToast('Reset seen history! All 47 verified jobs restored to feed.', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to reset seen history', 'error');
+    }
+  };
+
+  const handleUnshowJob = async (jobId) => {
+    try {
+      const res = await apiFetch(`/api/jobs/unshow/${jobId}`, { method: 'POST' });
+      const data = await res.json();
+      if (data && data.success) {
+        setDiscoveredJobs(data.jobs || []);
+        setShownJobs(data.shownHistory || []);
+        showToast('Job restored back to Active Openings!', 'success');
+      }
+    } catch (e) {
+      showToast('Failed to restore job', 'error');
     }
   };
 
@@ -2387,6 +2424,49 @@ function JdResumeTailor({ showToast, currentUser }) {
           </div>
         </div>
 
+        {/* Feed View Switcher: Active Openings vs Already Shown Jobs Log */}
+        <div className="flex items-center justify-between gap-2 border-b border-slate-100 dark:border-slate-800 pb-2.5 flex-wrap">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFeedViewMode('active')}
+              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                feedViewMode === 'active'
+                  ? 'bg-indigo-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <Building2 className="w-3.5 h-3.5" />
+              <span>Active Openings ({discoveredJobs.length})</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setFeedViewMode('shown_log')}
+              className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                feedViewMode === 'shown_log'
+                  ? 'bg-amber-600 text-white shadow-xs'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-700'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>Already Shown Jobs Log ({shownJobs.length})</span>
+            </button>
+          </div>
+
+          {feedViewMode === 'shown_log' && shownJobs.length > 0 && (
+            <button
+              type="button"
+              onClick={handleResetShown}
+              className="text-xs text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 font-semibold inline-flex items-center gap-1 hover:underline cursor-pointer bg-rose-50 dark:bg-rose-950/40 px-2.5 py-1 rounded-lg border border-rose-200 dark:border-rose-900"
+              title="Reset history log and restore all verified jobs to active rotation"
+            >
+              <RotateCw className="w-3 h-3" />
+              <span>Reset Seen History & Show All</span>
+            </button>
+          )}
+        </div>
+
         {/* Quick Location Priority Filters */}
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 mr-1">India Tech Hubs:</span>
@@ -2496,19 +2576,45 @@ function JdResumeTailor({ showToast, currentUser }) {
           <div className="flex items-center justify-center p-12 text-slate-400 text-xs gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-indigo-500" /> Discovering & verifying Pan-India enterprise openings...
           </div>
-        ) : discoveredJobs.length === 0 ? (
+        ) : (feedViewMode === 'active' ? discoveredJobs : shownJobs).length === 0 ? (
           <div className="text-center p-8 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-            <p className="text-xs text-slate-500 dark:text-slate-400">No enterprise jobs discovered yet.</p>
-            <button
-              onClick={() => fetchDiscoveredFeed(true)}
-              className="mt-2 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline inline-flex items-center gap-1"
-            >
-              <RotateCw className="w-3 h-3" /> Fetch Enterprise Openings Now
-            </button>
+            {feedViewMode === 'active' ? (
+              <>
+                <p className="text-xs text-slate-500 dark:text-slate-400">All available jobs have been reviewed in this cycle!</p>
+                <div className="flex items-center justify-center gap-3 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => setFeedViewMode('shown_log')}
+                    className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <History className="w-3.5 h-3.5" /> View Already Shown Jobs Log ({shownJobs.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetShown}
+                    className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  >
+                    <RotateCw className="w-3 h-3" /> Reset History & Start Over
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="text-xs text-slate-500 dark:text-slate-400">No jobs in shown history yet.</p>
+                <p className="text-[11px] text-slate-400 mt-1">When you click &quot;Refresh Jobs&quot;, previously displayed positions are automatically moved here so your active feed stays fresh.</p>
+                <button
+                  type="button"
+                  onClick={() => setFeedViewMode('active')}
+                  className="mt-3 text-xs text-indigo-600 dark:text-indigo-400 font-semibold hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <Building2 className="w-3.5 h-3.5" /> Return to Active Openings
+                </button>
+              </>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5 max-h-[520px] overflow-y-auto pr-1">
-            {discoveredJobs
+            {(feedViewMode === 'active' ? discoveredJobs : shownJobs)
               .filter(job => {
                 const loc = (job.location || '').toLowerCase();
                 const mode = (job.workMode || '').toLowerCase();
@@ -2541,10 +2647,15 @@ function JdResumeTailor({ showToast, currentUser }) {
               })
               .map((job) => {
                 const isTailoringThis = tailoringJobId === job.id;
+                const isShownView = feedViewMode === 'shown_log';
                 return (
                   <div
                     key={job.id}
-                    className="p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-700/60 transition-all flex flex-col justify-between gap-3 shadow-sm hover:shadow"
+                    className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-3 shadow-sm hover:shadow ${
+                      isShownView
+                        ? 'border-amber-200/80 dark:border-amber-900/60 bg-amber-50/20 dark:bg-amber-950/10 hover:border-amber-400'
+                        : 'border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/40 hover:border-indigo-300 dark:hover:border-indigo-700/60'
+                    }`}
                   >
                     <div className="flex flex-col gap-2">
                       <div className="flex items-start justify-between gap-2">
@@ -2556,10 +2667,17 @@ function JdResumeTailor({ showToast, currentUser }) {
                             <span className="text-[10px] bg-indigo-50 dark:bg-indigo-950/70 text-indigo-700 dark:text-indigo-300 font-semibold px-1.5 py-0.5 rounded border border-indigo-200/60 dark:border-indigo-800/60">
                               {job.employeeCount || job.category}
                             </span>
-                            <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-200/60 dark:border-emerald-800/60 flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                              Live Opening
-                            </span>
+                            {isShownView ? (
+                              <span className="text-[10px] bg-amber-50 dark:bg-amber-950/70 text-amber-700 dark:text-amber-300 font-bold px-1.5 py-0.5 rounded border border-amber-200/60 dark:border-amber-800/60 flex items-center gap-1">
+                                <History className="w-2.5 h-2.5 text-amber-600" />
+                                {job.shownDate ? `Shown ${job.shownDate}` : 'Already Shown'}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] bg-emerald-50 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 font-bold px-1.5 py-0.5 rounded border border-emerald-200/60 dark:border-emerald-800/60 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                                Live Opening
+                              </span>
+                            )}
                           </div>
                           {job.url ? (
                             <a
@@ -2632,14 +2750,25 @@ function JdResumeTailor({ showToast, currentUser }) {
                       </button>
 
                       <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          onClick={() => handlePreFillJob(job)}
-                          className="text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 px-2 py-1.5 rounded-lg transition-colors cursor-pointer"
-                          title="Load role, company, and JD into the custom tailoring editor"
-                        >
-                          Fill Form
-                        </button>
+                        {isShownView ? (
+                          <button
+                            type="button"
+                            onClick={() => handleUnshowJob(job.id)}
+                            className="text-[11px] font-medium text-amber-700 dark:text-amber-300 hover:text-amber-800 dark:hover:text-amber-200 bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-800 px-2 py-1.5 rounded-lg transition-colors cursor-pointer"
+                            title="Restore this job back to Active Openings"
+                          >
+                            Restore to Feed
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handlePreFillJob(job)}
+                            className="text-[11px] font-medium text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 hover:border-indigo-300 px-2 py-1.5 rounded-lg transition-colors cursor-pointer"
+                            title="Load role, company, and JD into the custom tailoring editor"
+                          >
+                            Fill Form
+                          </button>
+                        )}
                         {job.url && (
                           <a
                             href={job.url}
