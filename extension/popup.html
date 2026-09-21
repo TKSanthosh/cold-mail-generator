@@ -131,8 +131,11 @@
         </div>
         <div class="drawer-body">
           <div class="field-group">
-            <label>Recipient / HR Email</label>
-            <input type="email" id="email-to" placeholder="e.g. recruiter@company.com or hiring team email" />
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <label>Recipient / Recruiter Email</label>
+              <button type="button" id="btn-scrape-recruiter" style="background: none; border: none; color: #4f46e5; font-size: 11px; font-weight: 600; cursor: pointer; padding: 0; text-decoration: underline;">⚡ Scrape AI Recruiter</button>
+            </div>
+            <input type="email" id="email-to" placeholder="e.g. recruiter.name@company.com" />
           </div>
           <div class="field-group">
             <label>Subject</label>

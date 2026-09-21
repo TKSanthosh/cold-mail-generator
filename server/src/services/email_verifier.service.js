@@ -17,12 +17,19 @@ const DISPOSABLE_OR_INVALID_DOMAINS = new Set([
   'yopmail.com', 'sharklasers.com', 'guerrillamailblock.com', 'grr.la'
 ]);
 
-// Generic non-personal prefixes that should be flagged if cold mailing individual HRs
-const GENERIC_PREFIXES = new Set([
-  'noreply', 'no-reply', 'donotreply', 'support', 'help', 'sales',
-  'billing', 'admin', 'administrator', 'abuse', 'postmaster', 'hostmaster',
-  'webmaster', 'security', 'privacy', 'legal'
-]);
+// Generic non-personal handles that represent company-wide or generic departmental inboxes
+const GENERIC_PREFIX_REGEX = /^(hr|careers?|jobs?|talent(?:acquisition)?|hiring|recruit(?:ing|ment|ers?)?|people|resumes?|cv|tech[-_]?hiring|tech[-_]?jobs|tech[-_]?talent|info|contact(?:us)?|admin(?:istrator)?|support|hello|team|join|apply|opportunities|work|office|campus|freshers?|help|general|inquir(?:y|ies)|corporate|sales|billing|noreply|no[-_]reply|donotreply)([-_.].*)?$/i;
+
+/**
+ * Checks whether an email address is a generic company inbox (e.g. hr@, careers@, jobs@, talent@)
+ * rather than a real individual recruiter's mailbox.
+ */
+function isGenericHrEmail(email) {
+  if (!email || typeof email !== 'string' || !email.includes('@')) return false;
+  const localPart = email.trim().toLowerCase().split('@')[0];
+  return GENERIC_PREFIX_REGEX.test(localPart);
+}
+
 
 /**
  * Validates email syntax strictly according to RFC 5322 standard
@@ -261,8 +268,8 @@ async function verifyEmailDeliverability(email, userKey = null) {
     return res;
   }
 
-  const isGeneric = GENERIC_PREFIXES.has(username);
-  const confidenceScore = smtpResult?.verifiedMailbox ? 98 : (isGeneric ? 75 : 92);
+  const isGeneric = isGenericHrEmail(cleanEmail);
+  const confidenceScore = smtpResult?.verifiedMailbox ? 98 : (isGeneric ? 50 : 92);
 
   const finalResult = {
     isValid: true,
@@ -274,7 +281,7 @@ async function verifyEmailDeliverability(email, userKey = null) {
     verifiedMailbox: smtpResult?.verifiedMailbox || false,
     isGeneric,
     score: confidenceScore,
-    reason: 'Active MX Mail Server verified & deliverable'
+    reason: isGeneric ? 'Generic company inbox (hr/careers/jobs) - not a personal recruiter email' : 'Active MX Mail Server verified & deliverable'
   };
 
   emailValidationCache.set(cacheKey, finalResult);
@@ -282,7 +289,9 @@ async function verifyEmailDeliverability(email, userKey = null) {
 }
 
 /**
- * Generates and tests authentic corporate email variations for a recruiter & company domain
+ * Generates and tests authentic corporate email variations for a recruiter & company domain.
+ * Strictly generates individual recruiter patterns (e.g. anjana.v@domain, anjana.verma@domain),
+ * NEVER generic addresses like careers@ or hr@.
  */
 async function generateAndVerifyRecruiterEmail(fullName, companyName, companyDomain, userKey = null) {
   if (!companyDomain || !companyDomain.includes('.')) {
@@ -303,19 +312,20 @@ async function generateAndVerifyRecruiterEmail(fullName, companyName, companyDom
     const first = rawNames[0];
     const last = rawNames[rawNames.length - 1];
     candidates.push(`${first}.${last}@${cleanDomain}`);
+    candidates.push(`${first}.${last.charAt(0)}@${cleanDomain}`);
+    candidates.push(`${first.charAt(0)}.${last}@${cleanDomain}`);
     candidates.push(`${first}@${cleanDomain}`);
   } else if (rawNames.length === 1) {
     const first = rawNames[0];
     candidates.push(`${first}@${cleanDomain}`);
   }
 
-  // Standard talent channels
-  candidates.push(`careers@${cleanDomain}`);
-  candidates.push(`tech-hiring@${cleanDomain}`);
+  // Strictly filter out generic patterns
+  const personalCandidates = candidates.filter(c => !isGenericHrEmail(c));
 
-  for (const candidate of candidates) {
+  for (const candidate of personalCandidates) {
     const verification = await verifyEmailDeliverability(candidate, userKey);
-    if (verification.isValid && (verification.verifiedMailbox || verification.score >= 90)) {
+    if (verification.isValid && !verification.isGeneric && (verification.verifiedMailbox || verification.score >= 90)) {
       return {
         email: candidate,
         verification,
@@ -329,6 +339,7 @@ async function generateAndVerifyRecruiterEmail(fullName, companyName, companyDom
 
 module.exports = {
   isValidEmailSyntax,
+  isGenericHrEmail,
   getDomainMxRecords,
   checkSmtpMailbox,
   verifyEmailDeliverability,

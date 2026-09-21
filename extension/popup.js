@@ -614,16 +614,84 @@ ${candidateName}
 tksanthosh494@gmail.com | +91 8825802707
 LinkedIn: https://linkedin.com/in/santhosh-tk`;
 
+    const normComp = company.toLowerCase();
+    const isExcluded = normComp.includes('iqvia') || normComp.includes('sify');
+
     if (drawerStatusBox) {
-      drawerStatusBox.className = 'drawer-status hidden';
-      drawerStatusBox.innerText = '';
+      if (isExcluded) {
+        drawerStatusBox.className = 'drawer-status error';
+        drawerStatusBox.innerText = `🚫 Excluded Company: "${company}" is your present/past company. Outreach is blocked.`;
+        if (btnSendEmail) btnSendEmail.disabled = true;
+        if (btnDraftEmail) btnDraftEmail.disabled = true;
+      } else {
+        drawerStatusBox.className = 'drawer-status hidden';
+        drawerStatusBox.innerText = '';
+        if (btnSendEmail) btnSendEmail.disabled = false;
+        if (btnDraftEmail) btnDraftEmail.disabled = false;
+      }
     }
 
     stateEmailDrawer.classList.toggle('hidden');
-    if (!stateEmailDrawer.classList.contains('hidden') && emailTo) {
+    if (!stateEmailDrawer.classList.contains('hidden') && emailTo && !isExcluded) {
       emailTo.focus();
     }
   });
+
+  // Scrape AI Recruiter Discovery
+  const btnScrapeRecruiter = document.getElementById('btn-scrape-recruiter');
+  if (btnScrapeRecruiter) {
+    btnScrapeRecruiter.addEventListener('click', async () => {
+      const company = inputCompany.value.trim();
+      if (!company) {
+        showDrawerStatus('error', '⚠️ Please enter or detect a company name first.');
+        return;
+      }
+
+      const normComp = company.toLowerCase();
+      if (normComp.includes('iqvia') || normComp.includes('sify')) {
+        showDrawerStatus('error', `🚫 Excluded Company: "${company}" is your present/past company. Outreach is blocked.`);
+        if (btnSendEmail) btnSendEmail.disabled = true;
+        if (btnDraftEmail) btnDraftEmail.disabled = true;
+        return;
+      }
+
+      btnScrapeRecruiter.disabled = true;
+      btnScrapeRecruiter.innerText = '⏳ Searching...';
+      showDrawerStatus('loading', `🔍 Searching real recruiters at ${company} via Scrape AI...`);
+
+      try {
+        const sUrl = currentSettings.serverUrl || 'http://localhost:5001';
+        const uKey = currentSettings.userKey || 'tksanthosh494_gmail_com';
+        const res = await fetch(`${sUrl}/api/recruiter/find-scrape-ai`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ company, userKey: uKey })
+        });
+        const data = await res.json();
+        btnScrapeRecruiter.disabled = false;
+        btnScrapeRecruiter.innerText = '⚡ Scrape AI Recruiter';
+
+        if (data.error) {
+          showDrawerStatus('error', `⚠️ ${data.error}`);
+          return;
+        }
+
+        if (data.found && data.email) {
+          if (emailTo) emailTo.value = data.email;
+          if (data.recruiterName && emailBody) {
+            emailBody.value = emailBody.value.replace(/Hi Hiring Team,/i, `Hi ${data.recruiterName},`);
+          }
+          showDrawerStatus('success', `🎯 Verified Recruiter Found: ${data.recruiterName} (${data.email})`);
+        } else {
+          showDrawerStatus('error', `⚠️ ${data.reason || 'Could not verify a personal recruiter email.'}`);
+        }
+      } catch (err) {
+        btnScrapeRecruiter.disabled = false;
+        btnScrapeRecruiter.innerText = '⚡ Scrape AI Recruiter';
+        showDrawerStatus('error', `⚠️ Error calling Scrape AI: ${err.message}`);
+      }
+    });
+  }
 
   btnCloseDrawer.addEventListener('click', () => {
     stateEmailDrawer.classList.add('hidden');
@@ -644,6 +712,12 @@ LinkedIn: https://linkedin.com/in/santhosh-tk`;
       const body = emailBody.value.trim();
       const role = inputRole.value.trim() || 'Software Developer';
       const company = inputCompany.value.trim() || 'Company';
+
+      const normComp = company.toLowerCase();
+      if (normComp.includes('iqvia') || normComp.includes('sify')) {
+        showDrawerStatus('error', `🚫 Excluded Company: "${company}" is your present/past company. Outreach is blocked.`);
+        return;
+      }
 
       if (!to) {
         showDrawerStatus('error', '⚠️ Please enter a recipient email (e.g. recruiter@company.com).');

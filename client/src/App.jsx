@@ -530,6 +530,25 @@ function SingleSender({ isAuthorized, showToast }) {
   const [emailBody, setEmailBody] = useState('');
   const [tailoredResume, setTailoredResume] = useState(null);
   const [companyIntel, setCompanyIntel] = useState(null);
+  const [alreadyContactedInfo, setAlreadyContactedInfo] = useState(null);
+
+  const checkEmailDedup = async (emailToCheck, compToCheck) => {
+    if (!emailToCheck || !emailToCheck.includes('@')) {
+      setAlreadyContactedInfo(null);
+      return;
+    }
+    try {
+      const res = await apiFetch(`/api/dedup/check?email=${encodeURIComponent(emailToCheck.trim())}&company=${encodeURIComponent(compToCheck || '')}`);
+      const data = await res.json();
+      if (data.alreadyContacted) {
+        setAlreadyContactedInfo(data);
+      } else {
+        setAlreadyContactedInfo(null);
+      }
+    } catch (e) {
+      setAlreadyContactedInfo(null);
+    }
+  };
 
   // Auto-parse instantly as the user types or pastes
   const handleEmailChange = (val) => {
@@ -552,6 +571,7 @@ function SingleSender({ isAuthorized, showToast }) {
       setParsedName(name || 'Hiring Manager');
 
       // Parse Target Company from Domain
+      let detectedComp = parsedCompany;
       if (domain) {
         const personalDomains = ['gmail.com', 'yahoo.com', 'outlook.com', 'hotmail.com', 'icloud.com', 'protonmail.com', 'mail.com'];
         const cleanDomain = domain.toLowerCase().trim();
@@ -564,13 +584,17 @@ function SingleSender({ isAuthorized, showToast }) {
           }
           if (compPart && compPart.length > 0) {
             // Capitalize company name
-            const compName = compPart.charAt(0).toUpperCase() + compPart.slice(1);
-            setParsedCompany(compName);
+            detectedComp = compPart.charAt(0).toUpperCase() + compPart.slice(1);
+            setParsedCompany(detectedComp);
           }
         } else {
           setParsedCompany('');
         }
       }
+
+      checkEmailDedup(val, detectedComp);
+    } else {
+      setAlreadyContactedInfo(null);
     }
   };
 
@@ -607,6 +631,41 @@ function SingleSender({ isAuthorized, showToast }) {
     }
   };
 
+  const handleScrapeAiRecruiter = async () => {
+    const comp = parsedCompany.trim();
+    if (!comp) return showToast('Please enter a target company name to find recruiters.', 'error');
+
+    const normComp = comp.toLowerCase();
+    if (normComp.includes('iqvia') || normComp.includes('sify')) {
+      return showToast(`🚫 Excluded Company: "${comp}" is your present/past company. Outreach is blocked.`, 'error');
+    }
+
+    setGenerating(true);
+    showToast(`Searching real recruiters at ${comp} via Scrape AI...`, 'info');
+    try {
+      const res = await apiFetch(`/api/recruiter/find-scrape-ai`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company: comp })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || 'Failed to find recruiter');
+
+      if (data.found && data.email) {
+        setHrEmail(data.email);
+        setParsedName(data.recruiterName || 'Technical Recruiter');
+        setParsedCompany(data.company || comp);
+        showToast(`🎯 Found verified recruiter: ${data.recruiterName} (${data.email})`, 'success');
+      } else {
+        showToast(data.reason || `No personal recruiter email found for ${comp}.`, 'warning');
+      }
+    } catch (e) {
+      showToast(e.message || 'Scrape AI search failed', 'error');
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   const handleSendEmail = async () => {
     if (!isAuthorized) return showToast('Please connect your Gmail account via OAuth first.', 'error');
     if (!emailSubject || !emailBody || !tailoredResume) {
@@ -617,6 +676,15 @@ function SingleSender({ isAuthorized, showToast }) {
     const candidateEmail = (currentUser?.email || '').trim().toLowerCase();
     if (cleanRecipient === candidateEmail || cleanRecipient === 'tksanthosh494@gmail.com') {
       return showToast('Self-Email Blocked: You cannot send cold outreach emails to your own email address.', 'error');
+    }
+
+    const normComp = (parsedCompany || '').toLowerCase();
+    if (normComp.includes('iqvia') || normComp.includes('sify') || cleanRecipient.includes('iqvia') || cleanRecipient.includes('sify')) {
+      return showToast('🚫 Excluded Company: IQVIA and Sify Technologies are your present/past companies. Outreach is blocked.', 'error');
+    }
+
+    if (alreadyContactedInfo) {
+      return showToast(alreadyContactedInfo.reason || 'Duplicate Outreach Blocked: You have already sent an email to this HR. Sending multiple emails to the same HR is blocked.', 'error');
     }
 
     setSending(true);
@@ -656,6 +724,15 @@ function SingleSender({ isAuthorized, showToast }) {
     const candidateEmail = (currentUser?.email || '').trim().toLowerCase();
     if (cleanRecipient === candidateEmail || cleanRecipient === 'tksanthosh494@gmail.com') {
       return showToast('Self-Email Blocked: You cannot create drafts addressed to your own email.', 'error');
+    }
+
+    const normComp = (parsedCompany || '').toLowerCase();
+    if (normComp.includes('iqvia') || normComp.includes('sify') || cleanRecipient.includes('iqvia') || cleanRecipient.includes('sify')) {
+      return showToast('🚫 Excluded Company: IQVIA and Sify Technologies are your present/past companies. Outreach is blocked.', 'error');
+    }
+
+    if (alreadyContactedInfo) {
+      return showToast(alreadyContactedInfo.reason || 'Duplicate Outreach Blocked: You have already contacted this HR.', 'error');
     }
 
     setSending(true);
@@ -783,15 +860,62 @@ function SingleSender({ isAuthorized, showToast }) {
           <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> <span>Target Outreach Details</span>
         </h2>
 
+        {/* Excluded Company Banner */}
+        {((parsedCompany && (parsedCompany.toLowerCase().includes('iqvia') || parsedCompany.toLowerCase().includes('sify'))) ||
+          (hrEmail && (hrEmail.toLowerCase().includes('iqvia') || hrEmail.toLowerCase().includes('sify')))) && (
+          <div className="p-3 bg-rose-50 dark:bg-rose-950/60 border border-rose-300 dark:border-rose-800 rounded-lg text-xs font-bold text-rose-700 dark:text-rose-300 flex items-center gap-2">
+            <span>🚫 Excluded Company: IQVIA and Sify Technologies are your present/past companies. Outreach is blocked.</span>
+          </div>
+        )}
+
         <div>
-          <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5 sm:mb-2">HR Email Address</label>
+          <div className="flex justify-between items-center mb-1.5 sm:mb-2">
+            <label className="block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">HR / Recruiter Email</label>
+            {parsedCompany && (
+              <button
+                type="button"
+                onClick={handleScrapeAiRecruiter}
+                className="text-[11px] font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 hover:underline flex items-center gap-1"
+                title={`Search verified recruiter personal email at ${parsedCompany}`}
+              >
+                <span>⚡ Find Recruiter (Scrape AI)</span>
+              </button>
+            )}
+          </div>
           <input
             type="email"
             value={hrEmail}
             onChange={(e) => handleEmailChange(e.target.value)}
-            placeholder="e.g. santhosh@indi.co"
+            placeholder="e.g. anjana.v@juspay.com or recruiter@company.com"
             className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg px-3.5 sm:px-4 py-2.5 text-xs sm:text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
           />
+          {alreadyContactedInfo && (
+            <div className="mt-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 flex items-start gap-2 text-xs text-amber-800 dark:text-amber-300">
+              <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+              <div>
+                <span className="font-semibold">⚠️ Duplicate Recruiter Alert:</span> This recipient ({alreadyContactedInfo.previousContact?.email || hrEmail}) was already contacted on {alreadyContactedInfo.previousContact?.sentAt ? new Date(alreadyContactedInfo.previousContact.sentAt).toLocaleDateString('en-IN') : 'a previous date'}. Sending multiple cold emails to the same HR is blocked.
+              </div>
+            </div>
+          )}
+          {hrEmail && /^(hr|careers?|jobs?|talent|hiring|recruiting|recruitment|info|contact|admin|support|team)([-_.].*)?$/i.test(hrEmail.split('@')[0]) && (
+            <div className="mt-2 p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-start justify-between gap-2 text-xs text-rose-700 dark:text-rose-300">
+              <div className="flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-rose-600 dark:text-rose-400 mt-0.5 shrink-0" />
+                <div>
+                  <span className="font-semibold">Generic HR Email Prohibited:</span> Sending outreach to generic company inboxes ({hrEmail}) is blocked. You must send directly to a real recruiter (e.g. anjana.v@juspay.com).
+                </div>
+              </div>
+              {parsedCompany && (
+                <button
+                  type="button"
+                  onClick={handleScrapeAiRecruiter}
+                  className="shrink-0 font-bold px-2 py-1 bg-rose-100 dark:bg-rose-900/50 hover:bg-rose-200 text-rose-800 dark:text-rose-200 rounded text-[11px]"
+                >
+                  ⚡ Find Recruiter
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Parsed Fields (Editable) */}
@@ -807,7 +931,16 @@ function SingleSender({ isAuthorized, showToast }) {
             />
           </div>
           <div>
-            <label className="block text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Parsed Company</label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-[11px] sm:text-xs font-semibold text-slate-400 uppercase tracking-wider">Parsed Company</label>
+              <button
+                type="button"
+                onClick={handleScrapeAiRecruiter}
+                className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400 hover:underline"
+              >
+                ⚡ Scrape AI
+              </button>
+            </div>
             <input
               type="text"
               value={parsedCompany}

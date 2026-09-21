@@ -26,6 +26,7 @@ const fs = require('fs');
 const path = require('path');
 const { getUserPaths, getUserResume, saveUserApplications, getUserApplications } = require('./user.service');
 const { generateResumePdf } = require('./pdf.service');
+const { isCompanyOrDomainExcluded } = require('./company_exclusion.service');
 
 // Curated pool of 47 verified live enterprise jobs across all Indian tech hubs
 // EVERY single link below is actively verified to navigate directly to the specific open job posting with full job details
@@ -1117,7 +1118,9 @@ function calculateAtsScore(userSkills, job) {
  * Enriches candidate jobs with stable deterministic IDs and ATS score
  */
 function enrichJobs(jobsList, userSkills) {
-  return jobsList.map((job, idx) => {
+  return jobsList
+    .filter(job => !isCompanyOrDomainExcluded(job.company, '', job.url).excluded)
+    .map((job, idx) => {
     const atsScore = calculateAtsScore(userSkills, job);
     const idSlug = (job.company + '_' + job.role).toLowerCase().replace(/[^a-z0-9]/g, '_').slice(0, 32);
     return {

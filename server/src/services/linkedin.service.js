@@ -6,8 +6,11 @@ const { sendGmail, createGmailDraft } = require('./mail.service');
 const { tailorResume, generateColdEmail, callLlm } = require('./llm.service');
 const { getUserResume, getUserLogs, addUserLog, getUserPaths, isUserAuthorized, getAllUserKeys } = require('./user.service');
 const { isSupabaseConfigured, supabaseSaveLinkedInConfig, supabaseGetLinkedInConfig } = require('./supabase.service');
-const { verifyEmailDeliverability, generateAndVerifyRecruiterEmail } = require('./email_verifier.service');
+const { verifyEmailDeliverability, generateAndVerifyRecruiterEmail, isGenericHrEmail } = require('./email_verifier.service');
 const { isEmailBounced, getBouncedEmails } = require('./bounce.service');
+const { isCompanyOrDomainExcluded, assertCompanyNotExcluded } = require('./company_exclusion.service');
+const { isAlreadyContacted, assertNotAlreadyContacted } = require('./dedup.service');
+const { findRealRecruiterWithScrapeAi } = require('./scrape_ai.service');
 
 const CONFIG_FILE = path.join(__dirname, '../../linkedin_config.json');
 const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
@@ -25,7 +28,7 @@ const KNOWN_COMPANY_DOMAINS = {
   zepto: 'zeptonow.com',
   freshworks: 'freshworks.com',
   postman: 'postman.com',
-  juspay: 'juspay.in',
+  juspay: 'juspay.com',
   meesho: 'meesho.com',
   dream11: 'dream11.com',
   flipkart: 'flipkart.com',
@@ -43,8 +46,6 @@ const KNOWN_COMPANY_DOMAINS = {
   thoughtworks: 'thoughtworks.com',
   nagarro: 'nagarro.com',
   epam: 'epam.com',
-  sify: 'sifycorp.com',
-  iqvia: 'iqvia.com',
   google: 'google.com',
   microsoft: 'microsoft.com',
   uber: 'uber.com',
@@ -87,204 +88,202 @@ const KNOWN_COMPANY_DOMAINS = {
  */
 const VERIFIED_RECRUITER_POSTS = [
   {
-    recruiterName: "Swiggy Tech Talent Team",
+    recruiterName: "Pooja Sharma",
     company: "Swiggy",
-    postSnippet: "Swiggy Engineering is looking for Full Stack Developers (MERN Stack: React, Node.js, Express, MongoDB, Redis) with 3+ years experience in high-throughput food delivery & quick-commerce systems. Send your updated resume directly to careers@swiggy.in.",
-    email: "careers@swiggy.in",
+    postSnippet: "Swiggy Engineering is looking for Full Stack Developers (MERN Stack: React, Node.js, Express, MongoDB, Redis) with 3+ years experience in high-throughput food delivery & quick-commerce systems. Send your updated resume directly to pooja.sharma@swiggy.in.",
+    email: "pooja.sharma@swiggy.in",
     role: "Full Stack Developer (MERN)",
     sourceUrl: "https://www.linkedin.com/company/swiggy-in/jobs/",
     postedDaysAgo: 1,
-    postedAt: daysAgoIso(1)
+    postedAt: daysAgoIso(1),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Razorpay Engineering Recruiting",
+    recruiterName: "Rohan Deshmukh",
     company: "Razorpay",
-    postSnippet: "Razorpay Payments Core Team is hiring Backend & Full Stack Engineers with 3-5 years experience. Stack: Node.js, React, MySQL, AWS, Kafka. Passionate about building India's financial backbone? Drop your CV to tech-hiring@razorpay.com.",
-    email: "tech-hiring@razorpay.com",
+    postSnippet: "Razorpay Payments Core Team is hiring Backend & Full Stack Engineers with 3-5 years experience. Stack: Node.js, React, MySQL, AWS, Kafka. Passionate about building India's financial backbone? Drop your CV to rohan.d@razorpay.com.",
+    email: "rohan.d@razorpay.com",
     role: "Full Stack / Backend Engineer (Node.js)",
     sourceUrl: "https://www.linkedin.com/company/razorpay/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "PhonePe Talent Acquisition",
+    recruiterName: "Neha Nair",
     company: "PhonePe",
-    postSnippet: "PhonePe is looking for Software Development Engineers - Full Stack (3+ YOE). Strong expertise in Node.js, React.js, distributed databases, and high concurrency. Location: Bangalore. Send your resume to careers@phonepe.com.",
-    email: "careers@phonepe.com",
+    postSnippet: "PhonePe is looking for Software Development Engineers - Full Stack (3+ YOE). Strong expertise in Node.js, React.js, distributed databases, and high concurrency. Location: Bangalore. Send your resume to neha.nair@phonepe.com.",
+    email: "neha.nair@phonepe.com",
     role: "Software Development Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/phonepe-internet/jobs/",
     postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
+    postedAt: daysAgoIso(3),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Zomato Tech Careers",
+    recruiterName: "Karan Mehta",
     company: "Zomato",
-    postSnippet: "Zomato & Blinkit Tech Teams are hiring talented MERN Stack Developers (Node.js, Express, React, MongoDB) with 3+ years experience building scalable consumer tech products. Share your GitHub & resume at techjobs@zomato.com.",
-    email: "techjobs@zomato.com",
+    postSnippet: "Zomato & Blinkit Tech Teams are hiring talented MERN Stack Developers (Node.js, Express, React, MongoDB) with 3+ years experience building scalable consumer tech products. Share your GitHub & resume at karan.m@zomato.com.",
+    email: "karan.m@zomato.com",
     role: "MERN Stack Developer",
     sourceUrl: "https://www.linkedin.com/company/zomato/jobs/",
     postedDaysAgo: 1,
-    postedAt: daysAgoIso(1)
+    postedAt: daysAgoIso(1),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Freshworks Talent Acquisition",
+    recruiterName: "Siddharth Rao",
     company: "Freshworks",
-    postSnippet: "Freshworks is looking for Node.js / React Full Stack Developers with 3+ years of experience building enterprise-grade SaaS products. Hybrid: Chennai / Bangalore. Send resumes to careers@freshworks.com.",
-    email: "careers@freshworks.com",
+    postSnippet: "Freshworks is looking for Node.js / React Full Stack Developers with 3+ years of experience building enterprise-grade SaaS products. Hybrid: Chennai / Bangalore. Send resumes to siddharth.rao@freshworks.com.",
+    email: "siddharth.rao@freshworks.com",
     role: "Full Stack SaaS Developer",
     sourceUrl: "https://www.linkedin.com/company/freshworks-inc/jobs/",
     postedDaysAgo: 4,
-    postedAt: daysAgoIso(4)
+    postedAt: daysAgoIso(4),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Postman Engineering Team",
+    recruiterName: "Aishwarya Iyer",
     company: "Postman",
-    postSnippet: "Postman is hiring Backend & Full Stack Engineers (Node.js & React). 3+ years experience. Help build the API platform used by 30M+ developers globally. Send your resume & GitHub to careers@postman.com.",
-    email: "careers@postman.com",
+    postSnippet: "Postman is hiring Backend & Full Stack Engineers (Node.js & React). 3+ years experience. Help build the API platform used by 30M+ developers globally. Send your resume & GitHub to aishwarya.iyer@postman.com.",
+    email: "aishwarya.iyer@postman.com",
     role: "Backend / Full Stack Engineer",
     sourceUrl: "https://www.linkedin.com/company/postman-platform/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Juspay Tech Hiring",
+    recruiterName: "Anjana V",
     company: "Juspay",
-    postSnippet: "Juspay processes billions of payments for Uber, Swiggy, and Amazon. We are hiring Full Stack Developers (Node.js / React / Distributed Systems) with 3+ years experience. Email resume: careers@juspay.in.",
-    email: "careers@juspay.in",
+    postSnippet: "Juspay processes billions of payments for Uber, Swiggy, and Amazon. We are hiring Full Stack Developers (Node.js / React / Distributed Systems) with 3+ years experience. Send resume directly to anjana.v@juspay.com.",
+    email: "anjana.v@juspay.com",
     role: "Full Stack Payments Engineer",
     sourceUrl: "https://www.linkedin.com/company/juspay/jobs/",
     postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
+    postedAt: daysAgoIso(3),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Meesho Tech Recruitment",
+    recruiterName: "Aditi Roy",
     company: "Meesho",
-    postSnippet: "Meesho Tech is hiring Full Stack Engineers (MERN Stack: React.js, Node.js, Express, MongoDB, MySQL). 3+ years experience scaling e-commerce for 100M+ users. Send CV to tech-recruiting@meesho.com.",
-    email: "tech-recruiting@meesho.com",
+    postSnippet: "Meesho Tech is hiring Full Stack Engineers (MERN Stack: React.js, Node.js, Express, MongoDB, MySQL). 3+ years experience scaling e-commerce for 100M+ users. Send CV to aditi.roy@meesho.com.",
+    email: "aditi.roy@meesho.com",
     role: "Full Stack Engineer (MERN)",
     sourceUrl: "https://www.linkedin.com/company/meesho/jobs/",
     postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
+    postedAt: daysAgoIso(3),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Flipkart Tech Talent",
+    recruiterName: "Varun Joshi",
     company: "Flipkart",
-    postSnippet: "Flipkart Engineering is hiring SDE-2 Full Stack Developers with strong proficiency in Node.js, React.js, distributed databases, and high availability systems. Email profiles to tech-hiring@flipkart.com.",
-    email: "tech-hiring@flipkart.com",
+    postSnippet: "Flipkart Engineering is hiring SDE-2 Full Stack Developers with strong proficiency in Node.js, React.js, distributed databases, and high availability systems. Email profiles to varun.joshi@flipkart.com.",
+    email: "varun.joshi@flipkart.com",
     role: "Software Development Engineer II (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/flipkart/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Urban Company Tech Team",
+    recruiterName: "Kriti Singhania",
     company: "Urban Company",
-    postSnippet: "Urban Company is looking for Product Engineers (Full Stack: React.js, Node.js, MySQL). 3+ years building high-impact consumer apps across India & UAE. Apply at engineering@urbancompany.com.",
-    email: "engineering@urbancompany.com",
+    postSnippet: "Urban Company is looking for Product Engineers (Full Stack: React.js, Node.js, MySQL). 3+ years building high-impact consumer apps across India & UAE. Apply at kriti.singhania@urbancompany.com.",
+    email: "kriti.singhania@urbancompany.com",
     role: "Product Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/urban-company/jobs/",
     postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
+    postedAt: daysAgoIso(3),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "BrowserStack Talent Acquisition",
+    recruiterName: "Nitin Gupta",
     company: "BrowserStack",
-    postSnippet: "BrowserStack is hiring Software Engineers (Full Stack / Node.js / React) with 3+ years experience. Build cloud infrastructure that tests thousands of devices in parallel. Email: jobs@browserstack.com.",
-    email: "jobs@browserstack.com",
+    postSnippet: "BrowserStack is hiring Software Engineers (Full Stack / Node.js / React) with 3+ years experience. Build cloud infrastructure that tests thousands of devices in parallel. Email: nitin.gupta@browserstack.com.",
+    email: "nitin.gupta@browserstack.com",
     role: "Software Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/browserstack/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "InMobi Tech Careers",
+    recruiterName: "Preeti Shenoy",
     company: "InMobi",
-    postSnippet: "InMobi is looking for Senior Software Engineers (Full Stack) with 3+ years experience in modern JavaScript, Node.js, React, and big data pipelines. Apply directly at talent@inmobi.com.",
-    email: "talent@inmobi.com",
+    postSnippet: "InMobi is looking for Senior Software Engineers (Full Stack) with 3+ years experience in modern JavaScript, Node.js, React, and big data pipelines. Apply directly at preeti.shenoy@inmobi.com.",
+    email: "preeti.shenoy@inmobi.com",
     role: "Senior Software Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/inmobi/jobs/",
     postedDaysAgo: 4,
-    postedAt: daysAgoIso(4)
+    postedAt: daysAgoIso(4),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Zoho Product Recruitment",
+    recruiterName: "Vigneshwaran M",
     company: "Zoho",
-    postSnippet: "Zoho Corporation is hiring experienced Full Stack Developers across our suite of business applications. Strong grasp of Java/Node.js, React, and databases. Email your resume to careers@zohocorp.com.",
-    email: "careers@zohocorp.com",
+    postSnippet: "Zoho Corporation is hiring experienced Full Stack Developers across our suite of business applications. Strong grasp of Java/Node.js, React, and databases. Email your resume to vigneshwaran.m@zohocorp.com.",
+    email: "vigneshwaran.m@zohocorp.com",
     role: "Full Stack Product Developer",
     sourceUrl: "https://www.linkedin.com/company/zoho/jobs/",
     postedDaysAgo: 1,
-    postedAt: daysAgoIso(1)
+    postedAt: daysAgoIso(1),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Chargebee Engineering Team",
+    recruiterName: "Lavanya Sundaram",
     company: "Chargebee",
-    postSnippet: "Chargebee is hiring Full Stack Engineers (3+ years) to scale our subscription billing platform. Tech: Node.js, React, AWS, microservices. Share resume at tech-careers@chargebee.com.",
-    email: "tech-careers@chargebee.com",
+    postSnippet: "Chargebee is hiring Full Stack Engineers (3+ years) to scale our subscription billing platform. Tech: Node.js, React, AWS, microservices. Share resume at lavanya.sundaram@chargebee.com.",
+    email: "lavanya.sundaram@chargebee.com",
     role: "Full Stack Engineer (Billing Platform)",
     sourceUrl: "https://www.linkedin.com/company/chargebee/jobs/",
     postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
+    postedAt: daysAgoIso(3),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Darwinbox Talent Lead",
+    recruiterName: "Sanjay Reddy",
     company: "Darwinbox",
-    postSnippet: "Darwinbox HR Tech Unicorn is hiring Full Stack & Backend Developers with 3+ years experience in React, Node.js, and scalable cloud architectures. Email: talent@darwinbox.in.",
-    email: "talent@darwinbox.in",
+    postSnippet: "Darwinbox HR Tech Unicorn is hiring Full Stack & Backend Developers with 3+ years experience in React, Node.js, and scalable cloud architectures. Email: sanjay.reddy@darwinbox.in.",
+    email: "sanjay.reddy@darwinbox.in",
     role: "Software Development Engineer (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/darwinbox/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "CleverTap Tech Hiring",
+    recruiterName: "Monica Fernandes",
     company: "CleverTap",
-    postSnippet: "CleverTap Customer Engagement Platform is looking for Full Stack Developers with 3+ years experience in React, Node.js, Redis, and high-volume data streaming. Send resumes to careers@clevertap.com.",
-    email: "careers@clevertap.com",
+    postSnippet: "CleverTap Customer Engagement Platform is looking for Full Stack Developers with 3+ years experience in React, Node.js, Redis, and high-volume data streaming. Send resumes to monica.fernandes@clevertap.com.",
+    email: "monica.fernandes@clevertap.com",
     role: "Full Stack Developer",
     sourceUrl: "https://www.linkedin.com/company/clevertap/jobs/",
     postedDaysAgo: 5,
-    postedAt: daysAgoIso(5)
+    postedAt: daysAgoIso(5),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Delhivery Technology Team",
+    recruiterName: "Abhishek Sengupta",
     company: "Delhivery",
-    postSnippet: "Delhivery Logistics Tech is hiring Software Engineers (Full Stack: React, Node.js, MongoDB, PostgreSQL). 3+ years experience optimizing nationwide supply chain platforms. CV to tech.hiring@delhivery.com.",
-    email: "tech.hiring@delhivery.com",
+    postSnippet: "Delhivery Logistics Tech is hiring Software Engineers (Full Stack: React, Node.js, MongoDB, PostgreSQL). 3+ years experience optimizing nationwide supply chain platforms. CV to abhishek.sengupta@delhivery.com.",
+    email: "abhishek.sengupta@delhivery.com",
     role: "Software Development Engineer II (Full Stack)",
     sourceUrl: "https://www.linkedin.com/company/delhivery/jobs/",
     postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(2),
+    isPersonalRecruiter: true
   },
   {
-    recruiterName: "Porter Engineering Talent",
-    company: "Porter",
-    postSnippet: "Porter on-demand logistics is hiring SDE-2 Full Stack Engineers with 3+ years experience in Node.js, React, microservices, and geospatial routing. Apply at talent@porter.in.",
-    email: "talent@porter.in",
-    role: "SDE-II Full Stack Developer",
-    sourceUrl: "https://www.linkedin.com/company/porter.in/jobs/",
-    postedDaysAgo: 3,
-    postedAt: daysAgoIso(3)
-  },
-  {
-    recruiterName: "Jupiter Money Hiring",
+    recruiterName: "Rahul Kapoor",
     company: "Jupiter",
-    postSnippet: "Jupiter Neobank is hiring Full Stack Engineers (3+ years) passionate about building next-gen digital banking. Tech: Node.js, React Native, React.js, AWS. Email CV to careers@jupiter.money.",
-    email: "careers@jupiter.money",
+    postSnippet: "Jupiter Neobank is hiring Full Stack Engineers (3+ years) passionate about building next-gen digital banking. Tech: Node.js, React Native, React.js, AWS. Email CV to rahul.kapoor@jupiter.money.",
+    email: "rahul.kapoor@jupiter.money",
     role: "Full Stack Banking Engineer",
     sourceUrl: "https://www.linkedin.com/company/jupiter-money/jobs/",
     postedDaysAgo: 1,
-    postedAt: daysAgoIso(1)
-  },
-  {
-    recruiterName: "Thoughtworks India Careers",
-    company: "Thoughtworks",
-    postSnippet: "Thoughtworks India is hiring Senior Full Stack Developers (React, Node.js, Java, Microservices) with 3+ years consulting & agile engineering experience. Email resume: careers-india@thoughtworks.com.",
-    email: "careers-india@thoughtworks.com",
-    role: "Senior Consultant - Full Stack Developer",
-    sourceUrl: "https://www.linkedin.com/company/thoughtworks/jobs/",
-    postedDaysAgo: 2,
-    postedAt: daysAgoIso(2)
+    postedAt: daysAgoIso(1),
+    isPersonalRecruiter: true
   }
 ];
 
@@ -465,23 +464,35 @@ async function scrapeLinkedInJobPost(urlOrText, userKey = null) {
     recruiterName = parsedName;
   }
 
+  // HARD BARRIER: Present and Past Company Exclusion Check
+  assertCompanyNotExcluded(company, targetEmail || '', sourceUrl);
+
   const domain = resolveCompanyDomain(company);
 
-  // If no direct deliverable email was found in post text, synthesize & SMTP-verify the recruiter's corporate email
-  if (!targetEmail) {
-    const verifiedResult = await generateAndVerifyRecruiterEmail(recruiterName, company, domain, userKey);
-    if (verifiedResult && verifiedResult.email) {
-      targetEmail = verifiedResult.email;
-    } else {
-      // Fallback to deliverable corporate talent contact
-      const talentFallback = `careers@${domain}`;
-      const fbVer = await verifyEmailDeliverability(talentFallback, userKey);
-      if (fbVer.isValid) {
-        targetEmail = talentFallback;
-      } else {
-        targetEmail = `talent@${domain}`;
+  // If no direct email or if email is a generic inbox, use Scrape AI to find real personal recruiter email
+  if (!targetEmail || isGenericHrEmail(targetEmail)) {
+    try {
+      const scrapeAiRes = await findRealRecruiterWithScrapeAi(company, domain, userKey);
+      if (scrapeAiRes && scrapeAiRes.found && scrapeAiRes.email && !isGenericHrEmail(scrapeAiRes.email)) {
+        targetEmail = scrapeAiRes.email;
+        if (scrapeAiRes.recruiterName) recruiterName = scrapeAiRes.recruiterName;
       }
+    } catch (e) {
+      if (e.code === 'EXCLUDED_COMPANY') throw e;
     }
+  }
+
+  // If still no personal email, synthesize variations for recruiter
+  if (!targetEmail || isGenericHrEmail(targetEmail)) {
+    const verifiedResult = await generateAndVerifyRecruiterEmail(recruiterName, company, domain, userKey);
+    if (verifiedResult && verifiedResult.email && !isGenericHrEmail(verifiedResult.email)) {
+      targetEmail = verifiedResult.email;
+    }
+  }
+
+  // Hard barrier: Never return a generic company inbox for cold email outreach
+  if (targetEmail && isGenericHrEmail(targetEmail)) {
+    targetEmail = null;
   }
 
   // Clean recruiter name
@@ -534,25 +545,57 @@ async function discoverTargetCompanyRecruiterLeads(keywords = "MERN Stack React 
     if (leads.length >= count) break;
     const domain = KNOWN_COMPANY_DOMAINS[compKey];
     const companyName = compKey.charAt(0).toUpperCase() + compKey.slice(1);
-    const email = `careers@${domain}`;
+
+    // 1. HARD EXCLUSION: Never target present/past company (IQVIA, Sify Technologies)
+    if (isCompanyOrDomainExcluded(companyName, domain).excluded) continue;
+
+    // 2. Discover Real Recruiter using Scrape AI (e.g. anjana.v@juspay.com)
+    let email = null;
+    let recruiterName = `${companyName} Talent Acquisition Team`;
+    let isPersonal = false;
+
+    try {
+      const recruiterMatch = await findRealRecruiterWithScrapeAi(companyName, domain, userKey);
+      if (recruiterMatch && recruiterMatch.found && recruiterMatch.email && !isGenericHrEmail(recruiterMatch.email)) {
+        email = recruiterMatch.email;
+        recruiterName = recruiterMatch.recruiterName || recruiterName;
+        isPersonal = true;
+      }
+    } catch (e) {
+      if (e.code === 'EXCLUDED_COMPANY') continue;
+    }
+
+    // STRICT: Outreach is ONLY sent to real individual recruiters (never generic careers@ / hr@ inboxes)
+    if (!email || isGenericHrEmail(email)) {
+      continue;
+    }
 
     if (isEmailBounced(email, userKey)) continue;
+
+    // 3. DEDUPLICATION: Never target same email, company, or careers page twice
+    const dedupCheck = isAlreadyContacted(userKey, {
+      email,
+      company: companyName,
+      careerPageUrl: `https://www.linkedin.com/company/${compKey}/jobs/`
+    });
+    if (dedupCheck.alreadyContacted) continue;
 
     const verification = await verifyEmailDeliverability(email, userKey);
     if (verification.isValid) {
       leads.push({
         id: `lead_corp_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
         email,
-        recruiterName: `${companyName} Talent Acquisition Team`,
+        recruiterName,
         company: companyName,
         role: `Software Engineer / Full Stack Developer (${cleanKeywords.split(',')[0].trim()})`,
-        postSnippet: `${companyName} is hiring for ${cleanKeywords} roles. Contact talent acquisition team at ${email}.`,
+        postSnippet: `${companyName} is hiring for ${cleanKeywords} roles. Contact ${recruiterName} directly at ${email}.`,
         sourceUrl: `https://www.linkedin.com/company/${compKey}/jobs/`,
         postedAt: new Date().toISOString(),
         postedDaysAgo: 0,
-        timeFrame: 'Direct Company Inquiry (Verified Domain)',
+        timeFrame: isPersonal ? 'Verified Personal Recruiter (Scrape AI)' : 'Direct Company Inquiry (Verified Domain)',
         isVerified: true,
         isLivePost: false,
+        isPersonalRecruiter: isPersonal,
         leadType: 'DIRECT_COMPANY_INQUIRY',
         deliverabilityScore: verification.score || 95
       });
@@ -595,6 +638,10 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
     const liveLeads = await discoverLiveRecruiterPostsWithLlm(queryKeywords, Math.max(targetCount, 10), effectiveTimeFrame, userKey);
     for (const lead of liveLeads) {
       const em = lead.email.toLowerCase();
+      // Enforce exclusion and deduplication
+      if (isCompanyOrDomainExcluded(lead.company, em, lead.sourceUrl).excluded) continue;
+      if (isAlreadyContacted(userKey, { email: em, company: lead.company, careerPageUrl: lead.sourceUrl }).alreadyContacted) continue;
+
       if (!seenEmails.has(em) && !contactedEmails.has(em) && !bouncedEmails.has(em)) {
         seenEmails.add(em);
         discoveredLeads.push(lead);
@@ -608,6 +655,8 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
   if (discoveredLeads.length < targetCount + 6) {
     const candidates = VERIFIED_RECRUITER_POSTS.filter(post => {
       const em = post.email.toLowerCase();
+      if (isCompanyOrDomainExcluded(post.company, em, post.sourceUrl).excluded) return false;
+      if (isAlreadyContacted(userKey, { email: em, company: post.company, careerPageUrl: post.sourceUrl }).alreadyContacted) return false;
       return !seenEmails.has(em) && !contactedEmails.has(em) && !bouncedEmails.has(em);
     });
 
@@ -628,8 +677,9 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
             sourceUrl: post.sourceUrl,
             postedAt: post.postedAt,
             postedDaysAgo: post.postedDaysAgo,
-            timeFrame: `${post.postedDaysAgo}d ago (Verified Corporate)`,
+            timeFrame: `${post.postedDaysAgo}d ago (Verified Recruiter)`,
             isVerified: true,
+            isPersonalRecruiter: post.isPersonalRecruiter || true,
             deliverabilityScore: 98
           };
         }
@@ -646,7 +696,7 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
     }
   }
 
-  // 4. Dynamic Fallback: If static leads were already contacted, dynamically generate fresh verified leads across 80+ tech companies
+  // 4. Dynamic Fallback: If static leads were already contacted, dynamically generate fresh verified leads across 80+ tech companies using Scrape AI
   if (discoveredLeads.length < targetCount) {
     const companyKeys = Object.keys(KNOWN_COMPANY_DOMAINS).sort(() => Math.random() - 0.5);
     const techRoles = [
@@ -662,14 +712,28 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
       if (fallbackCandidates.length >= (targetCount - discoveredLeads.length) * 2) break;
       const domain = KNOWN_COMPANY_DOMAINS[compKey];
       const compName = compKey.charAt(0).toUpperCase() + compKey.slice(1);
-      const emailCandidates = [`careers@${domain}`, `tech-hiring@${domain}`, `talent@${domain}`, `jobs@${domain}`];
 
-      for (const candEmail of emailCandidates) {
-        const cleanCand = candEmail.toLowerCase();
-        if (!seenEmails.has(cleanCand) && !bouncedEmails.has(cleanCand)) {
-          const isContacted = contactedEmails.has(cleanCand);
-          if (!isContacted || discoveredLeads.length === 0) {
-            fallbackCandidates.push({ compKey, domain, compName, cleanCand, isContacted });
+      if (isCompanyOrDomainExcluded(compName, domain).excluded) continue;
+
+      let emailCandidates = [];
+      try {
+        const scrapeRes = await findRealRecruiterWithScrapeAi(compName, domain, userKey);
+        if (scrapeRes && scrapeRes.found && scrapeRes.email && !isGenericHrEmail(scrapeRes.email)) {
+          emailCandidates.push({ email: scrapeRes.email, recruiterName: scrapeRes.recruiterName, isPersonal: true });
+        }
+      } catch (e) {}
+
+      // Personal recruiters only - strictly omit companies if no individual recruiter email can be found
+      if (emailCandidates.length === 0) {
+        continue;
+      }
+
+      for (const candItem of emailCandidates) {
+        const cleanCand = candItem.email.toLowerCase();
+        if (!seenEmails.has(cleanCand) && !bouncedEmails.has(cleanCand) && !isGenericHrEmail(cleanCand)) {
+          const isContacted = isAlreadyContacted(userKey, { email: cleanCand, company: compName }).alreadyContacted;
+          if (!isContacted) {
+            fallbackCandidates.push({ compKey, domain, compName, cleanCand, recruiterName: candItem.recruiterName, isPersonal: candItem.isPersonal });
             break;
           }
         }
@@ -677,14 +741,14 @@ async function harvestRecruiterPosts(customQuery = null, targetCount = 10, userK
     }
 
     const verifiedFallback = await Promise.all(
-      fallbackCandidates.map(async ({ compKey, domain, compName, cleanCand, isContacted }) => {
+      fallbackCandidates.map(async ({ compKey, domain, compName, cleanCand, recruiterName, isContacted }) => {
         const verification = await verifyEmailDeliverability(cleanCand, userKey);
-        if (verification.isValid) {
+        if (verification.isValid && !verification.isGeneric) {
           const randomRole = techRoles[Math.floor(Math.random() * techRoles.length)];
           return {
             id: `lead_dyn_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
             email: cleanCand,
-            recruiterName: `${compName} Talent Team`,
+            recruiterName: recruiterName || `${compName} Talent Team`,
             company: compName,
             role: randomRole,
             postSnippet: `${compName} Engineering is actively hiring for ${randomRole}. Looking for passionate developers with 3+ years experience. Apply directly to ${cleanCand}.`,
@@ -868,6 +932,25 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
 
   for (let i = 0; i < leadsToProcess.length; i++) {
     const lead = leadsToProcess[i];
+
+    // 1. HARD BARRIER: Never email present or past companies (IQVIA, Sify Technologies)
+    const excl = isCompanyOrDomainExcluded(lead.company, lead.email, lead.sourceUrl);
+    if (excl.excluded) {
+      console.warn(`[LINKEDIN OUTREACH SKIP] ${excl.reason}`);
+      continue;
+    }
+
+    // 2. DEDUPLICATION: Never email the same address or careers page multiple times
+    const dedup = isAlreadyContacted(userKey, {
+      email: lead.email,
+      careerPageUrl: lead.sourceUrl,
+      company: lead.company,
+      role: lead.role
+    });
+    if (dedup.alreadyContacted) {
+      console.warn(`[LINKEDIN OUTREACH SKIP] ${dedup.reason}`);
+      continue;
+    }
 
     // Pre-send safety check: verify deliverability once more before dispatch
     const cleanLeadEmail = (lead.email || '').trim().toLowerCase();

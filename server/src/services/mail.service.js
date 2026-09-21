@@ -124,7 +124,17 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
     throw new Error(`Self-Email Blocked: Cold outreach cannot be sent to your own email address (${cleanTo}). Please provide a recruiter's work email.`);
   }
 
-  // 2. Deliverability & Anti-Bounce verification (for cold outreach)
+  // 2. Guard against sending cold outreach to generic company inboxes (hr@, careers@, jobs@, talent@, etc.)
+  if (!options.isAlert) {
+    const { isGenericHrEmail } = require('./email_verifier.service');
+    if (isGenericHrEmail(cleanTo)) {
+      const err = new Error(`Generic HR Email Blocked: Sending cold outreach to generic inboxes (${cleanTo}) is strictly prohibited. Emails must be sent directly to real, individual recruiters (e.g. anjana.v@juspay.com) to ensure visibility.`);
+      err.code = 'GENERIC_HR_BLOCKED';
+      throw err;
+    }
+  }
+
+  // 3. Deliverability & Anti-Bounce verification (for cold outreach)
   if (!options.isAlert) {
     try {
       const { verifyEmailDeliverability } = require('./email_verifier.service');
@@ -133,15 +143,39 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
         throw new Error(`Undeliverable Email Blocked: ${deliverability.reason} (${cleanTo}). Email was not sent to protect your Gmail reputation.`);
       }
     } catch (err) {
-      if (err.message.includes('Undeliverable Email Blocked')) throw err;
+      if (err.message.includes('Undeliverable Email Blocked') || err.code === 'GENERIC_HR_BLOCKED') throw err;
     }
+  }
+
+  // 4. Pre-send Duplicate Check: Stop sending duplicate emails to the same HR multiple times!
+  if (!options.isAlert && !options.bypassDedup) {
+    const { assertNotSentToHr } = require('./dedup.service');
+    assertNotSentToHr(userKey, cleanTo, {
+      company: options.company,
+      hrName: options.hrName,
+      subject
+    });
   }
 
   const { isTestModeActive, shouldMockEmails, blockDestructiveAction } = require('./safety_guard.service');
   if (isTestModeActive() || shouldMockEmails()) {
     blockDestructiveAction('GMAIL_SEND_EMAIL', { to: cleanTo, subject, attachmentName });
+    const mockId = `mock_msg_${Date.now()}`;
+    if (!options.isAlert) {
+      try {
+        const { recordSentHr } = require('./dedup.service');
+        recordSentHr(userKey, {
+          email: cleanTo,
+          hrName: options.hrName || 'HR Recruiter',
+          company: options.company || 'Company',
+          subject,
+          messageId: mockId,
+          sourceUrl: options.sourceUrl || options.careerPageUrl || ''
+        });
+      } catch (e) {}
+    }
     return {
-      id: `mock_msg_${Date.now()}`,
+      id: mockId,
       threadId: `mock_thread_${Date.now()}`,
       labelIds: ['SENT'],
       isMock: true,
@@ -166,6 +200,23 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
     }
   });
 
+  // 5. Post-Send Logging: Record sent HR immediately in persistent registry
+  if (!options.isAlert) {
+    try {
+      const { recordSentHr } = require('./dedup.service');
+      recordSentHr(userKey, {
+        email: cleanTo,
+        hrName: options.hrName || 'HR Recruiter',
+        company: options.company || 'Company',
+        subject,
+        messageId: res.data?.id,
+        sourceUrl: options.sourceUrl || options.careerPageUrl || ''
+      });
+    } catch (e) {
+      console.warn('[DEDUP LOG WARN] Failed to record sent HR:', e.message);
+    }
+  }
+
   return res.data;
 }
 
@@ -181,6 +232,23 @@ async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey =
   // 1. Guard against sending cold outreach to candidate's own email address
   if (cleanTo === 'tksanthosh494@gmail.com' || (userKey && cleanTo === userKey.replace(/_/g, '@'))) {
     throw new Error(`Self-Email Blocked: Cold outreach cannot be sent to your own email address (${cleanTo}).`);
+  }
+
+  // 2. Guard against drafting cold outreach to generic company inboxes
+  const { isGenericHrEmail } = require('./email_verifier.service');
+  if (isGenericHrEmail(cleanTo)) {
+    const err = new Error(`Generic HR Email Blocked: Cold outreach drafts to generic inboxes (${cleanTo}) are prohibited. Please use a verified personal recruiter email (e.g. anjana.v@juspay.com).`);
+    err.code = 'GENERIC_HR_BLOCKED';
+    throw err;
+  }
+
+  // 3. Pre-draft Duplicate Check: Stop drafting emails to already contacted HRs
+  const { hasAlreadySentToHr } = require('./dedup.service');
+  const hrCheck = hasAlreadySentToHr(userKey, cleanTo);
+  if (hrCheck.alreadySent) {
+    const err = new Error(hrCheck.reason);
+    err.code = 'DUPLICATE_HR_EMAIL_BLOCKED';
+    throw err;
   }
 
   let oauth2Client;

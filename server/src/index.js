@@ -22,8 +22,11 @@ const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, scrapeLinkedInJobPost, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
-const { verifyEmailDeliverability } = require('./services/email_verifier.service');
+const { verifyEmailDeliverability, isGenericHrEmail } = require('./services/email_verifier.service');
 const { scanGmailBounces, getBouncedEmails, clearBounces } = require('./services/bounce.service');
+const { isCompanyOrDomainExcluded, assertCompanyNotExcluded, getExcludedCompanies, addExcludedCompany } = require('./services/company_exclusion.service');
+const { isAlreadyContacted, assertNotAlreadyContacted, hasAlreadySentToHr, assertNotSentToHr, getSentHrRegistry } = require('./services/dedup.service');
+const { findRealRecruiterWithScrapeAi } = require('./services/scrape_ai.service');
 const {
   getNaukriConfig,
   getNaukriConfigAsync,
@@ -701,6 +704,12 @@ app.post('/api/generate', async (req, res) => {
     const finalCompany = company || parsed.company;
     const targetDomain = parsed.domain;
 
+    // HARD BARRIER: Never generate cold outreach for present or past company (IQVIA, Sify Technologies)
+    const excl = isCompanyOrDomainExcluded(finalCompany, rawEmail, req.body.url || req.body.careerPageUrl);
+    if (excl.excluded) {
+      return res.status(403).json({ error: excl.reason, code: 'EXCLUDED_COMPANY', matchedCompany: excl.matchedCompany });
+    }
+
     const standardResume = getUserResume(userKey);
 
     // Parallel Concurrency: Run Scraping, Resume Tailoring, and Cold Email Generation in parallel
@@ -751,6 +760,42 @@ app.post('/api/send', async (req, res) => {
     return res.status(400).json({ error: `Self-Email Blocked: You cannot send cold outreach emails to your own email address (${email}). Please specify a recruiter's email.` });
   }
 
+  const targetCompany = company || parseHrEmail(cleanEmail).company;
+  const careerUrl = req.body.jobUrl || req.body.careerPageUrl || req.body.sourceUrl || '';
+
+  // 1. HARD BARRIER: Present / Past company check (IQVIA, Sify Technologies)
+  const exclusionCheck = isCompanyOrDomainExcluded(targetCompany, cleanEmail, careerUrl);
+  if (exclusionCheck.excluded) {
+    return res.status(403).json({
+      error: exclusionCheck.reason,
+      code: 'EXCLUDED_COMPANY',
+      matchedCompany: exclusionCheck.matchedCompany
+    });
+  }
+
+  // 2. DEDUPLICATION: Stop sending to same email or same careers page multiple times
+  const dedupCheck = isAlreadyContacted(userKey, {
+    email: cleanEmail,
+    company: targetCompany,
+    careerPageUrl: careerUrl,
+    role: req.body.role
+  });
+  if (dedupCheck.alreadyContacted && !req.body.forceSend) {
+    return res.status(409).json({
+      error: dedupCheck.reason,
+      code: 'DUPLICATE_CONTACT_BLOCKED',
+      previousContact: dedupCheck.previousContact
+    });
+  }
+
+  // 3. HARD BARRIER: Real Recruiter Enforcement - Strictly reject generic HR inboxes
+  if (isGenericHrEmail(cleanEmail)) {
+    return res.status(400).json({
+      error: `Generic HR Email Blocked: Sending cold outreach to generic company inboxes (${cleanEmail}) is strictly prohibited. You must send emails directly to real, individual recruiters (e.g. anjana.v@juspay.com). Use Scrape AI to discover real recruiter contacts.`,
+      code: 'GENERIC_HR_BLOCKED'
+    });
+  }
+
   // Check Review Queue Mode (if active and not explicitly skipped)
   if (REQUIRE_OUTREACH_APPROVAL && !skipReview) {
     const reviewItem = {
@@ -758,7 +803,7 @@ app.post('/api/send', async (req, res) => {
       type: 'email',
       createdAt: new Date().toISOString(),
       userKey,
-      payload: { email, subject, body, resume, hrName, company, resumeType },
+      payload: { email, subject, body, resume, hrName, company, resumeType, jobUrl: careerUrl },
       status: 'PENDING_REVIEW'
     };
     if (!reviewQueue.has(userKey)) reviewQueue.set(userKey, []);
@@ -803,7 +848,11 @@ app.post('/api/send', async (req, res) => {
     const tempPdfPath = path.join(userPaths.uploadsDir, `${sanitizedName}_${Date.now()}.pdf`);
 
     await generateResumePdf(targetResume, tempPdfPath);
-    const result = await sendGmail(email, subject, cleanBody, tempPdfPath, userKey);
+    const result = await sendGmail(email, subject, cleanBody, tempPdfPath, userKey, `${sanitizedName}.pdf`, {
+      hrName: hrName || 'HR',
+      company: targetCompany || 'Company',
+      sourceUrl: careerUrl
+    });
 
     try { if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath); } catch (e) {}
 
@@ -817,7 +866,8 @@ app.post('/api/send', async (req, res) => {
       body: cleanBody,
       status: 'Sent',
       resumeType: resumeType || 'Standard',
-      messageId: result.id
+      messageId: result.id,
+      sourceUrl: careerUrl
     });
 
     res.json({ success: true, message: 'Email sent successfully with tailored PDF attached!', result });
@@ -832,7 +882,8 @@ app.post('/api/send', async (req, res) => {
       subject,
       body,
       status: 'Failed: ' + e.message,
-      resumeType: resumeType || 'Standard'
+      resumeType: resumeType || 'Standard',
+      sourceUrl: careerUrl
     });
     res.status(500).json({ error: e.message });
   }
@@ -857,6 +908,41 @@ app.post('/api/draft', async (req, res) => {
   const cleanEmail = (email || '').trim().toLowerCase();
   if (cleanEmail === 'tksanthosh494@gmail.com' || (userKey && cleanEmail === userKey.replace(/_/g, '@'))) {
     return res.status(400).json({ error: `Self-Email Blocked: You cannot create drafts addressed to your own email (${email}).` });
+  }
+
+  const targetCompany = company || parseHrEmail(cleanEmail).company;
+  const careerUrl = req.body.jobUrl || req.body.careerPageUrl || req.body.sourceUrl || '';
+
+  // 1. HARD BARRIER: Present / Past company check (IQVIA, Sify Technologies)
+  const exclusionCheck = isCompanyOrDomainExcluded(targetCompany, cleanEmail, careerUrl);
+  if (exclusionCheck.excluded) {
+    return res.status(403).json({
+      error: exclusionCheck.reason,
+      code: 'EXCLUDED_COMPANY',
+      matchedCompany: exclusionCheck.matchedCompany
+    });
+  }
+
+  // 2. DEDUPLICATION: Stop creating drafts for already contacted email or careers page
+  const dedupCheck = isAlreadyContacted(userKey, {
+    email: cleanEmail,
+    company: targetCompany,
+    careerPageUrl: careerUrl
+  });
+  if (dedupCheck.alreadyContacted && !req.body.forceDraft) {
+    return res.status(409).json({
+      error: dedupCheck.reason,
+      code: 'DUPLICATE_CONTACT_BLOCKED',
+      previousContact: dedupCheck.previousContact
+    });
+  }
+
+  // 3. HARD BARRIER: Real Recruiter Enforcement - Strictly reject generic HR inboxes
+  if (isGenericHrEmail(cleanEmail)) {
+    return res.status(400).json({
+      error: `Generic HR Email Blocked: Creating drafts for generic company inboxes (${cleanEmail}) is strictly prohibited. You must direct outreach to individual recruiters (e.g. anjana.v@juspay.com).`,
+      code: 'GENERIC_HR_BLOCKED'
+    });
   }
 
   try {
@@ -895,7 +981,8 @@ app.post('/api/draft', async (req, res) => {
       body: cleanBody,
       status: 'Draft Saved (Ready in Gmail App)',
       resumeType: resumeType || 'Standard',
-      draftId: result.id
+      draftId: result.id,
+      sourceUrl: careerUrl
     });
 
     res.json({ success: true, message: 'Draft saved in Gmail with tailored PDF attached!', result });
@@ -921,6 +1008,32 @@ app.post('/api/schedule', (req, res) => {
   const cleanSchedEmail = (email || '').trim().toLowerCase();
   if (cleanSchedEmail === 'tksanthosh494@gmail.com' || (userKey && cleanSchedEmail === userKey.replace(/_/g, '@'))) {
     return res.status(400).json({ error: `Self-Email Blocked: You cannot schedule cold emails to your own email (${email}).` });
+  }
+
+  const targetSchedCompany = company || parseHrEmail(cleanSchedEmail).company;
+
+  // 1. HARD BARRIER: Present / Past company check
+  const exclusionCheck = isCompanyOrDomainExcluded(targetSchedCompany, cleanSchedEmail);
+  if (exclusionCheck.excluded) {
+    return res.status(403).json({ error: exclusionCheck.reason, code: 'EXCLUDED_COMPANY' });
+  }
+
+  // 2. HARD BARRIER: Generic HR check
+  if (isGenericHrEmail(cleanSchedEmail)) {
+    return res.status(400).json({
+      error: `Generic HR Email Blocked: Scheduling cold emails to generic inboxes (${cleanSchedEmail}) is strictly prohibited. Real recruiter email required.`,
+      code: 'GENERIC_HR_BLOCKED'
+    });
+  }
+
+  // 3. DEDUPLICATION: Stop scheduling emails to already contacted HRs
+  const hrCheck = hasAlreadySentToHr(userKey, cleanSchedEmail);
+  if (hrCheck.alreadySent) {
+    return res.status(409).json({
+      error: hrCheck.reason,
+      code: 'DUPLICATE_CONTACT_BLOCKED',
+      previousContact: hrCheck.contact
+    });
   }
 
   let cleanBody = body;
@@ -1659,7 +1772,19 @@ app.post('/api/outreach/review/:id/approve', async (req, res) => {
 
   try {
     if (target.type === 'email') {
-      const { email, subject, body, resume, hrName, company, resumeType } = target.payload;
+      const { email, subject, body, resume, hrName, company, resumeType, jobUrl } = target.payload;
+
+      // 1. HARD BARRIER: Check exclusion
+      assertCompanyNotExcluded(company, email, jobUrl);
+
+      // 2. DEDUPLICATION: Check already contacted
+      assertNotAlreadyContacted(userKey, { email, company, careerPageUrl: jobUrl });
+
+      // 3. HARD BARRIER: Real Recruiter Enforcement
+      if (isGenericHrEmail(email)) {
+        throw new Error(`Generic HR Email Blocked: Sending cold outreach to generic company inboxes (${email}) is strictly prohibited. Real recruiter email required.`);
+      }
+
       const userPaths = getUserPaths(userKey);
       const candidateName = resume?.personalInfo?.name || 'Resume';
       const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1678,14 +1803,15 @@ app.post('/api/outreach/review/:id/approve', async (req, res) => {
         body,
         status: 'Sent (Approved from Review Queue)',
         resumeType: resumeType || 'Standard',
-        messageId: result.id
+        messageId: result.id,
+        sourceUrl: jobUrl || ''
       });
     }
 
     reviewQueue.set(userKey, items.filter(i => i.id !== id));
-    res.json({ success: true, message: 'Item approved and processed successfully.' });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
+    res.json({ success: true, message: 'Item approved and email sent.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -1705,7 +1831,27 @@ app.post('/api/outreach/review/approve-all', async (req, res) => {
   for (const item of items) {
     try {
       if (item.type === 'email') {
-        const { email, subject, body, resume, hrName, company, resumeType } = item.payload;
+        const { email, subject, body, resume, hrName, company, resumeType, jobUrl } = item.payload;
+
+        // Skip excluded or already contacted items
+        const excl = isCompanyOrDomainExcluded(company, email, jobUrl);
+        if (excl.excluded) {
+          results.push({ id: item.id, status: 'Skipped (Excluded Company)', reason: excl.reason });
+          continue;
+        }
+
+        const dedup = isAlreadyContacted(userKey, { email, company, careerPageUrl: jobUrl });
+        if (dedup.alreadyContacted) {
+          results.push({ id: item.id, status: 'Skipped (Already Contacted)', reason: dedup.reason });
+          continue;
+        }
+
+        // Skip generic HR inboxes
+        if (isGenericHrEmail(email)) {
+          results.push({ id: item.id, status: 'Skipped (Generic HR Blocked)', reason: `Generic company inbox (${email}) blocked. Must use real recruiter email.` });
+          continue;
+        }
+
         const userPaths = getUserPaths(userKey);
         const candidateName = resume?.personalInfo?.name || 'Resume';
         const sanitizedName = candidateName.replace(/[^a-zA-Z0-9_-]/g, '_');
@@ -1724,7 +1870,8 @@ app.post('/api/outreach/review/approve-all', async (req, res) => {
           body,
           status: 'Sent (Approved All from Review Queue)',
           resumeType: resumeType || 'Standard',
-          messageId: result.id
+          messageId: result.id,
+          sourceUrl: jobUrl || ''
         });
         results.push({ id: item.id, status: 'Sent' });
       }
@@ -1735,6 +1882,61 @@ app.post('/api/outreach/review/approve-all', async (req, res) => {
 
   reviewQueue.set(userKey, []);
   res.json({ success: true, results, processedCount: results.length });
+});
+
+// --- SCRAPE AI RECRUITER DISCOVERY ENDPOINT ---
+app.post('/api/recruiter/find-scrape-ai', async (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { company, domain, careerPageUrl } = req.body;
+
+  if (!company) {
+    return res.status(400).json({ error: 'Company name is required.' });
+  }
+
+  try {
+    const result = await findRealRecruiterWithScrapeAi(company, domain || careerPageUrl, userKey);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    const statusCode = err.code === 'EXCLUDED_COMPANY' ? 403 : 500;
+    res.status(statusCode).json({ success: false, error: err.message, code: err.code });
+  }
+});
+
+// --- EXCLUDED COMPANIES API ---
+app.get('/api/exclusions', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const exclusions = getExcludedCompanies(userKey);
+  res.json({ success: true, exclusions, count: exclusions.length });
+});
+
+app.post('/api/exclusions', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const { name, reason, type, aliases, domains } = req.body;
+  if (!name) return res.status(400).json({ error: 'Company name is required' });
+
+  const updated = addExcludedCompany({ name, reason, type, aliases, domains });
+  res.json({ success: true, message: `"${name}" added to excluded companies.`, exclusions: updated });
+});
+
+// --- DEDUPLICATION & HR OUTREACH REGISTRY API ---
+app.get('/api/dedup/check', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const email = (req.query.email || '').trim().toLowerCase();
+  const company = (req.query.company || '').trim();
+  const url = (req.query.url || req.query.careerPageUrl || '').trim();
+
+  if (!email && !url && !company) {
+    return res.json({ alreadyContacted: false });
+  }
+
+  const check = isAlreadyContacted(userKey, { email, company, careerPageUrl: url });
+  res.json({ success: true, ...check });
+});
+
+app.get('/api/hr-outreach/history', (req, res) => {
+  const userKey = resolveUserKey(req, res);
+  const registry = getSentHrRegistry(userKey);
+  res.json({ success: true, count: registry.length, history: registry });
 });
 
 

@@ -190,6 +190,16 @@ function initScheduler() {
             continue;
           }
 
+          const { hasAlreadySentToHr } = require('./dedup.service');
+          const dedupCheck = hasAlreadySentToHr(userKey, job.email);
+          if (dedupCheck.alreadySent) {
+            console.warn(`[SCHEDULER SKIP] ${dedupCheck.reason}`);
+            if (isSupabaseConfigured() && job.id) {
+              supabaseDeleteScheduledJob(job.id).catch(() => {});
+            }
+            continue;
+          }
+
           const userPaths = getUserPaths(userKey);
           const tempPdfPath = path.join(userPaths.uploadsDir || UPLOADS_DIR, `Scheduled_Resume_${Date.now()}.pdf`);
 
@@ -198,7 +208,10 @@ function initScheduler() {
             await generateResumePdf(job.resume, tempPdfPath);
 
             // 2. Send via Gmail using user's OAuth tokens
-            await sendGmail(job.email, job.subject, job.body, tempPdfPath, userKey);
+            await sendGmail(job.email, job.subject, job.body, tempPdfPath, userKey, 'santhosh_t_k.pdf', {
+              hrName: job.hrName,
+              company: job.company
+            });
 
             // 3. Cleanup temp file
             if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);

@@ -56,6 +56,7 @@ function getUserPaths(userKey) {
     logsPath: path.join(userDir, 'logs.json'),
     logsPathGz: path.join(userDir, 'logs.json.gz'),
     scheduledPath: path.join(userDir, 'scheduled.json'),
+    sentHrRegistryPath: path.join(userDir, 'sent_hr_registry.json'),
     naukriConfigPath: path.join(userDir, 'naukri_config.json'),
     naukriHistoryPath: path.join(userDir, 'naukri_history.json'),
     naukriSessionPath: path.join(userDir, 'naukri_session.json')

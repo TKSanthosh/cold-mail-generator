@@ -8,6 +8,7 @@ try {
 }
 const { getUserPaths, ensureUserSandbox, addUserLog } = require('./user.service');
 const { resolveUserResumeFile } = require('./resume.service');
+const { isCompanyOrDomainExcluded, assertCompanyNotExcluded } = require('./company_exclusion.service');
 const {
   getOptimizedLaunchOptions,
   withSingleBrowserLock,
@@ -1418,6 +1419,12 @@ function buildDiverseApplicationQueue(discoveredJobs, filterConfig = {}, pastApp
       if (pastAppliedSet.has(dedupKey)) continue;
     }
 
+    // HARD EXCLUSION: Never apply to present or past employers (IQVIA, Sify Technologies)
+    if (isCompanyOrDomainExcluded(compRaw, '', cleanUrl).excluded) {
+      console.log(`[COMPANY_EXCLUDED] Skipping job "${job.title}" at "${job.company}" - Present or past company excluded.`);
+      continue;
+    }
+
     // STRICT COMPANY EXCLUSION: Never apply to the same company again!
     if (strictCompanyDedup) {
       if (activeExactCompSet.has(compRaw) || (compNorm && activeNormCompSet.has(compNorm))) {
@@ -1637,7 +1644,7 @@ const KNOWN_ENTERPRISE_COMPANIES = new Set([
   'infosys', 'tcs', 'tata consultancy services', 'wipro', 'cognizant', 'accenture', 'hcl', 'hcltech',
   'tech mahindra', 'capgemini', 'ibm', 'oracle', 'sap', 'microsoft', 'amazon', 'aws', 'google',
   'meta', 'facebook', 'apple', 'cisco', 'intel', 'amd', 'nvidia', 'dell', 'hp', 'hewlett packard',
-  'samsung', 'qualcomm', 'broadcom', 'sify', 'sify technologies', 'iqvia', 'swiggy', 'zomato',
+  'samsung', 'qualcomm', 'broadcom', 'swiggy', 'zomato',
   'razorpay', 'paytm', 'one97', 'flipkart', 'myntra', 'jio', 'reliance', 'reliance jio', 'airtel',
   'bharti airtel', 'siemens', 'bosch', 'ltimindtree', 'mindtree', 'l&t infotech', 'cgi', 'dxc',
   'dxc technology', 'ey', 'ernst & young', 'pwc', 'pricewaterhousecoopers', 'deloitte', 'kpmg',
