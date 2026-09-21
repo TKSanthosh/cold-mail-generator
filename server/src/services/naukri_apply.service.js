@@ -1658,7 +1658,9 @@ const KNOWN_ENTERPRISE_COMPANIES = new Set([
   'hitachi', 'sony', 'rakuten', 'mercedes-benz', 'mercedes benz', 'bmw', 'volvo', 'ford',
   'genpact', 'conduent', 'mphasis', 'birlasoft', 'zensar', 'cyient', 'kpit', 'sonata software',
   'hexaware', 'persistent systems', 'coforge', 'niit', 'firstsource', 'exl', 'indegene', 'eclerx',
-  'infobeans', 'eizen', 'aziro', 'indium software', 'otomeyt', 'opey assuredefence'
+  'infobeans', 'eizen', 'aziro', 'indium software', 'otomeyt', 'opey assuredefence',
+  'comcast', 'comcast india', 'fiserv', 'firstsource', 'chevron', 'okta', 'autodesk', 'databricks',
+  'mastercard', 'twilio', 'mongodb', 'assurant', 'newfold digital'
 ]);
 
 /**

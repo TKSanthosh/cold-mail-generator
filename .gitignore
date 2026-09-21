@@ -41,6 +41,8 @@ server/users/
 server/data/
 **/test_sandboxes/**
 data/test_sandboxes/
+*.json.gz
+**/*.json.gz
 
 # Build Outputs (Compiled during deployment)
 dist/
@@ -51,6 +53,7 @@ build/
 # Temporary / Scratch Files
 *.png
 !extension/icons/*.png
+*.gz
 scratch/
 **/scratch/**
 .DS_Store

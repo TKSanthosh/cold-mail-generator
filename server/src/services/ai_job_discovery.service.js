@@ -27,10 +27,70 @@ const path = require('path');
 const { getUserPaths, getUserResume, saveUserApplications, getUserApplications } = require('./user.service');
 const { generateResumePdf } = require('./pdf.service');
 const { isCompanyOrDomainExcluded } = require('./company_exclusion.service');
+const { readCompressedJson, writeCompressedJson } = require('./storage.service');
 
 // Curated pool of 47 verified live enterprise jobs across all Indian tech hubs
-// EVERY single link below is actively verified to navigate directly to the specific open job posting with full job details
 const ENTERPRISE_JOB_BANK = [
+  {
+    "company": "Comcast",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "Global Telecom & Media Enterprise",
+    "employeeCount": "180,000+ Employees",
+    "location": "Chennai / Bengaluru, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹24 - 36 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "Microservices",
+      "AWS",
+      "REST APIs"
+    ],
+    "url": "https://jobs.comcast.com/careers/jobs?keyword=Engineer&location=India",
+    "jd": "Architect and develop high-throughput Full Stack microservices and interactive user dashboards for Comcast India Technology Center. Build resilient cloud-native backends in Node.js, reactive frontends in React/TypeScript, and scalable RESTful interfaces handling millions of connected entertainment and broadband devices."
+  },
+  {
+    "company": "Fiserv",
+    "role": "Software Development Engineer - Full Stack",
+    "category": "Global FinTech Enterprise",
+    "employeeCount": "44,000+ Employees",
+    "location": "Bengaluru / Pune, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹22 - 34 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "JavaScript",
+      "SQL",
+      "REST APIs",
+      "AWS"
+    ],
+    "url": "https://www.fiserv.com/en/about-fiserv/careers/jobs.html?country=India",
+    "jd": "Design, build, and deploy mission-critical financial software platforms and digital payment applications. Engineer high-performance Node.js transaction microservices, modern React.js user experiences, and ensure rigorous banking-grade security and compliance."
+  },
+  {
+    "company": "Firstsource",
+    "role": "Lead Software Engineer - Full Stack",
+    "category": "Global IT & Business Solutions Enterprise",
+    "employeeCount": "28,000+ Employees",
+    "location": "Bengaluru / Mumbai, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹20 - 32 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Express.js",
+      "MongoDB",
+      "MySQL",
+      "Cloud APIs"
+    ],
+    "url": "https://www.firstsource.com/careers/",
+    "jd": "Lead full-stack engineering initiatives across healthcare, telecom, and financial digital solutions. Build responsive web applications using React.js, develop robust Node.js backend microservices, and design highly available relational and document database architectures."
+  },
   {
     "company": "Chevron",
     "role": "Full Stack Developer",
@@ -50,6 +110,546 @@ const ENTERPRISE_JOB_BANK = [
     ],
     "url": "https://chevron.wd5.myworkdayjobs.com/en-US/jobs/job/Bengaluru-Karnataka-India/Full-Stack-Developer_R000073863-4",
     "jd": "Design, build, and deploy high-performance Full Stack web applications for Chevron digital platforms. Develop reactive user interfaces in React.js, build scalable API microservices in Node.js/Java, optimize database queries, and automate CI/CD cloud pipelines."
+  },
+  {
+    "company": "Cisco",
+    "role": "Software Engineer - Full Stack & Cloud",
+    "category": "Fortune 100 Enterprise",
+    "employeeCount": "84,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹26 - 40 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "Docker",
+      "Kubernetes",
+      "AWS"
+    ],
+    "url": "https://jobs.cisco.com/jobs/SearchJobs/?21178=%5B169482%5D&21178_format=1477",
+    "jd": "Develop next-generation cloud networking management portals and software-defined networking APIs. Build scalable Node.js microservices and rich React dashboards handling real-time network telemetry, analytics, and enterprise device orchestrations."
+  },
+  {
+    "company": "PayPal",
+    "role": "Software Development Engineer 2 (Full Stack)",
+    "category": "Global FinTech Enterprise",
+    "employeeCount": "30,000+ Employees",
+    "location": "Bangalore / Chennai, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 42 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "REST APIs",
+      "SQL",
+      "Distributed Systems",
+      "Cloud"
+    ],
+    "url": "https://paypal.eightfold.ai/careers?location=India",
+    "jd": "Develop mission-critical checkout, billing, and merchant experiences. Scale Node.js and React web applications serving hundreds of millions of consumers worldwide with ultra-low latency, multi-currency processing, and bank-grade data security."
+  },
+  {
+    "company": "Intuit",
+    "role": "Software Development Engineer II - Full Stack",
+    "category": "Global Financial Software Enterprise",
+    "employeeCount": "18,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹30 - 45 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "GraphQL",
+      "AWS",
+      "Microservices"
+    ],
+    "url": "https://jobs.intuit.com/search-jobs/India",
+    "jd": "Build intuitive, customer-centric features for TurboTax, QuickBooks, and Credit Karma. Design responsive React/TypeScript interfaces, architect scalable Node.js microservices on AWS, and leverage AI/ML insights to power financial prosperity."
+  },
+  {
+    "company": "ServiceNow",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "Cloud Enterprise Leader",
+    "employeeCount": "22,000+ Employees",
+    "location": "Hyderabad / Bangalore, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹30 - 46 LPA",
+    "skills": [
+      "JavaScript",
+      "TypeScript",
+      "Node.js",
+      "React.js",
+      "SaaS Architecture",
+      "SQL"
+    ],
+    "url": "https://careers.servicenow.com/jobs?location=India",
+    "jd": "Develop enterprise workflow automation capabilities on the Now Platform. Build modular frontend components in React, engineer high-throughput backend services, and optimize enterprise database querying across multi-tenant cloud architectures."
+  },
+  {
+    "company": "Microsoft",
+    "role": "Software Engineer II - Full Stack",
+    "category": "Big Tech MNC",
+    "employeeCount": "220,000+ Employees",
+    "location": "Hyderabad / Bangalore / Noida, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹32 - 50 LPA",
+    "skills": [
+      "TypeScript",
+      "React.js",
+      "Node.js",
+      "Azure",
+      "Distributed Systems",
+      "REST APIs"
+    ],
+    "url": "https://careers.microsoft.com/v2/global/en/home.html",
+    "jd": "Build scalable cloud services and modern web experiences across Microsoft 365 and Azure Developer Tools. Deliver resilient microservices, responsive web portals, and automated CI/CD pipelines deployed to global Azure datacenters."
+  },
+  {
+    "company": "Amazon",
+    "role": "Software Development Engineer II",
+    "category": "Big Tech MNC",
+    "employeeCount": "1,500,000+ Employees",
+    "location": "Bangalore / Hyderabad / Chennai, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹34 - 52 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "AWS",
+      "Distributed Systems",
+      "Microservices",
+      "DynamoDB"
+    ],
+    "url": "https://www.amazon.jobs/en/search?base_query=Software+Development+Engineer&loc_query=India",
+    "jd": "Design and implement highly distributed systems and scalable web applications powering Amazon eCommerce, Fulfillment, and AWS services. Build high-concurrency Node.js services and responsive React frontends handling millions of transactions per second."
+  },
+  {
+    "company": "Oracle",
+    "role": "Senior Software Engineer - Full Stack Cloud",
+    "category": "Cloud & Database Enterprise",
+    "employeeCount": "160,000+ Employees",
+    "location": "Bangalore / Hyderabad / Pune, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹26 - 42 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Java",
+      "SQL",
+      "OCI Cloud",
+      "REST APIs"
+    ],
+    "url": "https://careers.oracle.com/jobs/search?location=India",
+    "jd": "Build next-generation enterprise cloud platforms on Oracle Cloud Infrastructure (OCI). Create intuitive web portals with React.js, build secure REST microservices, and optimize cloud database operations for enterprise clients worldwide."
+  },
+  {
+    "company": "SAP Labs",
+    "role": "Senior Developer - Full Stack Cloud",
+    "category": "Enterprise Software Leader",
+    "employeeCount": "105,000+ Employees",
+    "location": "Bangalore / Gurgaon / Pune, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹24 - 38 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "Cloud Foundry",
+      "REST APIs",
+      "PostgreSQL"
+    ],
+    "url": "https://jobs.sap.com/search/?q=Developer&locationsearch=India",
+    "jd": "Develop mission-critical enterprise ERP and supply chain cloud applications on SAP Business Technology Platform. Build resilient Node.js microservices, responsive web user interfaces, and robust multi-tenant cloud solutions."
+  },
+  {
+    "company": "Siemens",
+    "role": "Full Stack Web Developer",
+    "category": "Industrial Tech MNC",
+    "employeeCount": "310,000+ Employees",
+    "location": "Bangalore / Pune / Chennai, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹20 - 32 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "IoT Protocols",
+      "SQL",
+      "Docker"
+    ],
+    "url": "https://jobs.siemens.com/careers?query=Software&location=India",
+    "jd": "Engineer industrial IoT dashboards, telemetry monitors, and smart infrastructure web applications. Construct real-time visualization frontends with React, build reliable Node.js API servers, and process telemetry from industrial sensors."
+  },
+  {
+    "company": "Bosch",
+    "role": "Senior Full Stack Software Engineer",
+    "category": "Global Engineering MNC",
+    "employeeCount": "420,000+ Employees",
+    "location": "Bangalore / Coimbatore / Hyderabad, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹22 - 35 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "Express.js",
+      "MongoDB",
+      "REST APIs",
+      "AWS"
+    ],
+    "url": "https://careers.smartrecruiters.com/BoschGroup/india",
+    "jd": "Build connected mobility, smart home, and automotive digital solutions. Architect scalable web interfaces and backend microservices using Node.js and React, integrating IoT telemetry and cloud infrastructure."
+  },
+  {
+    "company": "Walmart Global Tech",
+    "role": "Software Engineer III - Full Stack",
+    "category": "Fortune 1 MNC",
+    "employeeCount": "2,100,000+ Employees",
+    "location": "Bangalore / Chennai, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 44 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "Cloud Microservices",
+      "Kafka",
+      "SQL"
+    ],
+    "url": "https://careers.walmart.com/results?q=Software+Engineer&location=India",
+    "jd": "Power the global retail revolution at Walmart. Build large-scale e-commerce web applications and high-availability order fulfillment microservices using React, Node.js, and cloud messaging architectures serving 250M+ customers weekly."
+  },
+  {
+    "company": "Target",
+    "role": "Lead Engineer - Full Stack & Cloud Services",
+    "category": "Retail Giant & Enterprise Tech",
+    "employeeCount": "400,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹26 - 42 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "PostgreSQL",
+      "Docker",
+      "GCP"
+    ],
+    "url": "https://corporate.target.com/careers/india",
+    "jd": "Design and implement modern full-stack web applications for Target India technology center. Build responsive React web experiences, engineer scalable cloud microservices, and optimize checkout pipelines."
+  },
+  {
+    "company": "Lowe's India",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "Fortune 50 MNC",
+    "employeeCount": "300,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹24 - 38 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "Express.js",
+      "GCP",
+      "MySQL",
+      "REST APIs"
+    ],
+    "url": "https://talent.lowes.com/us/en/search-results?m=3&location=Bengaluru%2C%20Karnataka%2C%20India",
+    "jd": "Develop retail enterprise technology platforms for Lowe's e-commerce and supply chain networks. Build performant web applications with React, engineer Node.js backend services, and integrate real-time inventory systems."
+  },
+  {
+    "company": "Atlassian",
+    "role": "Senior Software Engineer - Fullstack",
+    "category": "Public Tech Enterprise",
+    "employeeCount": "11,000+ Employees",
+    "location": "Bangalore / Remote, India",
+    "workMode": "Remote",
+    "experience": "4-7 Years",
+    "salaryRange": "₹38 - 55 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "GraphQL",
+      "AWS",
+      "Microservices"
+    ],
+    "url": "https://www.atlassian.com/company/careers/details?location=India",
+    "jd": "Build collaborative tools that power millions of teams worldwide across Jira, Confluence, and Trello. Architect responsive React frontends, robust Node.js backend microservices, and contribute to world-class developer productivity platforms."
+  },
+  {
+    "company": "Zoho",
+    "role": "Full Stack Product Developer",
+    "category": "Global SaaS Enterprise",
+    "employeeCount": "15,000+ Employees",
+    "location": "Chennai / Tenkasi / Remote, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹18 - 28 LPA",
+    "skills": [
+      "JavaScript",
+      "TypeScript",
+      "Node.js",
+      "React.js",
+      "MySQL",
+      "REST APIs"
+    ],
+    "url": "https://www.zohocorp.com/careers/",
+    "jd": "Build feature-rich cloud applications across the Zoho SaaS suite. Develop fast, modular frontends, design scalable backend APIs in Node.js and Java, and optimize high-volume database queries for enterprise business workflows."
+  },
+  {
+    "company": "Swiggy",
+    "role": "Software Development Engineer II - Full Stack",
+    "category": "Consumer Tech Leader",
+    "employeeCount": "10,000+ Employees",
+    "location": "Bangalore / Remote, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 42 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Express.js",
+      "MongoDB",
+      "Redis",
+      "Kafka"
+    ],
+    "url": "https://www.swiggy.com/careers/",
+    "jd": "Architect and build high-throughput full stack applications for Swiggy food delivery, Instamart, and dining platforms. Develop responsive mobile-first web interfaces in React and build low-latency Node.js microservices handling peak traffic surges."
+  },
+  {
+    "company": "Razorpay",
+    "role": "Software Development Engineer 2 (Full Stack)",
+    "category": "FinTech Unicorn",
+    "employeeCount": "4,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 44 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "MySQL",
+      "AWS",
+      "Kafka"
+    ],
+    "url": "https://razorpay.com/jobs/",
+    "jd": "Build the next generation of digital payments infrastructure for India. Create developer-friendly payment gateways, modular dashboard UI in React, and robust transactional backends in Node.js with high availability."
+  },
+  {
+    "company": "Zomato",
+    "role": "Full Stack Engineer (MERN Stack)",
+    "category": "Public Tech Consumer Enterprise",
+    "employeeCount": "8,000+ Employees",
+    "location": "Gurgaon / Bangalore, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹26 - 40 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "MongoDB",
+      "Express.js",
+      "Redis",
+      "REST APIs"
+    ],
+    "url": "https://www.zomato.com/careers",
+    "jd": "Build high-impact consumer and merchant web applications for Zomato and Blinkit. Scale real-time order tracking, merchant management consoles, and high-concurrency order placement systems using modern MERN stack."
+  },
+  {
+    "company": "PhonePe",
+    "role": "Software Engineer - Full Stack",
+    "category": "FinTech Market Leader",
+    "employeeCount": "5,500+ Employees",
+    "location": "Bangalore / Pune, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹30 - 45 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "Distributed Databases",
+      "Cloud",
+      "REST APIs"
+    ],
+    "url": "https://www.phonepe.com/careers/",
+    "jd": "Design and implement reliable, scalable web platforms for UPI payments, insurance, and merchant commerce. Build lightning-fast React interfaces and high-concurrency Node.js microservices processing millions of daily transactions."
+  },
+  {
+    "company": "CRED",
+    "role": "Full Stack Engineer (Web & Backend)",
+    "category": "FinTech Unicorn",
+    "employeeCount": "1,200+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Onsite",
+    "experience": "3-6 Years",
+    "salaryRange": "₹32 - 48 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "PostgreSQL",
+      "AWS",
+      "Microservices"
+    ],
+    "url": "https://cred.club/careers",
+    "jd": "Craft pixel-perfect user experiences and high-scale backend engines for CRED rewards, payments, and store. Develop responsive React web apps and resilient Node.js services with focus on extreme performance and reliability."
+  },
+  {
+    "company": "Meesho",
+    "role": "Software Development Engineer II - Full Stack",
+    "category": "E-Commerce Tech Unicorn",
+    "employeeCount": "3,000+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Remote",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 42 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Express.js",
+      "MongoDB",
+      "MySQL",
+      "AWS"
+    ],
+    "url": "https://www.meesho.io/jobs",
+    "jd": "Build accessible e-commerce applications for hundreds of millions of users across India. Develop performant web interfaces in React and build resilient Node.js order management and seller systems with heavy cloud scale."
+  },
+  {
+    "company": "BrowserStack",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "SaaS Enterprise Leader",
+    "employeeCount": "1,500+ Employees",
+    "location": "Mumbai / Bangalore / Remote, India",
+    "workMode": "Remote",
+    "experience": "3-6 Years",
+    "salaryRange": "₹28 - 44 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "WebSockets",
+      "Docker",
+      "AWS"
+    ],
+    "url": "https://www.browserstack.com/careers",
+    "jd": "Engineer cloud infrastructure that tests thousands of real mobile and desktop browsers concurrently. Build responsive developer dashboards in React and low-latency streaming backends in Node.js with WebSockets and cloud containers."
+  },
+  {
+    "company": "Chargebee",
+    "role": "Full Stack Engineer (Platform)",
+    "category": "SaaS Unicorn Enterprise",
+    "employeeCount": "1,400+ Employees",
+    "location": "Chennai / Bangalore, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹24 - 38 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "MySQL",
+      "AWS",
+      "Microservices"
+    ],
+    "url": "https://www.chargebee.com/careers/",
+    "jd": "Build subscription management and recurring billing web platforms. Develop intuitive merchant dashboards in React, engineer reliable financial ledger microservices in Node.js, and scale SaaS integrations."
+  },
+  {
+    "company": "CleverTap",
+    "role": "Senior Full Stack Engineer",
+    "category": "SaaS Analytics Unicorn",
+    "employeeCount": "1,000+ Employees",
+    "location": "Mumbai / Bangalore, India",
+    "workMode": "Hybrid",
+    "experience": "4-7 Years",
+    "salaryRange": "₹26 - 40 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "Big Data",
+      "REST APIs",
+      "AWS"
+    ],
+    "url": "https://clevertap.com/careers/",
+    "jd": "Develop customer engagement and retention platforms handling over 10 billion events daily. Build data visualization web interfaces in React and high-throughput Node.js microservices processing real-time marketing automations."
+  },
+  {
+    "company": "Delhivery",
+    "role": "Software Engineer II - Full Stack",
+    "category": "Logistics Tech Enterprise",
+    "employeeCount": "60,000+ Employees",
+    "location": "Gurgaon / Bangalore, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹22 - 34 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Express.js",
+      "PostgreSQL",
+      "Kafka",
+      "AWS"
+    ],
+    "url": "https://www.delhivery.com/careers/",
+    "jd": "Build automated logistics orchestration and supply chain web platforms. Develop real-time fleet and package tracking dashboards in React, construct scalable Node.js dispatch backends, and optimize route routing pipelines."
+  },
+  {
+    "company": "InMobi",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "AdTech Enterprise Leader",
+    "employeeCount": "2,500+ Employees",
+    "location": "Bangalore, Karnataka, India",
+    "workMode": "Hybrid",
+    "experience": "3-6 Years",
+    "salaryRange": "₹26 - 42 LPA",
+    "skills": [
+      "JavaScript",
+      "TypeScript",
+      "Node.js",
+      "React.js",
+      "AWS",
+      "Distributed Systems"
+    ],
+    "url": "https://www.inmobi.com/company/careers/",
+    "jd": "Engineer advertising technology platforms and real-time bidder consoles. Build interactive analytics dashboards in React and low-latency Node.js API backends processing billions of mobile ad impressions daily."
+  },
+  {
+    "company": "Postman",
+    "role": "Full Stack Engineer",
+    "category": "API Platform Leader",
+    "employeeCount": "1,200+ Employees",
+    "location": "Bangalore / Remote, India",
+    "workMode": "Remote",
+    "experience": "3-6 Years",
+    "salaryRange": "₹30 - 48 LPA",
+    "skills": [
+      "Node.js",
+      "React.js",
+      "TypeScript",
+      "Electron",
+      "REST APIs",
+      "GraphQL"
+    ],
+    "url": "https://www.postman.com/company/careers/",
+    "jd": "Build collaborative API development tools utilized by over 30 million software developers worldwide. Architect frontend React components, build scalable cloud synchronization services in Node.js, and innovate developer workflows."
   },
   {
     "company": "Okta",
@@ -92,28 +692,8 @@ const ENTERPRISE_JOB_BANK = [
     "jd": "Architect enterprise insurance & risk management platforms. Build responsive React/TypeScript frontends, cloud backend services, and scalable transactional SQL databases with high availability."
   },
   {
-    "company": "Okta",
-    "role": "Senior Software Engineer (Fullstack Javascript / Workflows)",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "3-6 Years",
-    "salaryRange": "₹30 - 45 LPA",
-    "skills": [
-      "JavaScript",
-      "TypeScript",
-      "Node.js",
-      "React.js",
-      "REST APIs",
-      "Cloud Architecture"
-    ],
-    "url": "https://www.okta.com/company/careers/opportunity/5772061?gh_jid=5772061",
-    "jd": "Develop low-code automation and identity workflow platforms. Design reactive user experiences, construct event-driven backend microservices with Node.js and TypeScript, and optimize platform throughput."
-  },
-  {
     "company": "Adobe",
-    "role": "Software Development Engineer 3 - Full Stack / Java",
+    "role": "Software Development Engineer 3 - Full Stack",
     "category": "Big Tech MNC",
     "employeeCount": "30,000+ Employees",
     "location": "Bangalore, Karnataka, India",
@@ -121,859 +701,286 @@ const ENTERPRISE_JOB_BANK = [
     "experience": "4-7 Years",
     "salaryRange": "₹32 - 48 LPA",
     "skills": [
-      "Java",
-      "Node.js",
       "React.js",
-      "Cloud Architecture",
-      "REST APIs",
-      "Microservices"
+      "Node.js",
+      "JavaScript",
+      "TypeScript",
+      "Microservices",
+      "AWS"
     ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Bangalore/Software-Development-Engineer-3---Java_R171822",
-    "jd": "Build next-generation creative cloud web services and enterprise tools. Implement performant APIs, responsive UI layers, and resilient cloud services servicing millions of daily creative professionals."
+    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Bangalore/Software-Development-Engineer-3_24-814-1",
+    "jd": "Architect high-performance web applications and cloud services for Adobe Experience Cloud. Build interactive React user interfaces, scalable Node.js microservices, and integrate digital marketing asset pipelines."
   },
   {
     "company": "Autodesk",
-    "role": "Principal Engineer - Tooling & Automation (JavaScript / Python)",
-    "category": "Global Tech Enterprise",
+    "role": "Senior Full Stack Software Engineer",
+    "category": "Public Enterprise Leader",
     "employeeCount": "14,000+ Employees",
     "location": "Bengaluru, Karnataka, India",
     "workMode": "Hybrid",
-    "experience": "6-10 Years",
-    "salaryRange": "₹38 - 55 LPA",
+    "experience": "4-7 Years",
+    "salaryRange": "₹28 - 44 LPA",
     "skills": [
-      "JavaScript",
-      "Python",
-      "Playwright",
+      "React.js",
       "Node.js",
-      "AI Tooling",
-      "CI/CD"
+      "TypeScript",
+      "AWS",
+      "GraphQL",
+      "REST APIs"
     ],
-    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Bengaluru-IND/Principal-Engineer--Python--Playwright--JavaScript--AI-_25WD94110-1",
-    "jd": "Lead architectural direction for cloud engineering tooling and developer platforms. Design automated verification frameworks, integrate AI tooling, and elevate development velocity across global engineering organizations."
+    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Bengaluru-IND/Senior-Full-Stack-Software-Engineer_24WD83416",
+    "jd": "Develop cloud collaboration platforms for design, architecture, and engineering professionals across Autodesk Construction Cloud. Build responsive React web applications, construct high-performance Node.js microservices, and optimize cloud rendering APIs."
   },
   {
     "company": "HP Inc.",
-    "role": "Cloud Automation & Platform Engineer",
+    "role": "Full Stack Software Engineer",
     "category": "Fortune 100 MNC",
     "employeeCount": "58,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
+    "location": "Bangalore, Karnataka, India",
     "workMode": "Hybrid",
     "experience": "3-6 Years",
     "salaryRange": "₹22 - 34 LPA",
     "skills": [
       "Node.js",
-      "Python",
-      "AWS",
-      "Docker",
-      "Kubernetes",
-      "CI/CD"
-    ],
-    "url": "https://hp.wd5.myworkdayjobs.com/en-US/ExternalCareerSite/job/Bengaluru-Karnataka-India/Cloud-Automation---Platform-Engineer_3167675-1",
-    "jd": "Drive cloud automation and developer productivity platforms across HP global software services. Build automated infrastructure, microservice pipelines, and robust platform monitoring."
-  },
-  {
-    "company": "Okta",
-    "role": "Staff Full-Stack Engineer",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "6-10 Years",
-    "salaryRange": "₹40 - 60 LPA",
-    "skills": [
       "React.js",
       "TypeScript",
-      "Node.js",
-      "Distributed Systems",
-      "System Design",
-      "AWS"
+      "Cloud APIs",
+      "SQL",
+      "Docker"
     ],
-    "url": "https://www.okta.com/company/careers/opportunity/7471202?gh_jid=7471202",
-    "jd": "Architect end-to-end security identity workflows. Provide technical leadership across frontend React architecture, backend distributed microservices, and high-security customer data management."
+    "url": "https://hp.wd5.myworkdayjobs.com/en-US/ExternalCareerSite/job/Bangalore-Karnataka-India/Full-Stack-Software-Engineer_3140590",
+    "jd": "Build connected device management platforms and telemetry dashboards for HP global enterprise printing and compute solutions. Develop responsive web interfaces with React, engineer Node.js backend services, and streamline automated testing."
   },
   {
     "company": "MongoDB",
-    "role": "Application Engineer - Cloud Enterprise Systems",
-    "category": "Global Tech Enterprise",
+    "role": "Lead Software Engineer - Cloud Fullstack",
+    "category": "Public Cloud Enterprise",
     "employeeCount": "5,000+ Employees",
-    "location": "Gurugram / Bengaluru, India",
-    "workMode": "Hybrid",
-    "experience": "3-6 Years",
-    "salaryRange": "₹25 - 38 LPA",
-    "skills": [
-      "Node.js",
-      "MongoDB",
-      "React.js",
-      "RESTful APIs",
-      "System Integration",
-      "AWS"
-    ],
-    "url": "https://www.mongodb.com/careers/job/?gh_jid=8143980",
-    "jd": "Build custom enterprise application integrations and internal engineering tools using Node.js and MongoDB Atlas. Drive automation across cloud developer ecosystems."
-  },
-  {
-    "company": "Okta",
-    "role": "Staff UI Software Engineer",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "6-10 Years",
-    "salaryRange": "₹38 - 55 LPA",
-    "skills": [
-      "React.js",
-      "TypeScript",
-      "JavaScript",
-      "Design Systems",
-      "Web Performance",
-      "Microfrontends"
-    ],
-    "url": "https://www.okta.com/company/careers/opportunity/7902410?gh_jid=7902410",
-    "jd": "Lead UI architecture for Okta enterprise identity suites. Build high-performance React microfrontends, accessible design system components, and resilient user workflows."
-  },
-  {
-    "company": "Okta",
-    "role": "Staff Software Engineer - Node.js (JavaScript / TypeScript)",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "6-10 Years",
-    "salaryRange": "₹38 - 58 LPA",
-    "skills": [
-      "Node.js",
-      "TypeScript",
-      "JavaScript",
-      "REST APIs",
-      "Distributed Systems",
-      "AWS"
-    ],
-    "url": "https://www.okta.com/company/careers/opportunity/7602354?gh_jid=7602354",
-    "jd": "Architect distributed Node.js microservices powering Okta identity and authentication pipelines globally. Design fault-tolerant cloud APIs handling massive traffic volumes."
-  },
-  {
-    "company": "Okta",
-    "role": "Staff Software Engineer - Backend Cloud",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "6-10 Years",
+    "location": "Bengaluru / Remote, India",
+    "workMode": "Remote",
+    "experience": "4-8 Years",
     "salaryRange": "₹36 - 54 LPA",
     "skills": [
-      "Java",
       "Node.js",
+      "React.js",
+      "TypeScript",
+      "MongoDB",
       "Distributed Systems",
-      "Microservices",
-      "SQL",
       "AWS"
     ],
-    "url": "https://www.okta.com/company/careers/opportunity/8007085?gh_jid=8007085",
-    "jd": "Lead backend system design and service scalability. Engineer high-throughput microservices, optimize distributed data caches, and ensure enterprise compliance and data protection."
+    "url": "https://job-boards.greenhouse.io/mongodb/jobs/7473722002",
+    "jd": "Lead full-stack engineering for MongoDB Atlas cloud database management console. Construct fast, responsive React web applications and resilient distributed backend microservices managing enterprise clusters across AWS, Azure, and GCP."
   },
   {
     "company": "Mastercard",
-    "role": "Senior Software Engineer (Java, Spring Boot, React)",
-    "category": "Global Fintech Enterprise",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "Global Payments Leader",
     "employeeCount": "33,000+ Employees",
-    "location": "Pune, Maharashtra, India",
-    "workMode": "Hybrid",
-    "experience": "4-7 Years",
-    "salaryRange": "₹25 - 38 LPA",
-    "skills": [
-      "Java",
-      "Spring Boot",
-      "React.js",
-      "REST APIs",
-      "SQL",
-      "Microservices"
-    ],
-    "url": "https://mastercard.wd1.myworkdayjobs.com/en-US/CorporateCareers/job/Pune-India/Senior-Software-Engineer_R-291015",
-    "jd": "Deliver secure, scalable payment processing microservices and merchant web portals. Develop robust API endpoints, interactive React management dashboards, and high-throughput transactional database architectures."
-  },
-  {
-    "company": "Autodesk",
-    "role": "Senior Software Engineer - AI / ML Platform",
-    "category": "Global Tech Enterprise",
-    "employeeCount": "14,000+ Employees",
-    "location": "Pune, Maharashtra, India",
+    "location": "Pune / Gurgaon, India",
     "workMode": "Hybrid",
     "experience": "4-7 Years",
     "salaryRange": "₹26 - 40 LPA",
     "skills": [
-      "Python",
+      "React.js",
       "Node.js",
-      "AWS",
-      "Machine Learning Platform",
-      "REST APIs",
-      "Docker"
+      "Java",
+      "SQL",
+      "Microservices",
+      "REST APIs"
     ],
-    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Pune-IND/Senior-Software-Engineer-AI-ML-Platform-_26WD96776-1",
-    "jd": "Design and operate large-scale cloud ML platform services powering Autodesk generative design. Construct low-latency model inference APIs, scalable worker architectures, and cloud data pipelines."
+    "url": "https://mastercard.wd1.myworkdayjobs.com/en-US/CorporateCareers/job/Pune-India/Senior-Engineer--Software-Engineering_R-227091",
+    "jd": "Design and implement scalable payment processing consoles and commercial card management portals. Build robust Node.js and Java microservices, modern React web applications, and ensure stringent global financial security compliance."
   },
   {
     "company": "Newfold Digital",
-    "role": "Full Stack Engineer (Bluehost & HostGator)",
-    "category": "Global Tech MNC",
+    "role": "Principal Engineer - Full Stack",
+    "category": "Web Tech Enterprise",
     "employeeCount": "7,000+ Employees",
-    "location": "Mumbai, Maharashtra, India",
+    "location": "Mumbai / Bengaluru, India",
     "workMode": "Hybrid",
-    "experience": "3-6 Years",
-    "salaryRange": "₹20 - 32 LPA",
-    "skills": [
-      "React.js",
-      "Node.js",
-      "Java",
-      "Spring Boot",
-      "MySQL",
-      "AWS"
-    ],
-    "url": "https://web.wd1.myworkdayjobs.com/en-US/ExternalCareerSite/job/Mumbai-India/FullStack-Engineer_R15144-1",
-    "jd": "Develop customer-facing web hosting, domain, and eCommerce dashboards used by millions of small businesses worldwide. Build modern React user interfaces and resilient backend microservices."
-  },
-  {
-    "company": "Mastercard",
-    "role": "Senior Software Engineer 1 (Finicity)",
-    "category": "Global Fintech Enterprise",
-    "employeeCount": "33,000+ Employees",
-    "location": "Navi Mumbai, Maharashtra, India",
-    "workMode": "Hybrid",
-    "experience": "4-7 Years",
-    "salaryRange": "₹26 - 40 LPA",
-    "skills": [
-      "Node.js",
-      "React.js",
-      "Microservices",
-      "REST APIs",
-      "SQL",
-      "Cloud Security"
-    ],
-    "url": "https://mastercard.wd1.myworkdayjobs.com/en-US/CorporateCareers/job/Navi-Mumbai-India-Finicity/Senior-Software-Engineer-1_R-290528",
-    "jd": "Engineer open banking and financial data aggregation solutions at Mastercard Finicity. Develop real-time data ingestion pipelines, customer integration APIs, and reactive web interfaces."
-  },
-  {
-    "company": "Salesforce",
-    "role": "Software Engineer SMTS - Platform Engineering",
-    "category": "Global Cloud Enterprise",
-    "employeeCount": "75,000+ Employees",
-    "location": "Hyderabad, Telangana, India",
-    "workMode": "Hybrid",
-    "experience": "4-8 Years",
-    "salaryRange": "₹30 - 45 LPA",
-    "skills": [
-      "Backend Systems",
-      "Distributed Systems",
-      "Kubernetes",
-      "Cloud Infrastructure",
-      "Java",
-      "Node.js"
-    ],
-    "url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/India---Hyderabad/Software-Engineering-SMTS---MTS----Platform-Engineering--Backend--Kubernetes---Cloud-_JR347341",
-    "jd": "Architect mission-critical cloud platform infrastructure powering millions of Salesforce multi-tenant applications worldwide. Build distributed services, Kubernetes orchestration controllers, and automated service meshes."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Senior Staff Engineer - Site Reliability",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Hyderabad, Telangana, India",
-    "workMode": "Hybrid",
-    "experience": "5-9 Years",
-    "salaryRange": "₹32 - 48 LPA",
-    "skills": [
-      "Site Reliability",
-      "Distributed Systems",
-      "Kubernetes",
-      "AWS",
-      "Node.js",
-      "Python"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000148182744",
-    "jd": "Ensure ultra-high availability, resilience, and horizontal scaling across Freshworks multi-tenant SaaS cloud services. Build observability platforms and automated incident mitigation systems."
-  },
-  {
-    "company": "Adobe",
-    "role": "Software Development Engineer 3 - Frontend / Web",
-    "category": "Big Tech MNC",
-    "employeeCount": "30,000+ Employees",
-    "location": "Noida, Uttar Pradesh, India",
-    "workMode": "Hybrid",
-    "experience": "4-7 Years",
-    "salaryRange": "₹30 - 45 LPA",
-    "skills": [
-      "React.js",
-      "JavaScript",
-      "TypeScript",
-      "CSS3 / HTML5",
-      "RESTful APIs",
-      "Web Performance"
-    ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Noida/Software-Development-Engineer-3---Frontend_R170811",
-    "jd": "Architect high-performance web frontends for Adobe Document Cloud and Creative Cloud applications. Focus on reactive state management, pixel-perfect UI design, accessible web components, and optimized rendering engines."
-  },
-  {
-    "company": "Adobe",
-    "role": "Software Development Engineer - Core Platform",
-    "category": "Big Tech MNC",
-    "employeeCount": "30,000+ Employees",
-    "location": "Noida, Uttar Pradesh, India",
-    "workMode": "Hybrid",
-    "experience": "3-5 Years",
-    "salaryRange": "₹25 - 38 LPA",
-    "skills": [
-      "Node.js",
-      "Java",
-      "React.js",
-      "REST APIs",
-      "Cloud Computing",
-      "SQL"
-    ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Noida/Software-Development-Engineer_R170776",
-    "jd": "Design and implement scalable backend microservices and interactive web features. Collaborate with product teams in Adobe Noida to enhance system reliability and user engagement."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Staff Engineer - Full Stack",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "Hybrid",
-    "experience": "5-9 Years",
-    "salaryRange": "₹34 - 50 LPA",
-    "skills": [
-      "React.js",
-      "Node.js",
-      "Ruby on Rails",
-      "Distributed Systems",
-      "MySQL",
-      "AWS"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000150064279",
-    "jd": "Architect and scale user-facing web applications and foundational microservices for Freshworks suite. Spearhead frontend performance tuning, resilient backend service design, and high-throughput data processing."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Lead Software Engineer - Systems",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "Hybrid",
-    "experience": "4-8 Years",
+    "experience": "5-8 Years",
     "salaryRange": "₹28 - 42 LPA",
     "skills": [
       "Node.js",
-      "Java",
-      "REST APIs",
-      "Microservices",
-      "Database Optimization",
-      "AWS"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000144463069",
-    "jd": "Lead design and execution of core systems architecture supporting millions of customer interactions daily. Build resilient APIs, streamline database queries, and champion engineering best practices."
-  },
-  {
-    "company": "HP Inc.",
-    "role": "Quality Engineer - Surface Mount Technology",
-    "category": "Fortune 100 MNC",
-    "employeeCount": "58,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "On-site / Hybrid",
-    "experience": "3-6 Years",
-    "salaryRange": "₹18 - 28 LPA",
-    "skills": [
-      "Node.js",
-      "Python",
-      "Quality Engineering",
-      "CI/CD Automation",
-      "REST APIs"
-    ],
-    "url": "https://hp.wd5.myworkdayjobs.com/en-US/ExternalCareerSite/job/Chennai-Tamil-Nadu-India/Quality-Engineer---Surface-Mount-Technology_3165344-2",
-    "jd": "Develop automated testing frameworks and software quality systems for HP Chennai technology facilities. Automate software builds, test execution, and hardware-software integration pipelines."
-  },
-  {
-    "company": "Twilio",
-    "role": "Principal Engineer (L5)",
-    "category": "Public Tech Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "India Remote",
-    "workMode": "100% Remote",
-    "experience": "7-12 Years",
-    "salaryRange": "₹45 - 65 LPA",
-    "skills": [
-      "Distributed Systems",
-      "Node.js",
-      "Java",
-      "Cloud Architecture",
-      "AWS",
-      "System Design"
-    ],
-    "url": "https://job-boards.greenhouse.io/twilio/jobs/7996776",
-    "jd": "Drive technical architecture for Twilio global communications cloud. Design mission-critical distributed services, event processing pipelines, and high-throughput messaging APIs serving millions of developers worldwide."
-  },
-  {
-    "company": "Databricks",
-    "role": "AI Engineer - FDE (Forward Deployed Engineer)",
-    "category": "Big Data / AI Leader",
-    "employeeCount": "7,000+ Employees",
-    "location": "India Remote",
-    "workMode": "100% Remote",
-    "experience": "4-8 Years",
-    "salaryRange": "₹35 - 55 LPA",
-    "skills": [
-      "Python",
-      "Node.js",
-      "Spark / Databricks",
-      "Machine Learning",
-      "Cloud Architecture",
-      "REST APIs"
-    ],
-    "url": "https://boards.greenhouse.io/databricks/jobs/8099751002",
-    "jd": "Collaborate with top enterprise customers to architect, build, and deploy production AI/ML applications and scalable data pipelines on the Databricks Lakehouse platform."
-  },
-  {
-    "company": "Okta",
-    "role": "Staff FullStack Engineer (Java & React/TypeScript)",
-    "category": "Public Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "6-10 Years",
-    "salaryRange": "₹38 - 56 LPA",
-    "skills": [
       "React.js",
-      "Java",
       "TypeScript",
-      "Spring Boot",
-      "REST APIs",
-      "MySQL"
+      "Cloud Architecture",
+      "MySQL",
+      "Docker"
     ],
-    "url": "https://www.okta.com/company/careers/opportunity/7929542?gh_jid=7929542",
-    "jd": "Drive end-to-end full-stack feature development across Okta customer portals. Build dynamic React user interfaces and secure Java/Node.js transactional backend systems."
+    "url": "https://job-boards.greenhouse.io/newfolddigital/jobs/4523588005",
+    "jd": "Architect and scale web presence, domain management, and cloud hosting platforms powering millions of small businesses globally across Bluehost and HostGator. Build decoupled React frontends and high-throughput Node.js microservices."
   },
   {
-    "company": "Databricks",
-    "role": "Deployment Strategist - Cloud Platform Solutions",
-    "category": "Big Data & AI Leader",
-    "employeeCount": "7,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
+    "company": "Salesforce",
+    "role": "Lead Software Engineer - Full Stack",
+    "category": "Enterprise Cloud Leader",
+    "employeeCount": "73,000+ Employees",
+    "location": "Bangalore / Hyderabad, India",
     "workMode": "Hybrid",
-    "experience": "5-8 Years",
-    "salaryRange": "₹35 - 52 LPA",
+    "experience": "4-7 Years",
+    "salaryRange": "₹34 - 52 LPA",
     "skills": [
-      "Cloud Infrastructure",
-      "Python",
+      "JavaScript",
+      "TypeScript",
       "Node.js",
-      "Distributed Systems",
-      "Kubernetes",
-      "REST APIs"
+      "React.js",
+      "Cloud APIs",
+      "SQL"
     ],
-    "url": "https://boards.greenhouse.io/databricks/jobs/8630011002",
-    "jd": "Partner with enterprise engineering teams to design, optimize, and scale production cloud infrastructure and distributed computing platforms on Databricks."
+    "url": "https://salesforce.wd12.myworkdayjobs.com/en-US/Salesforce/job/India---Bengaluru/Lead-Software-Engineer---Full-Stack_JR265324",
+    "jd": "Develop core enterprise CRM capabilities and developer toolchains on Salesforce Lightning Platform. Build reactive web components, construct scalable Node.js microservices, and optimize enterprise database querying across multi-tenant cloud architectures."
   },
   {
     "company": "Freshworks",
-    "role": "Principal Solution Engineer - Cloud Platform",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
+    "role": "Lead Software Engineer - Full Stack",
+    "category": "Public SaaS Enterprise",
+    "employeeCount": "5,500+ Employees",
+    "location": "Chennai / Bangalore, India",
     "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹36 - 52 LPA",
+    "experience": "4-7 Years",
+    "salaryRange": "₹28 - 42 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "Ruby",
+      "TypeScript",
+      "AWS",
+      "MySQL"
+    ],
+    "url": "https://job-boards.greenhouse.io/freshworks/jobs/5283431004",
+    "jd": "Build enterprise customer support and conversational engagement platforms across Freshdesk and Freshchat. Architect responsive React web applications, build scalable Node.js services, and ensure high platform availability."
+  },
+  {
+    "company": "Twilio",
+    "role": "Senior Software Engineer - Full Stack",
+    "category": "Cloud Communications Leader",
+    "employeeCount": "6,000+ Employees",
+    "location": "Bengaluru / Remote, India",
+    "workMode": "Remote",
+    "experience": "4-7 Years",
+    "salaryRange": "₹32 - 48 LPA",
     "skills": [
       "Node.js",
       "React.js",
-      "API Integration",
-      "Cloud Architecture",
-      "MySQL",
-      "System Design"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000150067891",
-    "jd": "Architect high-performance enterprise customer experience platforms. Collaborate across engineering teams to design scalable cloud integrations and performant web modules."
-  },
-  {
-    "company": "Chevron",
-    "role": "Senior Integration Software Engineer",
-    "category": "Fortune 500 MNC",
-    "employeeCount": "45,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "4-8 Years",
-    "salaryRange": "₹26 - 40 LPA",
-    "skills": [
-      "Node.js",
-      "API Integrations",
-      "Cloud Platforms",
-      "SQL",
+      "TypeScript",
       "Microservices",
-      "Azure"
+      "AWS",
+      "REST APIs"
     ],
-    "url": "https://chevron.wd5.myworkdayjobs.com/en-US/jobs/job/Bengaluru-Karnataka-India/Senior-Integration-Software-Engineer_R000072302-1",
-    "jd": "Design, develop, and maintain critical enterprise integration services and real-time operational data connectors for Chevron India technology center."
+    "url": "https://job-boards.greenhouse.io/twilio/jobs/8048661",
+    "jd": "Develop custom enterprise systems and developer console workflows for Twilio global communications infrastructure. Build scalable Node.js services and robust financial event processors."
   },
   {
-    "company": "Chevron",
-    "role": "Senior Machine Learning & Cloud Engineer",
-    "category": "Fortune 500 MNC",
-    "employeeCount": "45,000+ Employees",
-    "location": "Bangalore, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "4-8 Years",
-    "salaryRange": "₹28 - 44 LPA",
-    "skills": [
-      "Python",
-      "Node.js",
-      "Cloud ML Platforms",
-      "Distributed Systems",
-      "REST APIs",
-      "SQL"
-    ],
-    "url": "https://chevron.wd5.myworkdayjobs.com/en-US/jobs/job/Bangalore-Karnataka-India/Senior-Machine-Learning-Engineer_R000064919",
-    "jd": "Build scalable model training and serving infrastructure on cloud platforms. Create low-latency REST APIs and data processing workflows for industrial digital intelligence."
-  },
-  {
-    "company": "Chevron",
-    "role": "Cloud Data Platform Engineer",
-    "category": "Fortune 500 MNC",
-    "employeeCount": "45,000+ Employees",
+    "company": "Databricks",
+    "role": "Software Engineer - Full Stack Cloud",
+    "category": "Data & AI Enterprise",
+    "employeeCount": "6,500+ Employees",
     "location": "Bengaluru, Karnataka, India",
     "workMode": "Hybrid",
     "experience": "3-6 Years",
-    "salaryRange": "₹22 - 35 LPA",
+    "salaryRange": "₹36 - 54 LPA",
     "skills": [
-      "SQL Query Optimization",
-      "Python",
-      "Node.js",
-      "Data Pipelines",
-      "Cloud Architecture",
-      "AWS"
-    ],
-    "url": "https://chevron.wd5.myworkdayjobs.com/en-US/jobs/job/Bengaluru-Karnataka-India/Data-Engineer_R000071869-2",
-    "jd": "Engineer robust telemetry streaming pipelines, optimize transactional database performance, and build reliable backend data services for global Chevron operations."
-  },
-  {
-    "company": "Adobe",
-    "role": "Software Development Engineer 4 - Cloud Services",
-    "category": "Big Tech MNC",
-    "employeeCount": "30,000+ Employees",
-    "location": "Bangalore, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹40 - 62 LPA",
-    "skills": [
-      "Node.js",
+      "TypeScript",
       "React.js",
-      "Java",
+      "Node.js",
       "Distributed Systems",
-      "AWS",
-      "Microservices"
+      "Cloud APIs",
+      "SQL"
     ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Bangalore/Software-Development-Engineer-4_R170532",
-    "jd": "Lead architecture of mission-critical Adobe Experience Platform services. Build resilient distributed backends, scalable REST endpoints, and collaborative web tooling."
+    "url": "https://job-boards.greenhouse.io/databricks/jobs/8051759002",
+    "jd": "Develop web applications and cloud control planes for the Databricks Lakehouse Platform. Build intuitive React interfaces for machine learning workflows and engineer scalable Node.js backend microservices handling high-concurrency requests."
   },
   {
-    "company": "Salesforce",
-    "role": "Technical Manager - API Platform & MuleSoft",
-    "category": "Global Cloud Enterprise",
-    "employeeCount": "75,000+ Employees",
-    "location": "India - Bangalore",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹38 - 58 LPA",
-    "skills": [
-      "API Management",
-      "Node.js",
-      "Integration Architecture",
-      "Microservices",
-      "Cloud Security"
-    ],
-    "url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/India---Bangalore/Mulesoft-Technical-Manager_JR327156",
-    "jd": "Lead high-caliber engineering teams delivering MuleSoft API management and runtime fabric. Ensure enterprise-grade API performance, security, and developer productivity."
-  },
-  {
-    "company": "Salesforce",
-    "role": "DevOps & Cloud Platform Technical Architect",
-    "category": "Global Cloud Enterprise",
-    "employeeCount": "75,000+ Employees",
-    "location": "India - Bangalore",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹38 - 58 LPA",
-    "skills": [
-      "CI/CD Pipelines",
-      "Kubernetes",
-      "Cloud Infrastructure",
-      "Node.js",
-      "AWS",
-      "Docker"
-    ],
-    "url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/India---Bangalore/Salesforce-DevOps---Technical-Architect_JR353962",
-    "jd": "Architect automated cloud infrastructure, release pipelines, and container orchestrations powering thousands of daily production deployments across Salesforce."
-  },
-  {
-    "company": "Autodesk",
-    "role": "Principal Engineer - Agentic AI & Developer Automation",
-    "category": "Global Tech Enterprise",
-    "employeeCount": "14,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
-    "workMode": "Hybrid",
-    "experience": "8-13 Years",
-    "salaryRange": "₹45 - 70 LPA",
-    "skills": [
-      "Agentic AI",
-      "Python",
-      "Node.js",
-      "System Architecture",
-      "Cloud Services",
-      "REST APIs"
-    ],
-    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Bengaluru-IND/Principal-Engineer---Agentic-AI_26WD99802",
-    "jd": "Define technical strategy and build agentic AI systems that automate software delivery workflows across Autodesk engineering organizations worldwide."
-  },
-  {
-    "company": "HP Inc.",
-    "role": "AI Solutions & Full Stack Engineer",
-    "category": "Fortune 100 MNC",
-    "employeeCount": "58,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
+    "company": "Darwinbox",
+    "role": "Senior Software Engineer (Full Stack)",
+    "category": "HR Tech Unicorn",
+    "employeeCount": "1,200+ Employees",
+    "location": "Hyderabad / Bangalore, India",
     "workMode": "Hybrid",
     "experience": "3-6 Years",
     "salaryRange": "₹24 - 38 LPA",
     "skills": [
-      "Python",
-      "Node.js",
       "React.js",
-      "AI Solutions",
-      "RESTful APIs",
-      "Cloud Architecture"
+      "Node.js",
+      "TypeScript",
+      "MongoDB",
+      "MySQL",
+      "AWS"
     ],
-    "url": "https://hp.wd5.myworkdayjobs.com/en-US/ExternalCareerSite/job/Bengaluru-Karnataka-India/AI-Solutions-Engineer_3166378-1",
-    "jd": "Develop AI-driven customer support tools and web service platforms. Implement reactive frontends, performant API gateways, and cloud inference models in HP Bengaluru."
+    "url": "https://jobs.lever.co/darwinbox",
+    "jd": "Design and implement full stack features across Darwinbox enterprise HCM suite. Develop responsive web applications in React, build reliable Node.js backend microservices, and optimize database operations for over 2 million enterprise employees."
   },
   {
-    "company": "HP Inc.",
-    "role": "Agentic AI Systems Engineer",
-    "category": "Fortune 100 MNC",
-    "employeeCount": "58,000+ Employees",
-    "location": "Bengaluru, Karnataka, India",
+    "company": "Thoughtworks",
+    "role": "Lead Full Stack Consultant",
+    "category": "Global Technology Consultancy",
+    "employeeCount": "12,000+ Employees",
+    "location": "Bangalore / Pune / Chennai, India",
     "workMode": "Hybrid",
-    "experience": "3-7 Years",
+    "experience": "4-7 Years",
     "salaryRange": "₹26 - 40 LPA",
     "skills": [
-      "AI Agents",
-      "Python",
+      "React.js",
       "Node.js",
-      "Microservices",
-      "Cloud Architecture",
-      "Docker"
+      "TypeScript",
+      "Clean Architecture",
+      "TDD",
+      "Cloud"
     ],
-    "url": "https://hp.wd5.myworkdayjobs.com/en-US/ExternalCareerSite/job/Bengaluru-Karnataka-India/Agentic-AI-Engineer_3164655-1",
-    "jd": "Build autonomous agents and cloud workflow orchestrators for HP intelligent device ecosystem. Focus on event queues, distributed backend microservices, and system reliability."
+    "url": "https://www.thoughtworks.com/careers/jobs",
+    "jd": "Architect modern, resilient full-stack applications for enterprise clients. Drive clean code, test-driven development (TDD), and micro-frontend architectures using React, Node.js, and cloud container platforms."
   },
   {
-    "company": "Autodesk",
-    "role": "Senior Software Engineer (Cloud Services & APIs)",
-    "category": "Global Tech Enterprise",
-    "employeeCount": "14,000+ Employees",
-    "location": "Pune, Maharashtra, India",
+    "company": "EPAM Systems",
+    "role": "Senior Full Stack Engineer (Node.js & React)",
+    "category": "Digital Transformation Leader",
+    "employeeCount": "53,000+ Employees",
+    "location": "Hyderabad / Bangalore / Pune, India",
     "workMode": "Hybrid",
     "experience": "4-7 Years",
-    "salaryRange": "₹24 - 36 LPA",
+    "salaryRange": "₹22 - 36 LPA",
     "skills": [
-      "C#/.NET",
       "Node.js",
-      "AWS",
-      "Microservices",
-      "RESTful APIs",
-      "SQL"
-    ],
-    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Pune-IND/Senior-Software-Engineer--C-NET--AWS-_25WD93257-2",
-    "jd": "Build robust cloud services and engineering APIs for Autodesk 3D modeling platforms. Ensure high availability, horizontal scalability on AWS, and clean modular codebases."
-  },
-  {
-    "company": "Autodesk",
-    "role": "Software Engineering Manager (Java, AWS, Search)",
-    "category": "Global Tech Enterprise",
-    "employeeCount": "14,000+ Employees",
-    "location": "Pune, Maharashtra, India",
-    "workMode": "Hybrid",
-    "experience": "8-12 Years",
-    "salaryRange": "₹40 - 65 LPA",
-    "skills": [
-      "Java",
-      "Node.js",
-      "AWS",
-      "Search Systems",
-      "Microservices",
-      "System Design"
-    ],
-    "url": "https://autodesk.wd1.myworkdayjobs.com/en-US/Ext/job/Pune-IND/Software-Engineering-Manager--Java--AWS--Search-_26WD100857-1",
-    "jd": "Lead search and cloud platform engineering squads in Autodesk Pune. Architect high-throughput distributed search services, microservice APIs, and mentor senior developers."
-  },
-  {
-    "company": "Databricks",
-    "role": "Delivery Solutions Architect - Enterprise Cloud",
-    "category": "Big Data & AI Leader",
-    "employeeCount": "7,000+ Employees",
-    "location": "Mumbai, Maharashtra, India",
-    "workMode": "Hybrid",
-    "experience": "5-9 Years",
-    "salaryRange": "₹36 - 55 LPA",
-    "skills": [
-      "Python",
-      "Node.js",
-      "Cloud Architecture",
-      "Databricks / Spark",
-      "SQL",
-      "AWS"
-    ],
-    "url": "https://boards.greenhouse.io/databricks/jobs/8735814002",
-    "jd": "Architect modern Lakehouse and analytics solutions for top enterprises across India. Design scalable data processing architectures, API bridges, and cloud integrations."
-  },
-  {
-    "company": "Salesforce",
-    "role": "Senior Data Platform Engineer",
-    "category": "Global Cloud Enterprise",
-    "employeeCount": "75,000+ Employees",
-    "location": "India - Hyderabad",
-    "workMode": "Hybrid",
-    "experience": "4-7 Years",
-    "salaryRange": "₹28 - 42 LPA",
-    "skills": [
-      "Python",
-      "SQL Query Optimization",
-      "Database Indexing",
-      "Node.js",
-      "Cloud Infrastructure",
-      "AWS"
-    ],
-    "url": "https://salesforce.wd12.myworkdayjobs.com/en-US/External_Career_Site/job/India---Hyderabad/Sr-Data-Engineer--Python---SQL-exp-mandatory-_JR358536",
-    "jd": "Build robust data infrastructure, streaming ingestion pipelines, and database query optimizations for Salesforce Hyderabad technology center."
-  },
-  {
-    "company": "Adobe",
-    "role": "Software Development Engineer 4 - Creative Cloud Platform",
-    "category": "Big Tech MNC",
-    "employeeCount": "30,000+ Employees",
-    "location": "Noida, Uttar Pradesh, India",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹40 - 62 LPA",
-    "skills": [
       "React.js",
       "TypeScript",
-      "Node.js",
-      "Cloud Architecture",
-      "Web Performance",
+      "Express.js",
+      "AWS",
       "REST APIs"
     ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Noida/Software-Development-Engineer-4_R170262",
-    "jd": "Architect web capabilities for Adobe next-generation Creative Cloud desktop and browser apps in Noida. Optimize render performance, memory footprints, and reactive state stores."
+    "url": "https://www.epam.com/careers/job-listings",
+    "jd": "Deliver cutting-edge digital enterprise platforms for global Tier-1 clients. Engineer scalable Node.js backend services, build responsive React web applications, and implement continuous integration pipelines."
   },
   {
-    "company": "Adobe",
-    "role": "Software Development Engineer 4 - Core Platform",
-    "category": "Big Tech MNC",
-    "employeeCount": "30,000+ Employees",
-    "location": "Noida, Uttar Pradesh, India",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹40 - 62 LPA",
-    "skills": [
-      "Node.js",
-      "Java",
-      "Distributed Systems",
-      "React.js",
-      "Microservices",
-      "SQL"
-    ],
-    "url": "https://adobe.wd5.myworkdayjobs.com/en-US/external_experienced/job/Noida/Software-Development-Engineer-4_R170647",
-    "jd": "Drive technical direction for Adobe document services and platform foundations. Build scalable cloud APIs, conduct architectural reviews, and optimize database access."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Principal Solution Engineer - SaaS Architecture",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "Hybrid",
-    "experience": "7-11 Years",
-    "salaryRange": "₹36 - 52 LPA",
-    "skills": [
-      "React.js",
-      "Node.js",
-      "REST APIs",
-      "Cloud Architecture",
-      "PostgreSQL",
-      "AWS"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000150068499",
-    "jd": "Lead architectural direction for Freshworks flagship SaaS products in Chennai. Deliver robust full-stack solutions, optimize database queries, and drive developer velocity."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Senior Director of Engineering - AI Studio",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "Hybrid",
-    "experience": "10+ Years",
-    "salaryRange": "₹50 - 75 LPA",
-    "skills": [
-      "Generative AI",
-      "Full Stack Architecture",
-      "Node.js",
-      "React",
-      "Distributed Systems",
-      "AWS"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000147296104",
-    "jd": "Lead generative AI product engineering at Freshworks Chennai HQ. Architect autonomous customer service agents, low-latency LLM inference pipelines, and reactive web interfaces."
-  },
-  {
-    "company": "Freshworks",
-    "role": "Solution Architect - Enterprise Platforms",
-    "category": "Public Enterprise SaaS",
-    "employeeCount": "5,000+ Employees",
-    "location": "Chennai, Tamil Nadu, India",
-    "workMode": "Hybrid",
-    "experience": "7-10 Years",
-    "salaryRange": "₹35 - 50 LPA",
-    "skills": [
-      "System Design",
-      "React.js",
-      "Node.js",
-      "Microservices",
-      "AWS",
-      "Database Scaling"
-    ],
-    "url": "https://jobs.smartrecruiters.com/Freshworks/744000142843669",
-    "jd": "Spearhead technical design for enterprise customer support software. Formulate scalable microservice blueprints, enforce API security standards, and optimize data persistence layers."
-  },
-  {
-    "company": "Twilio",
-    "role": "Senior Application Engineer - Cloud Platforms",
-    "category": "Public Tech Enterprise",
-    "employeeCount": "6,000+ Employees",
-    "location": "India Remote",
-    "workMode": "100% Remote",
+    "company": "Nagarro",
+    "role": "Staff Engineer - Full Stack Web",
+    "category": "Digital Engineering MNC",
+    "employeeCount": "19,000+ Employees",
+    "location": "Gurgaon / Bangalore / Remote, India",
+    "workMode": "Remote",
     "experience": "4-7 Years",
-    "salaryRange": "₹28 - 42 LPA",
+    "salaryRange": "₹22 - 35 LPA",
     "skills": [
+      "React.js",
       "Node.js",
-      "Java",
-      "Enterprise Systems",
-      "RESTful APIs",
-      "SQL",
-      "AWS"
+      "TypeScript",
+      "Microservices",
+      "Docker",
+      "Cloud"
     ],
-    "url": "https://job-boards.greenhouse.io/twilio/jobs/8048661",
-    "jd": "Develop custom enterprise systems and integration workflows for Twilio global communications infrastructure. Build scalable Node.js services and robust financial event processors."
+    "url": "https://www.nagarro.com/en/careers",
+    "jd": "Architect full stack enterprise web solutions with a focus on fluid agile engineering. Build modular micro-frontends with React, scalable Node.js microservices, and automate cloud deployments."
   }
 ];
 
 function getDiscoveryFilePath(userKey) {
   const userPaths = getUserPaths(userKey || 'tksanthosh494_gmail_com');
   return path.join(userPaths.userDir, 'enterprise_discovered_jobs.json');
+}
+
+function getDiscoveryFilePathGz(userKey) {
+  const userPaths = getUserPaths(userKey || 'tksanthosh494_gmail_com');
+  return path.join(userPaths.userDir, 'enterprise_discovered_jobs.json.gz');
 }
 
 const SOFT_404_INDICATORS = [
@@ -1117,6 +1124,52 @@ function calculateAtsScore(userSkills, job) {
 /**
  * Enriches candidate jobs with stable deterministic IDs and ATS score
  */
+
+/**
+ * Selects candidate jobs ensuring strict company diversity (max 1 job per company).
+ * Guarantees zero duplicate companies in the active feed batch when distinct companies are available.
+ */
+function selectDiverseJobs(candidateJobs, targetCount = 25, maxPerCompany = 1) {
+  if (!Array.isArray(candidateJobs) || candidateJobs.length === 0) return [];
+  
+  const selected = [];
+  const companyCounts = new Map();
+
+  const getCompKey = (j) => (j.company || '').toLowerCase().trim();
+
+  // Pass 1: Greedily pick up to maxPerCompany (1) for each distinct company
+  for (const job of candidateJobs) {
+    const compKey = getCompKey(job);
+    const count = companyCounts.get(compKey) || 0;
+    if (count < maxPerCompany) {
+      selected.push(job);
+      companyCounts.set(compKey, count + 1);
+      if (selected.length >= targetCount) break;
+    }
+  }
+
+  // Pass 2: If pool of unique companies was smaller than targetCount, allow additional roles
+  // while still balancing and ensuring maximum spread across companies
+  if (selected.length < targetCount) {
+    const selectedIds = new Set(selected.map(j => j.id));
+    const remaining = candidateJobs.filter(j => !selectedIds.has(j.id));
+    remaining.sort((a, b) => {
+      const countA = companyCounts.get(getCompKey(a)) || 0;
+      const countB = companyCounts.get(getCompKey(b)) || 0;
+      return countA - countB;
+    });
+
+    for (const job of remaining) {
+      selected.push(job);
+      const compKey = getCompKey(job);
+      companyCounts.set(compKey, (companyCounts.get(compKey) || 0) + 1);
+      if (selected.length >= targetCount) break;
+    }
+  }
+
+  return selected;
+}
+
 function enrichJobs(jobsList, userSkills) {
   return jobsList
     .filter(job => !isCompanyOrDomainExcluded(job.company, '', job.url).excluded)
@@ -1139,25 +1192,31 @@ function enrichJobs(jobsList, userSkills) {
 
 /**
  * Retrieves discovered enterprise jobs for a user (with guaranteed verified live status)
- * Returns active unseen jobs + shownHistory log
+ * Returns active unseen jobs + shownHistory log (Level 9 Compressed)
  */
 function getDiscoveredJobs(userKey) {
   const key = userKey || 'tksanthosh494_gmail_com';
   const filePath = getDiscoveryFilePath(key);
+  const filePathGz = getDiscoveryFilePathGz(key);
   
-  if (fs.existsSync(filePath)) {
-    try {
-      const data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-      if (data && Array.isArray(data.jobs) && data.jobs.length >= 20) {
-        const hasSearchQueryUrls = data.jobs.some(j => j.url && (j.url.includes('?q=') || j.url.includes('?keyword=') || j.url.includes('careers?query=')));
-        if (!hasSearchQueryUrls) {
-          data.shownHistory = data.shownHistory || [];
-          data.shownCount = data.shownHistory.length;
-          data.totalPool = ENTERPRISE_JOB_BANK.length;
-          return data;
-        }
-      }
-    } catch (e) {}
+  const data = readCompressedJson(filePathGz, filePath, null);
+  if (data && Array.isArray(data.jobs) && data.jobs.length >= 20) {
+    const hasSearchQueryUrls = data.jobs.some(j => j.url && (j.url.includes('?q=') || j.url.includes('?keyword=') || j.url.includes('careers?query=')));
+    
+    // Count company frequency to guarantee zero duplicate companies in active feed
+    const compCounts = {};
+    for (const j of data.jobs) {
+      const k = (j.company || '').toLowerCase().trim();
+      compCounts[k] = (compCounts[k] || 0) + 1;
+    }
+    const hasDuplicateCompanies = Object.values(compCounts).some(c => c > 1);
+
+    if (!hasSearchQueryUrls && !hasDuplicateCompanies) {
+      data.shownHistory = data.shownHistory || [];
+      data.shownCount = data.shownHistory.length;
+      data.totalPool = ENTERPRISE_JOB_BANK.length;
+      return data;
+    }
   }
   
   // If not discovered yet, under 20, or holding query URLs, seed immediately
@@ -1165,18 +1224,19 @@ function getDiscoveredJobs(userKey) {
 }
 
 /**
- * Synchronous fallback refresh for immediate boot
+ * Synchronous fallback refresh for immediate boot (Level 9 Maximum Compression)
  */
 function refreshDiscoveredJobsSync(userKey) {
   const key = userKey || 'tksanthosh494_gmail_com';
   const filePath = getDiscoveryFilePath(key);
+  const filePathGz = getDiscoveryFilePathGz(key);
   const resume = getUserResume(key);
   const userSkills = resume?.skills || {};
 
   const enrichedAll = enrichJobs(ENTERPRISE_JOB_BANK, userSkills);
 
   // Batch 1 (top 25 jobs across all hubs)
-  const initialBatch = enrichedAll.slice(0, 25);
+  const initialBatch = selectDiverseJobs(enrichedAll, 25, 1);
 
   const now = Date.now();
   const nextRefresh = now + (2 * 60 * 60 * 1000); // +2 hours
@@ -1199,9 +1259,8 @@ function refreshDiscoveredJobsSync(userKey) {
   };
 
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-    console.log(`[AI_JOB_DISCOVERY] 🚀 Seeded initial feed for ${key}: ${initialBatch.length} verified jobs (0 in shown log).`);
+    writeCompressedJson(filePathGz, filePath, payload);
+    console.log(`[AI_JOB_DISCOVERY] 🚀 Seeded initial feed for ${key}: ${initialBatch.length} verified jobs (Level 9 Compressed).`);
   } catch (e) {
     console.error('[AI_JOB_DISCOVERY] Failed to persist discovered jobs:', e);
   }
@@ -1218,16 +1277,12 @@ function refreshDiscoveredJobsSync(userKey) {
 async function refreshDiscoveredJobs(userKey) {
   const key = userKey || 'tksanthosh494_gmail_com';
   const filePath = getDiscoveryFilePath(key);
+  const filePathGz = getDiscoveryFilePathGz(key);
   const resume = getUserResume(key);
   const userSkills = resume?.skills || {};
 
-  // Load existing data if available
-  let existingData = null;
-  if (fs.existsSync(filePath)) {
-    try {
-      existingData = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (e) {}
-  }
+  // Load existing data if available (Level 9 Compressed priority)
+  let existingData = readCompressedJson(filePathGz, filePath, null);
 
   const existingShownHistory = Array.isArray(existingData?.shownHistory) ? existingData.shownHistory : [];
   const existingShownJobIds = Array.isArray(existingData?.shownJobIds) ? existingData.shownJobIds : [];
@@ -1248,6 +1303,9 @@ async function refreshDiscoveredJobs(userKey) {
     }
   }
 
+  // Anti-blind saving: Cap shown history to 100 entries to prevent unbounded growth
+  const cappedShownHistory = existingShownHistory.slice(0, 100);
+
   const enrichedAll = enrichJobs(ENTERPRISE_JOB_BANK, userSkills);
 
   // Find unshown candidate jobs
@@ -1256,36 +1314,46 @@ async function refreshDiscoveredJobs(userKey) {
   let allJobsReviewed = false;
   let nextActiveJobs = [];
 
-  if (unshownJobs.length >= 20) {
-    nextActiveJobs = unshownJobs.slice(0, 25);
-    console.log(`[AI_JOB_DISCOVERY] 🔄 Refresh: filtered out ${shownIdsSet.size} already shown jobs. Displaying ${nextActiveJobs.length} new unshown jobs.`);
+  // Strictly enforce company diversity (max 1 role per company)
+  const diverseUnshown = selectDiverseJobs(unshownJobs, 25, 1);
+
+  if (diverseUnshown.length >= 20) {
+    nextActiveJobs = diverseUnshown.slice(0, 25);
+    console.log(`[AI_JOB_DISCOVERY] 🔄 Refresh: filtered out ${shownIdsSet.size} already shown jobs. Displaying ${nextActiveJobs.length} diverse unshown jobs.`);
   } else if (unshownJobs.length > 0) {
-    // If fewer than 20 left, take all remaining unshown + cycle top unrepeated to ensure >= 20
-    const needed = 20 - unshownJobs.length;
-    const fillers = enrichedAll.slice(0, needed);
-    nextActiveJobs = [...unshownJobs, ...fillers];
+    // If fewer than 20 left in unshown, take diverse unshown + filler diverse jobs from enrichedAll
+    const needed = 25 - diverseUnshown.length;
+    const chosenCompanies = new Set(diverseUnshown.map(j => (j.company || '').toLowerCase().trim()));
+    const fillers = selectDiverseJobs(
+      enrichedAll.filter(j => !chosenCompanies.has((j.company || '').toLowerCase().trim())),
+      needed,
+      1
+    );
+    nextActiveJobs = [...diverseUnshown, ...fillers];
     allJobsReviewed = true;
-    console.log(`[AI_JOB_DISCOVERY] 🔄 Refresh: displayed ${unshownJobs.length} remaining unshown jobs plus fresh cycle.`);
+    console.log(`[AI_JOB_DISCOVERY] 🔄 Refresh: displayed ${diverseUnshown.length} unshown jobs plus ${fillers.length} diverse fillers.`);
   } else {
-    // All 47 jobs have been shown!
+    // All jobs have been shown!
     allJobsReviewed = true;
     console.log(`[AI_JOB_DISCOVERY] 🔁 All ${ENTERPRISE_JOB_BANK.length} verified jobs have been shown to ${key}. Resetting rotation cycle while preserving history log.`);
-    // Start fresh cycle with Batch 1, while PRESERVING shownHistory!
-    nextActiveJobs = enrichedAll.slice(0, 25);
+    nextActiveJobs = selectDiverseJobs(enrichedAll, 25, 1);
   }
+
+  // Ensure strict company diversity across the active batch
+  nextActiveJobs = selectDiverseJobs(nextActiveJobs, 25, 1);
 
   // Verify liveness on the active batch
   const verifiedLiveJobs = await verifyJobsBatch(nextActiveJobs);
-  const finalActiveJobs = verifiedLiveJobs.length >= 20 ? verifiedLiveJobs : nextActiveJobs;
+  const finalActiveJobs = selectDiverseJobs(verifiedLiveJobs.length >= 20 ? verifiedLiveJobs : nextActiveJobs, 25, 1);
 
   const now = Date.now();
   const nextRefresh = now + (2 * 60 * 60 * 1000); // +2 hours
 
   const payload = {
     jobs: finalActiveJobs,
-    shownHistory: existingShownHistory,
-    shownJobIds: Array.from(shownIdsSet),
-    shownCount: existingShownHistory.length,
+    shownHistory: cappedShownHistory,
+    shownJobIds: Array.from(shownIdsSet).slice(0, 200),
+    shownCount: cappedShownHistory.length,
     activeCount: finalActiveJobs.length,
     count: finalActiveJobs.length,
     totalPool: ENTERPRISE_JOB_BANK.length,
@@ -1300,9 +1368,8 @@ async function refreshDiscoveredJobs(userKey) {
   };
 
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-    console.log(`[AI_JOB_DISCOVERY] 💾 Saved feed for ${key}: ${finalActiveJobs.length} active jobs, ${existingShownHistory.length} in shown history log.`);
+    writeCompressedJson(filePathGz, filePath, payload);
+    console.log(`[AI_JOB_DISCOVERY] 💾 Saved feed for ${key}: ${finalActiveJobs.length} active jobs, ${cappedShownHistory.length} in shown history log (Level 9 Compressed).`);
   } catch (e) {
     console.error('[AI_JOB_DISCOVERY] Failed to persist discovered jobs:', e);
   }
@@ -1311,11 +1378,12 @@ async function refreshDiscoveredJobs(userKey) {
 }
 
 /**
- * Resets shown history log, returning all jobs to unshown status
+ * Resets shown history log, returning all jobs to unshown status (Level 9 Compressed)
  */
 function resetShownJobsHistory(userKey) {
   const key = userKey || 'tksanthosh494_gmail_com';
   const filePath = getDiscoveryFilePath(key);
+  const filePathGz = getDiscoveryFilePathGz(key);
   const resume = getUserResume(key);
   const userSkills = resume?.skills || {};
 
@@ -1344,9 +1412,8 @@ function resetShownJobsHistory(userKey) {
   };
 
   try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, JSON.stringify(payload, null, 2), 'utf8');
-    console.log(`[AI_JOB_DISCOVERY] 🧹 Reset shown history log for ${key}. Restored ${initialBatch.length} jobs to active feed.`);
+    writeCompressedJson(filePathGz, filePath, payload);
+    console.log(`[AI_JOB_DISCOVERY] 🧹 Reset shown history log for ${key}. Restored ${initialBatch.length} jobs to active feed (Level 9 Compressed).`);
   } catch (e) {
     console.error('[AI_JOB_DISCOVERY] Failed to reset shown history:', e);
   }
@@ -1355,11 +1422,12 @@ function resetShownJobsHistory(userKey) {
 }
 
 /**
- * Restores a single job from shown history back to active feed
+ * Restores a single job from shown history back to active feed (Level 9 Compressed)
  */
 function unshowJob(userKey, jobId) {
   const key = userKey || 'tksanthosh494_gmail_com';
   const filePath = getDiscoveryFilePath(key);
+  const filePathGz = getDiscoveryFilePathGz(key);
   
   let data = getDiscoveredJobs(key);
   const shownHistory = data.shownHistory || [];
@@ -1384,8 +1452,8 @@ function unshowJob(userKey, jobId) {
   };
 
   try {
-    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
-    console.log(`[AI_JOB_DISCOVERY] ↩️ Restored job ${jobId} from shown history back to active feed.`);
+    writeCompressedJson(filePathGz, filePath, data);
+    console.log(`[AI_JOB_DISCOVERY] ↩️ Restored job ${jobId} from shown history back to active feed (Level 9 Compressed).`);
   } catch (e) {}
 
   return data;
@@ -1484,5 +1552,6 @@ module.exports = {
   verifyJobsBatch,
   tailorDiscoveredJob,
   initDiscoveryScheduler,
+  selectDiverseJobs,
   ENTERPRISE_JOB_BANK
 };

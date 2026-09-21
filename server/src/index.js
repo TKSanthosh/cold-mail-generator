@@ -71,7 +71,9 @@ const {
   listAllProfiles,
   USERS_DIR,
   createFullBackup,
-  restoreFullBackup
+  restoreFullBackup,
+  compressAndPruneAllSandboxes,
+  writeSafeJson
 } = require('./services/user.service');
 const {
   isSupabaseConfigured,
@@ -2956,21 +2958,24 @@ async function initDatabaseStartupSync() {
       console.warn('[DATABASE PERSISTENCE] Error syncing Naukri schedule slots:', e.message);
     }
 
-    // Hydrate Scheduled Jobs from Supabase
+    // Hydrate Scheduled Jobs from Supabase (Level 9 Compressed & Minified)
     const dbJobs = await supabaseGetScheduledJobs();
     if (Array.isArray(dbJobs) && dbJobs.length > 0) {
       const scheduleFile = path.join(__dirname, '../../scheduled.json');
-      fs.writeFileSync(scheduleFile, JSON.stringify(dbJobs, null, 2), 'utf8');
+      writeSafeJson(scheduleFile, dbJobs);
       console.log(`[DATABASE PERSISTENCE] Restored ${dbJobs.length} scheduled outreach email(s) from Supabase.`);
     }
 
-    // Hydrate LinkedIn automated outreach config from Supabase
+    // Hydrate LinkedIn automated outreach config from Supabase (Level 9 Compressed & Minified)
     const dbLinkedInConf = await supabaseGetLinkedInConfig();
     if (dbLinkedInConf) {
       const linkedInFile = path.join(__dirname, '../../linkedin_config.json');
-      fs.writeFileSync(linkedInFile, JSON.stringify(dbLinkedInConf, null, 2), 'utf8');
+      writeSafeJson(linkedInFile, dbLinkedInConf);
       console.log('[DATABASE PERSISTENCE] Restored LinkedIn automated outreach config from Supabase.');
     }
+
+    // Maximum Compression Sweep across all user sandboxes (Gzip Level 9 + Orphan PDF Prune)
+    compressAndPruneAllSandboxes(USERS_DIR);
 
     console.log('[DATABASE PERSISTENCE] ✅ Full database-first hydration complete. Zero data loss on redeploys!');
   } catch (err) {

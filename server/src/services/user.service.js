@@ -24,7 +24,19 @@ function getUserKeyFromEmail(email) {
   return email.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
 }
 
-const { readCompressedJson, writeCompressedJson, createFullBackup, restoreFullBackup, appendGlobalLog, getGlobalLogs } = require('./storage.service');
+const {
+  readCompressedJson,
+  writeCompressedJson,
+  readSafeJson,
+  writeSafeJson,
+  createFullBackup,
+  restoreFullBackup,
+  appendGlobalLog,
+  getGlobalLogs,
+  pruneOrphanUploads,
+  compressDirectoryFiles,
+  compressAndPruneAllSandboxes
+} = require('./storage.service');
 const {
   isSupabaseConfigured,
   supabaseUpsertUser,
@@ -49,17 +61,25 @@ function getUserPaths(userKey) {
     userDir,
     uploadsDir,
     tokenPath: path.join(userDir, 'token.json'),
+    tokenPathGz: path.join(userDir, 'token.json.gz'),
     profilePath: path.join(userDir, 'profile.json'),
+    profilePathGz: path.join(userDir, 'profile.json.gz'),
     resumePath: path.join(userDir, 'resume.json'),
+    resumePathGz: path.join(userDir, 'resume.json.gz'),
     applicationsPath: path.join(userDir, 'applications.json'),
     applicationsPathGz: path.join(userDir, 'applications.json.gz'),
     logsPath: path.join(userDir, 'logs.json'),
     logsPathGz: path.join(userDir, 'logs.json.gz'),
     scheduledPath: path.join(userDir, 'scheduled.json'),
+    scheduledPathGz: path.join(userDir, 'scheduled.json.gz'),
     sentHrRegistryPath: path.join(userDir, 'sent_hr_registry.json'),
+    sentHrRegistryPathGz: path.join(userDir, 'sent_hr_registry.json.gz'),
     naukriConfigPath: path.join(userDir, 'naukri_config.json'),
+    naukriConfigPathGz: path.join(userDir, 'naukri_config.json.gz'),
     naukriHistoryPath: path.join(userDir, 'naukri_history.json'),
-    naukriSessionPath: path.join(userDir, 'naukri_session.json')
+    naukriHistoryPathGz: path.join(userDir, 'naukri_history.json.gz'),
+    naukriSessionPath: path.join(userDir, 'naukri_session.json'),
+    naukriSessionPathGz: path.join(userDir, 'naukri_session.json.gz')
   };
 }
 
@@ -74,10 +94,10 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
   }
 
   // 1. Profile metadata
-  if (!fs.existsSync(paths.profilePath) || profileInfo.email) {
+  if (!fs.existsSync(paths.profilePath) || !fs.existsSync(paths.profilePathGz) || profileInfo.email) {
     let existingProfile = {};
-    if (fs.existsSync(paths.profilePath)) {
-      try { existingProfile = JSON.parse(fs.readFileSync(paths.profilePath, 'utf8')); } catch (e) {}
+    if (fs.existsSync(paths.profilePathGz) || fs.existsSync(paths.profilePath)) {
+      try { existingProfile = readCompressedJson(paths.profilePathGz, paths.profilePath, {}); } catch (e) {}
     }
     const profile = {
       userKey,
@@ -87,14 +107,19 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
       createdAt: existingProfile.createdAt || new Date().toISOString(),
       lastActive: new Date().toISOString()
     };
-    fs.writeFileSync(paths.profilePath, JSON.stringify(profile, null, 2), 'utf8');
+    writeCompressedJson(paths.profilePathGz, paths.profilePath, profile);
   }
 
   // 2. Base Resume
-  if (!fs.existsSync(paths.resumePath)) {
+  if (!fs.existsSync(paths.resumePath) && !fs.existsSync(paths.resumePathGz)) {
     const isSanthosh = userKey.includes('santhosh') || (profileInfo.email && profileInfo.email.includes('santhosh'));
     if (isSanthosh && fs.existsSync(MASTER_RESUME_PATH)) {
-      fs.copyFileSync(MASTER_RESUME_PATH, paths.resumePath);
+      try {
+        const master = JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8'));
+        writeCompressedJson(paths.resumePathGz, paths.resumePath, master);
+      } catch (e) {
+        fs.copyFileSync(MASTER_RESUME_PATH, paths.resumePath);
+      }
     } else {
       const starterResume = {
         personalInfo: {
@@ -119,7 +144,7 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
         internship: null,
         education: []
       };
-      fs.writeFileSync(paths.resumePath, JSON.stringify(starterResume, null, 2), 'utf8');
+      writeCompressedJson(paths.resumePathGz, paths.resumePath, starterResume);
     }
   }
 
@@ -128,30 +153,21 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
 
 function getUserProfile(userKey) {
   const paths = getUserPaths(userKey);
-  if (fs.existsSync(paths.profilePath)) {
-    try {
-      return JSON.parse(fs.readFileSync(paths.profilePath, 'utf8'));
-    } catch (e) {}
-  }
-  return null;
+  return readCompressedJson(paths.profilePathGz, paths.profilePath, null);
 }
 
 function getUserResume(userKey) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  try {
-    if (fs.existsSync(paths.resumePath)) {
-      const data = JSON.parse(fs.readFileSync(paths.resumePath, 'utf8'));
-      if (data && data.personalInfo && data.personalInfo.name) {
-        return data;
-      }
-    }
-  } catch (e) {}
+  const data = readCompressedJson(paths.resumePathGz, paths.resumePath, null);
+  if (data && data.personalInfo && data.personalInfo.name) {
+    return data;
+  }
 
   if (fs.existsSync(MASTER_RESUME_PATH)) {
     try {
       const master = JSON.parse(fs.readFileSync(MASTER_RESUME_PATH, 'utf8'));
-      fs.writeFileSync(paths.resumePath, JSON.stringify(master, null, 2), 'utf8');
+      writeCompressedJson(paths.resumePathGz, paths.resumePath, master);
       return master;
     } catch (e) {}
   }
@@ -175,14 +191,14 @@ async function getUserResumeAsync(userKey) {
         if (isUpToDate) {
           const paths = getUserPaths(userKey);
           ensureUserSandbox(userKey);
-          try { fs.writeFileSync(paths.resumePath, JSON.stringify(dbResume, null, 2), 'utf8'); } catch (e) {}
+          try { writeCompressedJson(paths.resumePathGz, paths.resumePath, dbResume); } catch (e) {}
           return dbResume;
         } else if (master) {
           // Outdated resume stored in Supabase: auto-upgrade to canonical resume and save
           await supabaseSaveResume(userKey, master);
           const paths = getUserPaths(userKey);
           ensureUserSandbox(userKey);
-          try { fs.writeFileSync(paths.resumePath, JSON.stringify(master, null, 2), 'utf8'); } catch (e) {}
+          try { writeCompressedJson(paths.resumePathGz, paths.resumePath, master); } catch (e) {}
           return master;
         }
       } else if (master) {
@@ -198,7 +214,7 @@ async function getUserResumeAsync(userKey) {
 function saveUserResume(userKey, data) {
   const paths = getUserPaths(userKey);
   ensureUserSandbox(userKey);
-  fs.writeFileSync(paths.resumePath, JSON.stringify(data, null, 2), 'utf8');
+  writeCompressedJson(paths.resumePathGz, paths.resumePath, data);
 
   // Supabase cloud sync
   if (isSupabaseConfigured()) {
@@ -243,6 +259,10 @@ function saveUserApplications(userKey, apps) {
   ensureUserSandbox(userKey);
   const sanitized = (apps || []).map(sanitizeApplicationEntry);
   writeCompressedJson(paths.applicationsPathGz, paths.applicationsPath, sanitized);
+
+  // Anti-blind saving: Prune orphaned PDFs in uploads that are not in active applications
+  const validPdfs = sanitized.map(a => a.pdfFilename).filter(Boolean);
+  pruneOrphanUploads(paths.userDir, validPdfs);
 
   // Supabase cloud sync
   if (isSupabaseConfigured()) {
@@ -552,5 +572,10 @@ module.exports = {
   getAllUserKeys,
   USERS_DIR,
   createFullBackup,
-  restoreFullBackup
+  restoreFullBackup,
+  compressAndPruneAllSandboxes,
+  readSafeJson,
+  writeSafeJson,
+  writeCompressedJson,
+  readCompressedJson
 };

@@ -1,4 +1,4 @@
-const { getDiscoveredJobs, refreshDiscoveredJobs, tailorDiscoveredJob, ENTERPRISE_JOB_BANK } = require('../server/src/services/ai_job_discovery.service');
+const { getDiscoveredJobs, refreshDiscoveredJobs, tailorDiscoveredJob, resetShownJobsHistory, ENTERPRISE_JOB_BANK } = require('../server/src/services/ai_job_discovery.service');
 const assert = require('assert');
 
 async function testEnterpriseJobDiscovery() {
@@ -7,6 +7,7 @@ async function testEnterpriseJobDiscovery() {
   console.log('================================================================');
 
   const userKey = 'tksanthosh494_gmail_com';
+  resetShownJobsHistory(userKey);
 
   // 1. Minimum 20 enterprise jobs requirement
   const feed = getDiscoveredJobs(userKey);

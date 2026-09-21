@@ -1,18 +1,1 @@
-{
-  "mode": "draft",
-  "enabled": false,
-  "keywords": "Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote",
-  "lastRunAt": "2026-09-19T11:19:58.620Z",
-  "nextRunAt": "2026-09-19T15:38:49.664Z",
-  "timeFrame": "3d",
-  "customSlots": [
-    "09:30 AM",
-    "01:30 PM",
-    "05:30 PM",
-    "09:30 PM"
-  ],
-  "scheduleMode": "interval",
-  "targetPerRun": 10,
-  "intervalHours": 4,
-  "intervalMinutes": 240
-}
+{"mode":"draft","enabled":true,"keywords":"Full Stack Developer, MERN Stack, React.js, Node.js, Express, Bangalore, Remote","lastRunAt":"2026-09-19T11:23:06.871Z","nextRunAt":"2026-09-21T11:58:57.681Z","timeFrame":"3d","customSlots":["09:30 AM","01:30 PM","05:30 PM","09:30 PM"],"scheduleMode":"interval","targetPerRun":10,"intervalHours":4,"intervalMinutes":240}
