@@ -62,7 +62,7 @@ Write-Host "`n⚡ Launching & Verifying indefinite background process..." -Foreg
 Write-Host "`n==========================================================" -ForegroundColor Cyan
 Write-Host "✅ SUCCESS: Configured to run as an INDEFINITE background process!" -ForegroundColor Green
 Write-Host "   • Local URL:     http://localhost:5001" -ForegroundColor Gray
-Write-Host "   • Cloud Backup:  https://cold-mail-generator-ul79.onrender.com" -ForegroundColor Gray
+Write-Host "   • Cloud Backup:  https://cold-mail-generator-6n7t.onrender.com" -ForegroundColor Gray
 Write-Host "   • Self-Healing:  Restarts automatically if Node ever exits or crashes" -ForegroundColor Gray
 Write-Host "   • Indefinite:    No execution time limits; runs continuously" -ForegroundColor Gray
 Write-Host "==========================================================" -ForegroundColor Cyan

@@ -15,4 +15,4 @@ jobs:
       - name: Ping Live Health Endpoint
         run: |
           echo "Sending keep-alive ping to Render container..."
-          curl -s -f "https://cold-mail-generator-7ytw.onrender.com/api/health" || echo "Ping dispatched"
+          curl -s -f "https://cold-mail-generator-6n7t.onrender.com/api/health" || echo "Ping dispatched"

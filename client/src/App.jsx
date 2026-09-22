@@ -5,7 +5,7 @@ const BACKEND_URL = (() => {
   if (typeof window === 'undefined') return '';
   if (window.location.port === '5174' || window.location.port === '5173') return 'http://localhost:5001';
   if (window.location.hostname && window.location.hostname.includes('github.io')) {
-    return localStorage.getItem('cold_email_backend_url') || 'https://cold-mail-generator-7ytw.onrender.com';
+    return localStorage.getItem('cold_email_backend_url') || 'https://cold-mail-generator-6n7t.onrender.com';
   }
   return '';
 })();

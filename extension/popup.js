@@ -62,7 +62,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     serverMode: 'auto', // 'auto' | 'local' | 'cloud'
     serverUrl: 'http://localhost:5001',
     localUrl: 'http://localhost:5001',
-    renderUrl: 'https://cold-mail-generator-ul79.onrender.com',
+    renderUrl: 'https://cold-mail-generator-6n7t.onrender.com',
     userKey: 'tksanthosh494_gmail_com',
     autoShowWidget: true,
     autoDownloadPdf: false,
@@ -84,7 +84,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (urlDesc) urlDesc.innerText = 'Local server endpoint (port 5001 / 5000)';
     } else if (mode === 'cloud') {
       if (modeDesc) modeDesc.innerText = '☁️ Cloud Mode: Connects directly to 24/7 Render cloud backend.';
-      if (setServerUrl) setServerUrl.value = currentSettings.renderUrl || 'https://cold-mail-generator-ul79.onrender.com';
+      if (setServerUrl) setServerUrl.value = currentSettings.renderUrl || 'https://cold-mail-generator-6n7t.onrender.com';
       if (urlDesc) urlDesc.innerText = '24/7 Render Cloud API endpoint';
     } else {
       if (modeDesc) modeDesc.innerText = '⚡ Auto Mode: Checks localhost:5001 first, seamlessly switches to Cloud API if offline.';
@@ -322,7 +322,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnModeCloud.addEventListener('click', () => {
       currentSettings.serverMode = 'cloud';
       setServerModeUI('cloud');
-      chrome.storage.sync.set({ serverMode: 'cloud', serverUrl: currentSettings.renderUrl || 'https://cold-mail-generator-ul79.onrender.com' }, () => {
+      chrome.storage.sync.set({ serverMode: 'cloud', serverUrl: currentSettings.renderUrl || 'https://cold-mail-generator-6n7t.onrender.com' }, () => {
         checkServerConnection();
       });
     });

@@ -4,7 +4,7 @@ const DEFAULT_SETTINGS = {
   serverMode: 'auto', // 'auto' | 'local' | 'cloud'
   serverUrl: 'http://localhost:5001',
   localUrl: 'http://localhost:5001',
-  renderUrl: 'https://cold-mail-generator-ul79.onrender.com',
+  renderUrl: 'https://cold-mail-generator-6n7t.onrender.com',
   userKey: 'tksanthosh494_gmail_com',
   autoShowWidget: true,
   autoDownloadPdf: false,
@@ -163,7 +163,7 @@ async function checkUrlOnline(url, timeoutMs = null) {
 async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   const settings = await getStoredSettings();
   const mode = explicitMode || settings.serverMode || 'auto';
-  const renderUrl = (settings.renderUrl || 'https://cold-mail-generator-ul79.onrender.com').replace(/\/+$/, '');
+  const renderUrl = (settings.renderUrl || 'https://cold-mail-generator-6n7t.onrender.com').replace(/\/+$/, '');
   const localUrl = (settings.localUrl || 'http://localhost:5001').replace(/\/+$/, '');
 
   // 1. FORCED LOCAL MODE
@@ -190,7 +190,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
     const cloudCandidates = [
       preferredUrl,
       renderUrl,
-      'https://cold-mail-generator-ul79.onrender.com'
+      'https://cold-mail-generator-6n7t.onrender.com'
     ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
 
     for (const cloud of cloudCandidates) {
@@ -222,7 +222,7 @@ async function resolveLiveServerUrl(preferredUrl, explicitMode) {
   const cloudCandidates = [
     preferredUrl,
     renderUrl,
-    'https://cold-mail-generator-ul79.onrender.com'
+    'https://cold-mail-generator-6n7t.onrender.com'
   ].filter(u => u && !u.includes('localhost') && !u.includes('127.0.0.1'));
 
   for (const cloud of cloudCandidates) {
