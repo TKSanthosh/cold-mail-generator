@@ -81,7 +81,7 @@ const VALID_STAGE_TRANSITIONS = {
   [BatchStage.READY_TO_APPLY]: [BatchStage.APPLYING, BatchStage.RECONCILING, BatchStage.WAITING_FOR_ANSWERS, BatchStage.PAUSED, BatchStage.IDLE],
   [BatchStage.APPLYING]: [BatchStage.RECONCILING, BatchStage.WAITING_FOR_ANSWERS, BatchStage.FAILED, BatchStage.COMPLETED],
   [BatchStage.RECONCILING]: [BatchStage.COMPLETED, BatchStage.READY_TO_APPLY, BatchStage.WAITING_FOR_ANSWERS, BatchStage.FAILED, BatchStage.IDLE],
-  [BatchStage.COMPLETED]: [BatchStage.IDLE, BatchStage.DISCOVERING],
+  [BatchStage.COMPLETED]: [BatchStage.IDLE, BatchStage.DISCOVERING, BatchStage.READY_TO_APPLY, BatchStage.INSPECTING, BatchStage.WAITING_FOR_ANSWERS],
   [BatchStage.PAUSED]: [BatchStage.WAITING_FOR_ANSWERS, BatchStage.READY_TO_APPLY, BatchStage.IDLE],
   [BatchStage.FAILED]: [BatchStage.IDLE, BatchStage.DISCOVERING, BatchStage.READY_TO_APPLY]
 };

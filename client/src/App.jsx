@@ -196,11 +196,17 @@ export default function App() {
           const updated = { ...savedUser, ...data.user, userKey: data.userKey || savedUser?.userKey };
           setCurrentUser(updated);
           localStorage.setItem('cold_email_user', JSON.stringify(updated));
-        } else if (data.authorized === false && !savedUser && !localStorage.getItem('cold_email_jwt')) {
+        } else if (data.authorized === false) {
           setIsAuthorized(false);
-          setCurrentUser(null);
-          localStorage.removeItem('cold_email_user');
-          localStorage.removeItem('cold_email_jwt');
+          if (data.user) {
+            const updated = { ...savedUser, ...data.user, userKey: data.userKey || savedUser?.userKey };
+            setCurrentUser(updated);
+            localStorage.setItem('cold_email_user', JSON.stringify(updated));
+          } else if (!savedUser && !localStorage.getItem('cold_email_jwt')) {
+            setCurrentUser(null);
+            localStorage.removeItem('cold_email_user');
+            localStorage.removeItem('cold_email_jwt');
+          }
         }
       }
     } catch (e) {
@@ -394,6 +400,24 @@ export default function App() {
           )}
         </div>
       </header>
+
+      {/* Reconnect Gmail Warning Banner */}
+      {currentUser && !isAuthorized && (
+        <div className="bg-amber-50 dark:bg-amber-950/70 border-b border-amber-200 dark:border-amber-800 px-3 sm:px-6 py-2.5 flex items-center justify-between text-amber-900 dark:text-amber-200 text-xs sm:text-sm transition-colors">
+          <div className="flex items-center gap-2 min-w-0">
+            <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0 animate-pulse" />
+            <span className="truncate">
+              <strong>Gmail Reconnection Required:</strong> Google authorization has expired or changed. Outreach emails and automated dispatches are paused.
+            </span>
+          </div>
+          <button
+            onClick={handleConnectGmail}
+            className="bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-bold px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-all shrink-0 shadow-sm ml-2"
+          >
+            <Mail className="w-3.5 h-3.5" /> Reconnect Gmail
+          </button>
+        </div>
+      )}
 
       {/* Navigation tabs with Horizontal Touch Scrolling */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 px-2 sm:px-6 flex gap-1 sm:gap-6 overflow-x-auto no-scrollbar touch-scroll whitespace-nowrap shadow-xs transition-colors">

@@ -497,25 +497,149 @@ function getUserOAuthClient(userKey) {
   return client;
 }
 
+const tokenValidityCache = new Map(); // userKey -> { valid: boolean, checkedAt: number, error: string }
+
+function clearUserAuthCache(userKey) {
+  if (userKey) {
+    tokenValidityCache.delete(userKey);
+  } else {
+    tokenValidityCache.clear();
+  }
+}
+
+function getExpectedClientId() {
+  let clientId = process.env.GOOGLE_CLIENT_ID;
+  if (!clientId) {
+    if (process.env.GOOGLE_CLIENT_SECRET_JSON) {
+      try {
+        const parsed = JSON.parse(process.env.GOOGLE_CLIENT_SECRET_JSON);
+        const keyType = parsed.installed ? 'installed' : 'web';
+        clientId = parsed[keyType]?.client_id;
+      } catch (e) {}
+    } else if (SECRET_PATH && fs.existsSync(SECRET_PATH)) {
+      try {
+        const credentials = JSON.parse(fs.readFileSync(SECRET_PATH, 'utf8'));
+        const keyType = credentials.installed ? 'installed' : 'web';
+        clientId = credentials[keyType]?.client_id;
+      } catch (e) {}
+    }
+  }
+  return clientId || null;
+}
+
+function isTokenAudienceValid(tokens) {
+  if (!tokens || !tokens.id_token) return true;
+  try {
+    const parts = tokens.id_token.split('.');
+    if (parts.length >= 2) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+      const expectedClientId = getExpectedClientId();
+      if (expectedClientId && payload.aud && payload.aud !== expectedClientId) {
+        return false;
+      }
+    }
+  } catch (e) {}
+  return true;
+}
+
 function isUserAuthorized(userKey) {
   try {
+    const cached = tokenValidityCache.get(userKey);
+    if (cached && !cached.valid) return false;
+
     const paths = getUserPaths(userKey);
     const globalTokenPath = path.join(__dirname, '../../token.json');
 
-    if (!fs.existsSync(paths.tokenPath)) {
-      if (fs.existsSync(globalTokenPath)) {
-        try {
-          fs.copyFileSync(globalTokenPath, paths.tokenPath);
-          const tokens = JSON.parse(fs.readFileSync(paths.tokenPath, 'utf8'));
-          return !!(tokens && (tokens.access_token || tokens.refresh_token));
-        } catch (e) {}
-      }
+    let tokenFile = null;
+    if (fs.existsSync(paths.tokenPath)) {
+      tokenFile = paths.tokenPath;
+    } else if (fs.existsSync(globalTokenPath)) {
+      tokenFile = globalTokenPath;
+    }
+
+    if (!tokenFile) {
       return false;
     }
-    const tokens = JSON.parse(fs.readFileSync(paths.tokenPath, 'utf8'));
-    return !!(tokens && (tokens.access_token || tokens.refresh_token));
+
+    const tokens = JSON.parse(fs.readFileSync(tokenFile, 'utf8'));
+    if (!tokens || (!tokens.access_token && !tokens.refresh_token)) {
+      return false;
+    }
+
+    if (!isTokenAudienceValid(tokens)) {
+      return false;
+    }
+
+    return true;
   } catch (e) {
     return false;
+  }
+}
+
+async function verifyUserAuthorization(userKey, options = {}) {
+  const { force = false } = options;
+  if (!userKey) return { authorized: false, reason: 'NO_USER_KEY', needsReauth: true };
+
+  // Test mode bypass
+  if (process.env.USE_TEST_DATABASE === 'true' || process.env.TEST_MODE === 'true' || process.env.NODE_ENV === 'test') {
+    return { authorized: isUserAuthorized(userKey) };
+  }
+
+  const now = Date.now();
+  const cached = tokenValidityCache.get(userKey);
+  if (!force && cached && (now - cached.checkedAt < 5 * 60 * 1000)) {
+    return {
+      authorized: cached.valid,
+      needsReauth: !cached.valid,
+      reason: cached.error
+    };
+  }
+
+  const paths = getUserPaths(userKey);
+  const globalTokenPath = path.join(__dirname, '../../token.json');
+
+  let tokenFile = null;
+  if (fs.existsSync(paths.tokenPath)) {
+    tokenFile = paths.tokenPath;
+  } else if (fs.existsSync(globalTokenPath)) {
+    tokenFile = globalTokenPath;
+  }
+
+  if (!tokenFile) {
+    tokenValidityCache.set(userKey, { valid: false, checkedAt: now, error: 'NO_TOKEN' });
+    return { authorized: false, reason: 'No Gmail token found', needsReauth: true };
+  }
+
+  let tokens;
+  try {
+    tokens = JSON.parse(fs.readFileSync(tokenFile, 'utf8'));
+  } catch (e) {
+    tokenValidityCache.set(userKey, { valid: false, checkedAt: now, error: 'MALFORMED_TOKEN' });
+    return { authorized: false, reason: 'Malformed token file', needsReauth: true };
+  }
+
+  if (!tokens || (!tokens.access_token && !tokens.refresh_token)) {
+    tokenValidityCache.set(userKey, { valid: false, checkedAt: now, error: 'EMPTY_TOKENS' });
+    return { authorized: false, reason: 'Empty token file', needsReauth: true };
+  }
+
+  // Fast check: aud claim vs expected client id
+  if (!isTokenAudienceValid(tokens)) {
+    const reason = 'Google OAuth Client ID mismatch between token and active environment credentials.';
+    tokenValidityCache.set(userKey, { valid: false, checkedAt: now, error: reason });
+    return { authorized: false, reason, needsReauth: true };
+  }
+
+  // Active check against Google OAuth endpoint
+  try {
+    const client = getUserOAuthClient(userKey);
+    await client.getAccessToken();
+    tokenValidityCache.set(userKey, { valid: true, checkedAt: now, error: null });
+    return { authorized: true };
+  } catch (err) {
+    const errMsg = err.message || 'Google token validation failed';
+    tokenValidityCache.set(userKey, { valid: false, checkedAt: now, error: errMsg });
+    return { authorized: false, reason: errMsg, needsReauth: true };
   }
 }
 
@@ -568,6 +692,8 @@ module.exports = {
   hydrateUserSandboxFromDatabase,
   getUserOAuthClient,
   isUserAuthorized,
+  verifyUserAuthorization,
+  clearUserAuthCache,
   listAllProfiles,
   getAllUserKeys,
   USERS_DIR,

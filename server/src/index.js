@@ -68,6 +68,8 @@ const {
   syncUserLogs,
   hydrateUserSandboxFromDatabase,
   isUserAuthorized,
+  verifyUserAuthorization,
+  clearUserAuthCache,
   listAllProfiles,
   USERS_DIR,
   createFullBackup,
@@ -527,6 +529,9 @@ app.get('/api/auth/callback', async (req, res) => {
       maxAge: ONE_MONTH_SECONDS * 1000
     });
 
+    // Invalidate user auth cache on fresh sign-in
+    clearUserAuthCache(userInfo.userKey);
+
     // Redirect to frontend with auth payload
     const redirectUrl = `/?auth=success&jwt=${encodeURIComponent(accessToken)}&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
     res.redirect(redirectUrl);
@@ -549,9 +554,18 @@ app.get('/api/auth/status', async (req, res) => {
   if (isSupabaseConfigured()) {
     await hydrateUserSandboxFromDatabase(userKey);
   }
-  const authorized = isUserAuthorized(userKey);
+  const authRes = await verifyUserAuthorization(userKey);
   const profile = getUserProfile(userKey) || user;
-  res.json({ authorized, user: profile, userKey });
+  if (!authRes.authorized) {
+    return res.json({
+      authorized: false,
+      needsReauth: true,
+      error: authRes.reason || 'Gmail authorization has expired or is invalid. Please reconnect Gmail.',
+      user: profile,
+      userKey
+    });
+  }
+  res.json({ authorized: true, user: profile, userKey });
 });
 
 app.get('/api/auth/profiles', (req, res) => {
@@ -565,6 +579,7 @@ app.get('/api/auth/profiles', (req, res) => {
 app.post('/api/auth/logout', (req, res) => {
   const userKey = resolveUserKey(req, res);
   try {
+    clearUserAuthCache(userKey);
     logout(userKey);
     res.clearCookie('auth_token');
     res.clearCookie('refresh_token');

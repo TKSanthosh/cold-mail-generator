@@ -193,12 +193,25 @@ async function sendGmail(to, subject, htmlBody, attachmentPath, userKey = null, 
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
   const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentName);
 
-  const res = await gmail.users.messages.send({
-    userId: 'me',
-    requestBody: {
-      raw: raw
+  let res;
+  try {
+    res = await gmail.users.messages.send({
+      userId: 'me',
+      requestBody: {
+        raw: raw
+      }
+    });
+  } catch (err) {
+    const errMsg = err.message || '';
+    if (errMsg.includes('unauthorized_client') || errMsg.includes('invalid_grant') || errMsg.includes('invalid_client')) {
+      try {
+        const { clearUserAuthCache } = require('./user.service');
+        clearUserAuthCache(userKey);
+      } catch (e) {}
+      throw new Error(`Gmail Authorization Failed: Google rejected the token (${errMsg}). Please click "Connect Gmail" in the top bar to re-authenticate.`);
     }
-  });
+    throw err;
+  }
 
   // 5. Post-Send Logging: Record sent HR immediately in persistent registry
   if (!options.isAlert) {
@@ -261,16 +274,27 @@ async function createGmailDraft(to, subject, htmlBody, attachmentPath, userKey =
   const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
   const raw = buildMimeMessage(to, subject, htmlBody, attachmentPath, attachmentName);
 
-  const res = await gmail.users.drafts.create({
-    userId: 'me',
-    requestBody: {
-      message: {
-        raw: raw
+  try {
+    const res = await gmail.users.drafts.create({
+      userId: 'me',
+      requestBody: {
+        message: {
+          raw: raw
+        }
       }
+    });
+    return res.data;
+  } catch (err) {
+    const errMsg = err.message || '';
+    if (errMsg.includes('unauthorized_client') || errMsg.includes('invalid_grant') || errMsg.includes('invalid_client')) {
+      try {
+        const { clearUserAuthCache } = require('./user.service');
+        clearUserAuthCache(userKey);
+      } catch (e) {}
+      throw new Error(`Gmail Authorization Failed: Google rejected the token (${errMsg}). Please click "Connect Gmail" in the top bar to re-authenticate.`);
     }
-  });
-
-  return res.data;
+    throw err;
+  }
 }
 
 module.exports = {
