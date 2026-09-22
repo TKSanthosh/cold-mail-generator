@@ -68,10 +68,55 @@ function verifyRefreshToken(refreshToken) {
   }
 }
 
+const crypto = require('crypto');
+
+const ENCRYPTION_KEY_RAW = resolveJwtSecret('ENCRYPTION_SECRET', 'test_encryption_secret_1234567890_key_32');
+const ENCRYPTION_KEY = crypto.createHash('sha256').update(ENCRYPTION_KEY_RAW).digest();
+
+/**
+ * Securely encrypts Google OAuth tokens for 30-day client-side persistence across ephemeral container builds.
+ */
+function encryptSessionTokens(tokens) {
+  if (!tokens || typeof tokens !== 'object') return null;
+  try {
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+    const jsonStr = JSON.stringify(tokens);
+    const encrypted = Buffer.concat([cipher.update(jsonStr, 'utf8'), cipher.final()]);
+    const tag = cipher.getAuthTag();
+    return `${iv.toString('base64url')}.${tag.toString('base64url')}.${encrypted.toString('base64url')}`;
+  } catch (e) {
+    console.error('[ENCRYPTION ERROR] Failed to encrypt tokens:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Decrypts 30-day client-side tokens to restore server sandbox on-the-fly.
+ */
+function decryptSessionTokens(payloadStr) {
+  if (!payloadStr || typeof payloadStr !== 'string') return null;
+  try {
+    const parts = payloadStr.split('.');
+    if (parts.length !== 3) return null;
+    const iv = Buffer.from(parts[0], 'base64url');
+    const tag = Buffer.from(parts[1], 'base64url');
+    const encrypted = Buffer.from(parts[2], 'base64url');
+    const decipher = crypto.createDecipheriv('aes-256-gcm', ENCRYPTION_KEY, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+    return JSON.parse(decrypted.toString('utf8'));
+  } catch (e) {
+    return null;
+  }
+}
+
 module.exports = {
   generateTokens,
   verifyAccessToken,
   verifyRefreshToken,
+  encryptSessionTokens,
+  decryptSessionTokens,
   ONE_MONTH_SECONDS
 };
 

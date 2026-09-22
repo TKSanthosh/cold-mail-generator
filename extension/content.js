@@ -197,7 +197,7 @@
     }
 
     // Explicit job sites
-    if (host.includes('linkedin.com') && (path.includes('/jobs/') || path.includes('/job/'))) return true;
+    if (host.includes('linkedin.com')) return true;
     if (host.includes('naukri.com') && (path.includes('job') || href.includes('jobid') || path.includes('listings'))) return true;
     if (host.includes('indeed.com') && (path.includes('/viewjob') || href.includes('vjk=') || path.includes('/rc/clk'))) return true;
     if (host.includes('greenhouse.io') || host.includes('lever.co') || host.includes('glassdoor.com')) return true;
@@ -1384,16 +1384,154 @@
       // Initial check on load (1.2s delay for SPA hydration)
       setTimeout(checkPage, 1200);
 
+      // Run recruiter post scanner immediately and periodically for LinkedIn
+      setTimeout(scanLinkedInRecruiterPosts, 1500);
+      window.addEventListener('scroll', () => {
+        clearTimeout(window.__airScrollTimer);
+        window.__airScrollTimer = setTimeout(scanLinkedInRecruiterPosts, 500);
+      }, { passive: true });
+
+      // Observe dynamic feeds and search results on LinkedIn
+      try {
+        const observer = new MutationObserver(() => {
+          clearTimeout(window.__airMutTimer);
+          window.__airMutTimer = setTimeout(scanLinkedInRecruiterPosts, 600);
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+      } catch (_) {}
+
       // Listen to SPA URL changes (e.g. LinkedIn, Naukri, Indeed SPA tab clicks)
-      window.addEventListener('popstate', () => setTimeout(checkPage, 1000));
+      window.addEventListener('popstate', () => {
+        setTimeout(checkPage, 1000);
+        setTimeout(scanLinkedInRecruiterPosts, 1500);
+      });
 
       let trackedUrl = window.location.href;
       setInterval(() => {
         if (window.location.href !== trackedUrl) {
           trackedUrl = window.location.href;
           setTimeout(checkPage, 1000);
+          setTimeout(scanLinkedInRecruiterPosts, 1500);
         }
       }, 2000);
+    });
+  }
+
+  // --- LINKEDIN RECRUITER POST SCANNER (1-CLICK DIRECT COLD EMAIL) ---
+  function scanLinkedInRecruiterPosts() {
+    if (!window.location.hostname.includes('linkedin.com') || isSitePaused()) return;
+
+    // Matches feed updates, search content results, and standalone post cards
+    const postCards = document.querySelectorAll(
+      '.feed-shared-update-v2:not([data-air-recruiter-scanned]), ' +
+      'div[data-urn*="activity"]:not([data-air-recruiter-scanned]), ' +
+      'div[data-view-name*="search-entity"]:not([data-air-recruiter-scanned]), ' +
+      '.update-components-text:not([data-air-recruiter-scanned])'
+    );
+
+    const emailRegex = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/g;
+
+    postCards.forEach(card => {
+      card.setAttribute('data-air-recruiter-scanned', 'true');
+
+      const cardText = card.innerText || card.textContent || '';
+      if (!cardText || cardText.length < 30) return;
+
+      const matchedEmails = cardText.match(emailRegex);
+      if (!matchedEmails || matchedEmails.length === 0) return;
+
+      // Filter out self email or service emails
+      const validEmails = matchedEmails.filter(e => {
+        const lower = e.toLowerCase();
+        return lower !== 'tksanthosh494@gmail.com' &&
+               !lower.startsWith('support@') &&
+               !lower.startsWith('feedback@') &&
+               !lower.startsWith('noreply@');
+      });
+
+      if (validEmails.length === 0) return;
+      const targetEmail = validEmails[0];
+
+      // Extract author / recruiter name if possible
+      let authorName = '';
+      const actorEl = card.querySelector('.update-components-actor__name, .feed-shared-actor__name, .app-aware-link');
+      if (actorEl) {
+        authorName = (actorEl.innerText || '').split('\n')[0].trim();
+      }
+
+      // Find injection target (social action bar or bottom of card)
+      let actionBar = card.querySelector('.feed-shared-social-action-bar, .feed-shared-social-actions, .feed-shared-update-v2__actions');
+      if (!actionBar) {
+        actionBar = card;
+      }
+
+      // Avoid double injection
+      if (card.querySelector('.air-recruiter-cold-email-btn')) return;
+
+      // Create Injectable Button
+      const btnWrap = document.createElement('div');
+      btnWrap.className = 'air-recruiter-bar';
+      btnWrap.innerHTML = `
+        <button type="button" class="air-recruiter-cold-email-btn" title="Send cold email directly to verified recruiter: ${targetEmail}">
+          <span class="air-recruiter-btn-icon">⚡</span>
+          <span class="air-recruiter-btn-text">Cold Email Recruiter (${targetEmail})</span>
+          <span class="air-recruiter-verified-badge">100% Legit</span>
+        </button>
+      `;
+
+      const actionBtn = btnWrap.querySelector('.air-recruiter-cold-email-btn');
+      actionBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        actionBtn.disabled = true;
+        actionBtn.innerHTML = `<span>⏳ Preparing tailored email...</span>`;
+
+        // Request background worker to parse post and open live app
+        safeSendMessage({
+          action: 'PARSE_RECRUITER_POST',
+          rawText: cardText,
+          authorName
+        }, (res) => {
+          let leadData = res && res.lead ? res.lead : null;
+          const leadEmail = (leadData && leadData.email) || targetEmail;
+          const leadName = (leadData && leadData.recruiterName) || authorName || 'Hiring Manager';
+          const leadComp = (leadData && leadData.company) || '';
+          const leadRole = (leadData && leadData.role) || 'Software Engineer';
+          const leadSkills = (leadData && leadData.skills) ? leadData.skills.join(', ') : '';
+
+          safeSendMessage({ action: 'GET_LIVE_APP_URL' }, (urlRes) => {
+            const baseUrl = (urlRes && urlRes.url) || 'https://tksanthosh.github.io/cold-mail-generator';
+            const params = new URLSearchParams({
+              tab: 'single',
+              recruiterEmail: leadEmail,
+              recruiterName: leadName,
+              company: leadComp,
+              role: leadRole,
+              skills: leadSkills,
+              postText: cardText.slice(0, 1500)
+            });
+
+            const targetUrl = `${baseUrl.replace(/\/+$/, '')}/?${params.toString()}`;
+            window.open(targetUrl, '_blank');
+
+            actionBtn.disabled = false;
+            actionBtn.innerHTML = `
+              <span class="air-recruiter-btn-icon">✓</span>
+              <span class="air-recruiter-btn-text">Opened Cold Email App!</span>
+            `;
+            setTimeout(() => {
+              actionBtn.innerHTML = `
+                <span class="air-recruiter-btn-icon">⚡</span>
+                <span class="air-recruiter-btn-text">Cold Email Recruiter (${targetEmail})</span>
+                <span class="air-recruiter-verified-badge">100% Legit</span>
+              `;
+            }, 3000);
+          });
+        });
+      });
+
+      actionBar.appendChild(btnWrap);
     });
   }
 

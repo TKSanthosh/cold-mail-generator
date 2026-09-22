@@ -99,10 +99,11 @@ function ensureUserSandbox(userKey, profileInfo = {}) {
     if (fs.existsSync(paths.profilePathGz) || fs.existsSync(paths.profilePath)) {
       try { existingProfile = readCompressedJson(paths.profilePathGz, paths.profilePath, {}); } catch (e) {}
     }
+    const isSanthosh = userKey.includes('santhosh') || (profileInfo.email && profileInfo.email.includes('santhosh'));
     const profile = {
       userKey,
-      email: profileInfo.email || existingProfile.email || '',
-      name: profileInfo.name || existingProfile.name || 'Candidate',
+      email: profileInfo.email || existingProfile.email || (isSanthosh ? 'tksanthosh494@gmail.com' : ''),
+      name: profileInfo.name || existingProfile.name || (isSanthosh ? 'Santhosh T K' : 'Candidate'),
       picture: profileInfo.picture || existingProfile.picture || '',
       createdAt: existingProfile.createdAt || new Date().toISOString(),
       lastActive: new Date().toISOString()
@@ -643,6 +644,28 @@ async function verifyUserAuthorization(userKey, options = {}) {
   }
 }
 
+/**
+ * Restores user tokens from encrypted client session across ephemeral container builds.
+ */
+function restoreUserTokensFromSession(userKey, encryptedBlob) {
+  if (!userKey || !encryptedBlob || typeof encryptedBlob !== 'string') return false;
+  try {
+    const { decryptSessionTokens } = require('./jwt.service');
+    const tokens = decryptSessionTokens(encryptedBlob);
+    if (!tokens || (!tokens.access_token && !tokens.refresh_token)) return false;
+
+    if (!isTokenAudienceValid(tokens)) return false;
+
+    const paths = getUserPaths(userKey);
+    ensureUserSandbox(userKey);
+    fs.writeFileSync(paths.tokenPath, JSON.stringify(tokens, null, 2), 'utf8');
+    clearUserAuthCache(userKey);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function listAllProfiles() {
   if (!fs.existsSync(USERS_DIR)) return [];
   const entries = fs.readdirSync(USERS_DIR, { withFileTypes: true });
@@ -694,6 +717,7 @@ module.exports = {
   isUserAuthorized,
   verifyUserAuthorization,
   clearUserAuthCache,
+  restoreUserTokensFromSession,
   listAllProfiles,
   getAllUserKeys,
   USERS_DIR,

@@ -353,7 +353,7 @@ Respond ONLY with strict JSON:
         
         for (const cand of candidates) {
           const ver = await verifyEmailDeliverability(cand, userKey);
-          if (ver.isValid && !ver.isGeneric && (ver.score || 0) > bestScore) {
+          if (ver.isValid && !ver.isGeneric && (ver.verifiedMailbox || (ver.score || 0) >= 85)) {
             bestEmail = cand;
             bestScore = ver.score || 90;
             if (ver.verifiedMailbox) break;
@@ -365,8 +365,8 @@ Respond ONLY with strict JSON:
     console.warn('[SCRAPE AI WARN] Dynamic synthesis warning:', err.message);
   }
 
-  // If dynamic synthesis produced an email, return it
-  if (bestEmail && !isGenericHrEmail(bestEmail)) {
+  // If deliverability verification succeeded for a real mailbox, return it
+  if (bestEmail && !isGenericHrEmail(bestEmail) && bestScore >= 85) {
     return {
       found: true,
       recruiterName,
@@ -376,30 +376,8 @@ Respond ONLY with strict JSON:
       domain,
       isPersonalRecruiter: true,
       confidenceScore: bestScore,
-      source: 'Scrape AI Pattern Synthesizer',
-      verification: { isValid: true, score: bestScore }
+      source: 'Scrape AI DNS/SMTP Validated Recruiter'
     };
-  }
-
-  // Last-mile variations on recruiter name
-  const variations = generateRecruiterEmailVariations(recruiterName, domain)
-    .filter(c => !isGenericHrEmail(c));
-  for (const cand of variations) {
-    const ver = await verifyEmailDeliverability(cand, userKey);
-    if (ver.isValid && !ver.isGeneric) {
-      return {
-        found: true,
-        recruiterName,
-        email: cand,
-        role: synthesizedRole,
-        company: cleanCompany,
-        domain,
-        isPersonalRecruiter: true,
-        confidenceScore: ver.score || 85,
-        source: 'Scrape AI DNS/SMTP Validated Recruiter',
-        verification: ver
-      };
-    }
   }
 
   // If no specific email passes deliverability, return clear guidance instead of silently sending to generic hr@

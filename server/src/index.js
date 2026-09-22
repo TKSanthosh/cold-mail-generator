@@ -23,6 +23,7 @@ const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
 const { harvestRecruiterPosts, scrapeLinkedInJobPost, parsePastedLinkedInPost, runLinkedInOutreachJob, getLinkedInConfig, saveLinkedInConfig, initLinkedInScheduler } = require('./services/linkedin.service');
 const { verifyEmailDeliverability, isGenericHrEmail } = require('./services/email_verifier.service');
+const { parseRecruiterPost } = require('./services/recruiter_post_parser.service');
 const { scanGmailBounces, getBouncedEmails, clearBounces } = require('./services/bounce.service');
 const { isCompanyOrDomainExcluded, assertCompanyNotExcluded, getExcludedCompanies, addExcludedCompany } = require('./services/company_exclusion.service');
 const { isAlreadyContacted, assertNotAlreadyContacted, hasAlreadySentToHr, assertNotSentToHr, getSentHrRegistry } = require('./services/dedup.service');
@@ -51,7 +52,7 @@ const {
   applyNaukriMicroChanges
 } = require('./services/naukri.service');
 const { initKeepAliveService, getKeepAliveStatus } = require('./services/keepalive.service');
-const { generateTokens, verifyAccessToken, verifyRefreshToken, ONE_MONTH_SECONDS } = require('./services/jwt.service');
+const { generateTokens, verifyAccessToken, verifyRefreshToken, encryptSessionTokens, decryptSessionTokens, ONE_MONTH_SECONDS } = require('./services/jwt.service');
 const {
   getUserKeyFromEmail,
   getUserPaths,
@@ -70,6 +71,7 @@ const {
   isUserAuthorized,
   verifyUserAuthorization,
   clearUserAuthCache,
+  restoreUserTokensFromSession,
   listAllProfiles,
   USERS_DIR,
   createFullBackup,
@@ -361,60 +363,84 @@ function getFallbackDashboardHtml() {
 </html>`;
 }
 
-// Helper to resolve active user key from JWT Cookie, Authorization Header, or System Secret
 function resolveUserContext(req, res = null) {
+  let ctx = null;
+
   // 0. Check system-level secret authorization
   if (isSystemAuthorized(req)) {
     const targetKey = req.headers['x-user-key'] || req.query?.userKey || req.body?.userKey || 'system_worker';
-    return { userKey: targetKey, user: { userKey: targetKey, role: 'system' }, isSystem: true };
+    ctx = { userKey: targetKey, user: { userKey: targetKey, role: 'system' }, isSystem: true };
   }
 
   // 1. Try JWT from Cookie
-  const cookieToken = req.cookies?.auth_token;
-  if (cookieToken) {
-    const decoded = verifyAccessToken(cookieToken);
-    if (decoded && decoded.userKey) {
-      return { userKey: decoded.userKey, user: decoded, isSystem: false };
+  if (!ctx) {
+    const cookieToken = req.cookies?.auth_token;
+    if (cookieToken) {
+      const decoded = verifyAccessToken(cookieToken);
+      if (decoded && decoded.userKey) {
+        ctx = { userKey: decoded.userKey, user: decoded, isSystem: false };
+      }
     }
   }
 
   // 2. Try Refresh Token from Cookie if Access Token is expired
-  const refreshToken = req.cookies?.refresh_token;
-  if (refreshToken && res) {
-    const refreshDecoded = verifyRefreshToken(refreshToken);
-    if (refreshDecoded && refreshDecoded.userKey) {
-      const profile = getUserProfile(refreshDecoded.userKey) || { userKey: refreshDecoded.userKey, email: refreshDecoded.email };
-      const newTokens = generateTokens(profile);
-      const isProd = process.env.NODE_ENV === 'production';
-      res.cookie('auth_token', newTokens.accessToken, {
-        httpOnly: true,
-        secure: isProd,
-        sameSite: isProd ? 'none' : 'lax',
-        maxAge: ONE_MONTH_SECONDS * 1000
-      });
-      return { userKey: refreshDecoded.userKey, user: profile, isSystem: false };
+  if (!ctx) {
+    const refreshToken = req.cookies?.refresh_token;
+    if (refreshToken && res) {
+      const refreshDecoded = verifyRefreshToken(refreshToken);
+      if (refreshDecoded && refreshDecoded.userKey) {
+        const profile = getUserProfile(refreshDecoded.userKey) || { userKey: refreshDecoded.userKey, email: refreshDecoded.email };
+        const newTokens = generateTokens(profile);
+        const isProd = process.env.NODE_ENV === 'production';
+        res.cookie('auth_token', newTokens.accessToken, {
+          httpOnly: true,
+          secure: isProd,
+          sameSite: isProd ? 'none' : 'lax',
+          maxAge: ONE_MONTH_SECONDS * 1000
+        });
+        ctx = { userKey: refreshDecoded.userKey, user: profile, isSystem: false };
+      }
     }
   }
 
   // 3. Try Authorization Bearer Header
-  const authHeader = req.headers.authorization;
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    const token = authHeader.substring(7).trim();
-    const decoded = verifyAccessToken(token);
-    if (decoded && decoded.userKey) {
-      return { userKey: decoded.userKey, user: decoded, isSystem: false };
+  if (!ctx) {
+    const authHeader = req.headers.authorization;
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      const token = authHeader.substring(7).trim();
+      const decoded = verifyAccessToken(token);
+      if (decoded && decoded.userKey) {
+        ctx = { userKey: decoded.userKey, user: decoded, isSystem: false };
+      }
     }
   }
 
   // 4. Extension / Client explicit user key via header, query, or body
-  const headerKey = req.headers['x-user-key'] || req.query?.userKey || req.body?.userKey;
-  if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
-    const cleanKey = headerKey.trim();
-    return { userKey: cleanKey, user: { userKey: cleanKey, role: 'user' }, isSystem: false };
+  if (!ctx) {
+    const headerKey = req.headers['x-user-key'] || req.query?.userKey || req.body?.userKey;
+    if (headerKey && typeof headerKey === 'string' && headerKey.trim().length > 0) {
+      const cleanKey = headerKey.trim();
+      const profile = getUserProfile(cleanKey);
+      ctx = { userKey: cleanKey, user: profile || { userKey: cleanKey, role: 'user' }, isSystem: false };
+    }
   }
 
-  // 5. Unauthenticated guest / logged out
-  return { userKey: null, user: null, isSystem: false };
+  if (!ctx) {
+    ctx = { userKey: null, user: null, isSystem: false };
+  }
+
+  // Auto-restore token on ephemeral container if missing on disk
+  if (ctx.userKey) {
+    const paths = getUserPaths(ctx.userKey);
+    if (!fs.existsSync(paths.tokenPath)) {
+      const tokenBlob = req.cookies?.user_tokens_blob || req.headers['x-user-tokens'];
+      if (tokenBlob) {
+        restoreUserTokensFromSession(ctx.userKey, tokenBlob);
+      }
+    }
+  }
+
+  return ctx;
 }
 
 function resolveUserKey(req, res = null) {
@@ -529,11 +555,22 @@ app.get('/api/auth/callback', async (req, res) => {
       maxAge: ONE_MONTH_SECONDS * 1000
     });
 
+    // Encrypt tokens for 30-day container restart resilience
+    const encryptedTokens = encryptSessionTokens(userInfo.tokens);
+    if (encryptedTokens) {
+      res.cookie('user_tokens_blob', encryptedTokens, {
+        httpOnly: true,
+        secure: isProd,
+        sameSite: isProd ? 'none' : 'lax',
+        maxAge: ONE_MONTH_SECONDS * 1000
+      });
+    }
+
     // Invalidate user auth cache on fresh sign-in
     clearUserAuthCache(userInfo.userKey);
 
-    // Redirect to frontend with auth payload
-    const redirectUrl = `/?auth=success&jwt=${encodeURIComponent(accessToken)}&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}`;
+    // Redirect to frontend with auth payload and encrypted tokens
+    const redirectUrl = `/?auth=success&jwt=${encodeURIComponent(accessToken)}&userKey=${encodeURIComponent(userInfo.userKey)}&email=${encodeURIComponent(userInfo.email)}&name=${encodeURIComponent(userInfo.name)}&picture=${encodeURIComponent(userInfo.picture || '')}&gTokens=${encodeURIComponent(encryptedTokens || '')}`;
     res.redirect(redirectUrl);
   } catch (e) {
     console.error('OAuth callback exchange error:', e.message);
@@ -550,6 +587,16 @@ app.get('/api/auth/status', async (req, res) => {
   if (!userKey) {
     return res.json({ authorized: false, user: null, userKey: null });
   }
+
+  // Auto-restore tokens on ephemeral container if missing on disk
+  const paths = getUserPaths(userKey);
+  if (!fs.existsSync(paths.tokenPath)) {
+    const tokenBlob = req.cookies?.user_tokens_blob || req.headers['x-user-tokens'];
+    if (tokenBlob) {
+      restoreUserTokensFromSession(userKey, tokenBlob);
+    }
+  }
+
   // Ensure sandbox is fresh from DB for multi-device sync
   if (isSupabaseConfigured()) {
     await hydrateUserSandboxFromDatabase(userKey);
@@ -1186,6 +1233,27 @@ app.post('/api/linkedin/run', async (req, res) => {
     res.json({ success: true, report });
   } catch (e) {
     res.status(500).json({ error: e.message });
+  }
+});
+
+// --- 100% AUTHENTIC RECRUITER POST PARSER (ZERO FAKE EMAILS) ---
+app.post('/api/recruiter/parse-post', async (req, res) => {
+  const { text, rawText, authorName, company, sourceUrl } = req.body;
+  const content = text || rawText;
+  const userKey = resolveUserKey(req, res);
+  try {
+    if (!content || typeof content !== 'string') {
+      return res.status(400).json({ success: false, error: 'Please provide the LinkedIn hiring post text.' });
+    }
+    const lead = parseRecruiterPost(content, { authorName, company, source: sourceUrl });
+    const pastLogs = getUserLogs(userKey);
+    const contactedEmails = new Set(
+      pastLogs.map(l => (l.hrEmail || l.email || '').toLowerCase().trim()).filter(Boolean)
+    );
+    lead.alreadyContacted = contactedEmails.has(lead.email.toLowerCase());
+    res.json({ success: true, lead });
+  } catch (e) {
+    res.status(400).json({ success: false, error: e.message });
   }
 });
 

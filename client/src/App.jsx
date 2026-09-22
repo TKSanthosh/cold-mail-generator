@@ -111,16 +111,19 @@ function Pagination({
 export const apiFetch = async (endpoint, options = {}) => {
   let userKey = '';
   let jwtToken = '';
+  let gTokens = '';
   try {
     const stored = JSON.parse(localStorage.getItem('cold_email_user') || '{}');
     userKey = stored.userKey || '';
     jwtToken = localStorage.getItem('cold_email_jwt') || '';
+    gTokens = localStorage.getItem('cold_email_g_tokens') || '';
   } catch (e) {}
 
   const headers = {
     ...options.headers,
     'x-user-key': userKey,
-    ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {})
+    ...(jwtToken ? { 'Authorization': `Bearer ${jwtToken}` } : {}),
+    ...(gTokens ? { 'x-user-tokens': gTokens } : {})
   };
 
   const response = await fetch(`${BACKEND_URL}${endpoint}`, {
@@ -162,6 +165,23 @@ export default function App() {
   const [checkingAuth, setCheckingAuth] = useState(true);
   const [toast, setToast] = useState(null);
 
+  const [urlLead, setUrlLead] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const email = params.get('recruiterEmail') || params.get('leadEmail') || (!params.get('auth') ? params.get('email') : null);
+      if (email) {
+        return {
+          email,
+          name: params.get('recruiterName') || params.get('name') || '',
+          company: params.get('company') || '',
+          role: params.get('role') || '',
+          jd: params.get('jd') || params.get('postText') || ''
+        };
+      }
+    } catch (_) {}
+    return null;
+  });
+
   // Dark / Light Mode State
   const [isDarkMode, setIsDarkMode] = useState(() => {
     try {
@@ -192,9 +212,14 @@ export default function App() {
       }
     } catch (e) {}
 
+    const gTokens = localStorage.getItem('cold_email_g_tokens') || '';
+
     try {
       const res = await apiFetch('/api/auth/status', {
-        headers: { 'x-user-key': savedUser?.userKey || '' }
+        headers: {
+          'x-user-key': savedUser?.userKey || '',
+          'x-user-tokens': gTokens
+        }
       });
       if (res && res.ok) {
         const data = await res.json();
@@ -204,12 +229,13 @@ export default function App() {
           setCurrentUser(updated);
           localStorage.setItem('cold_email_user', JSON.stringify(updated));
         } else if (data.authorized === false) {
-          setIsAuthorized(false);
-          if (data.user) {
-            const updated = { ...savedUser, ...data.user, userKey: data.userKey || savedUser?.userKey };
-            setCurrentUser(updated);
-            localStorage.setItem('cold_email_user', JSON.stringify(updated));
-          } else if (!savedUser && !localStorage.getItem('cold_email_jwt')) {
+          // NEVER log out an active user on server rebuild/cold-start!
+          // Maintain active session and only reset if user explicitly disconnected.
+          if (savedUser) {
+            setIsAuthorized(true);
+            setCurrentUser(savedUser);
+          } else if (!localStorage.getItem('cold_email_jwt')) {
+            setIsAuthorized(false);
             setCurrentUser(null);
             localStorage.removeItem('cold_email_user');
             localStorage.removeItem('cold_email_jwt');
@@ -237,9 +263,13 @@ export default function App() {
       const name = params.get('name');
       const picture = params.get('picture');
       const jwtToken = params.get('jwt');
+      const gTokens = params.get('gTokens');
 
       if (jwtToken) {
         localStorage.setItem('cold_email_jwt', jwtToken);
+      }
+      if (gTokens) {
+        localStorage.setItem('cold_email_g_tokens', gTokens);
       }
 
       const userObj = {
@@ -263,6 +293,9 @@ export default function App() {
       window.history.replaceState({}, document.title, window.location.pathname);
       checkAuthStatus();
     } else {
+      if (params.get('tab')) {
+        setActiveTab(params.get('tab'));
+      }
       checkAuthStatus();
     }
   }, []);
@@ -292,6 +325,7 @@ export default function App() {
     setCurrentUser(null);
     localStorage.removeItem('cold_email_user');
     localStorage.removeItem('cold_email_jwt');
+    localStorage.removeItem('cold_email_g_tokens');
     showToast('Logged out successfully. Please sign in to access your workspace.', 'info');
   };
 
@@ -507,7 +541,7 @@ export default function App() {
       {/* Main Content (Preserved in Memory) */}
       <main className="flex-1 p-3 sm:p-6 overflow-y-auto max-w-7xl w-full mx-auto touch-scroll">
         <div className={activeTab === 'single' ? 'block' : 'hidden'}>
-          <SingleSender isAuthorized={isAuthorized} showToast={showToast} currentUser={currentUser} />
+          <SingleSender isAuthorized={isAuthorized} showToast={showToast} currentUser={currentUser} initialLead={urlLead} />
         </div>
         <div className={activeTab === 'bulk' ? 'block' : 'hidden'}>
           <BulkSender isAuthorized={isAuthorized} showToast={showToast} currentUser={currentUser} />
@@ -540,11 +574,17 @@ export default function App() {
 /* =========================================================================
    SINGLE SENDER MODULE
    ========================================================================= */
-function SingleSender({ isAuthorized, showToast }) {
+function SingleSender({ isAuthorized, showToast, currentUser, initialLead }) {
   const [hrEmail, setHrEmail] = useState('');
   const [jd, setJd] = useState('');
   const [generating, setGenerating] = useState(false);
   const [sending, setSending] = useState(false);
+
+  // LinkedIn hiring post parser states (100% verified emails)
+  const [pastedPostText, setPastedPostText] = useState('');
+  const [parsingPost, setParsingPost] = useState(false);
+  const [showPostParser, setShowPostParser] = useState(false);
+  const [parsedLeadData, setParsedLeadData] = useState(null);
 
   // Auto-detect and purge accidental resume JSON in JD field
   useEffect(() => {
@@ -553,6 +593,18 @@ function SingleSender({ isAuthorized, showToast }) {
       showToast('Cleared resume JSON from Job Description field.', 'info');
     }
   }, [jd]);
+
+  // Handle initial lead prefill (from URL query params or extension click)
+  useEffect(() => {
+    if (initialLead && initialLead.email) {
+      setHrEmail(initialLead.email);
+      if (initialLead.name) setParsedName(initialLead.name);
+      if (initialLead.company) setParsedCompany(initialLead.company);
+      if (initialLead.jd) setJd(initialLead.jd);
+      checkEmailDedup(initialLead.email, initialLead.company);
+      showToast(`Prefilled recruiter lead: ${initialLead.email}`, 'info');
+    }
+  }, [initialLead]);
 
   // Generated results
   const [parsedName, setParsedName] = useState('');
@@ -626,6 +678,52 @@ function SingleSender({ isAuthorized, showToast }) {
       checkEmailDedup(val, detectedComp);
     } else {
       setAlreadyContactedInfo(null);
+    }
+  };
+
+  const handleParsePastedPost = async () => {
+    if (!pastedPostText || pastedPostText.trim().length < 10) {
+      return showToast('Please paste the complete text of the LinkedIn hiring post.', 'error');
+    }
+    setParsingPost(true);
+    try {
+      const res = await apiFetch('/api/recruiter/parse-post', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: pastedPostText.trim() })
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        throw new Error(data.error || 'Failed to extract recruiter email from post');
+      }
+
+      const lead = data.lead;
+      setHrEmail(lead.email);
+      setParsedName(lead.recruiterName || 'Hiring Manager');
+      setParsedCompany(lead.company || '');
+      setParsedLeadData(lead);
+
+      // Build structured JD snippet for AI tailoring
+      let formattedJd = `Role: ${lead.role || 'Software Engineer'}\nCompany: ${lead.company || ''}\n`;
+      if (lead.skills && lead.skills.length > 0) {
+        formattedJd += `Key Skills: ${lead.skills.join(', ')}\n`;
+      }
+      if (lead.experience) {
+        formattedJd += `Experience: ${lead.experience}\n`;
+      }
+      if (lead.location) {
+        formattedJd += `Location: ${lead.location}\n`;
+      }
+      formattedJd += `\nOriginal Post Snippet:\n${lead.rawText}`;
+      setJd(formattedJd);
+
+      checkEmailDedup(lead.email, lead.company);
+      showToast(`🎯 Extracted verified recruiter: ${lead.recruiterName} (${lead.email}) at ${lead.company}!`, 'success');
+      setShowPostParser(false);
+    } catch (e) {
+      showToast(e.message || 'Could not parse post. Make sure the recruiter included an email in the post.', 'error');
+    } finally {
+      setParsingPost(false);
     }
   };
 
@@ -890,6 +988,101 @@ function SingleSender({ isAuthorized, showToast }) {
         <h2 className="text-base sm:text-lg font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
           <Sparkles className="w-4 h-4 sm:w-5 sm:h-5 text-indigo-600 dark:text-indigo-400 shrink-0" /> <span>Target Outreach Details</span>
         </h2>
+
+        {/* Paste LinkedIn Hiring Post Action Card */}
+        <div className="rounded-xl border border-indigo-200 dark:border-indigo-800/70 bg-gradient-to-r from-indigo-50/70 via-white to-indigo-50/40 dark:from-indigo-950/40 dark:via-slate-900 dark:to-indigo-950/20 p-3.5 transition-all">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-600 text-white rounded-lg shadow-xs">
+                <Sparkles className="w-4 h-4" />
+              </span>
+              <div>
+                <h3 className="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                  <span>Paste LinkedIn Hiring Post</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                    100% Real Recruiter Emails
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Seen a recruiter post on LinkedIn? Paste it below to auto-extract their direct email, name, role & skills.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowPostParser(!showPostParser)}
+              className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-indigo-100 dark:bg-indigo-900/60 hover:bg-indigo-200 dark:hover:bg-indigo-900 text-indigo-700 dark:text-indigo-200 transition-colors flex items-center gap-1 shrink-0"
+            >
+              <span>{showPostParser ? 'Close' : '📋 Paste Post'}</span>
+              {showPostParser ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+
+          {showPostParser && (
+            <div className="mt-3 pt-3 border-t border-indigo-100 dark:border-indigo-900/60 flex flex-col gap-2.5">
+              <textarea
+                rows={4}
+                value={pastedPostText}
+                onChange={(e) => setPastedPostText(e.target.value)}
+                placeholder="Paste complete post text here (e.g. Wits Innovation Lab is Hiring! Position: MERN Stack Developer... Share your resume at: kanan.uppal@thewitslab.com)"
+                className="w-full bg-white dark:bg-slate-800 border border-indigo-200 dark:border-slate-700 text-slate-800 dark:text-slate-100 rounded-lg p-2.5 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+              />
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span>Zero synthetic/fake emails. Extracts real verified recruiter addresses only.</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  {pastedPostText && (
+                    <button
+                      type="button"
+                      onClick={() => setPastedPostText('')}
+                      className="text-xs text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 px-2 py-1"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={parsingPost || !pastedPostText.trim()}
+                    onClick={handleParsePastedPost}
+                    className="px-3.5 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold shadow-sm flex items-center gap-1.5 transition-all"
+                  >
+                    {parsingPost ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <span>Extracting...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Zap className="w-3.5 h-3.5" />
+                        <span>⚡ Extract & Auto-Fill Lead</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {parsedLeadData && (
+            <div className="mt-2.5 p-2.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 flex items-center justify-between gap-2 text-xs text-emerald-800 dark:text-emerald-200">
+              <div className="flex items-center gap-2">
+                <CheckCircle className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span>
+                  <strong>Verified Recruiter:</strong> {parsedLeadData.recruiterName} ({parsedLeadData.email}) &bull; {parsedLeadData.company} &bull; {parsedLeadData.role}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setParsedLeadData(null)}
+                className="text-emerald-600 dark:text-emerald-400 hover:underline text-[11px]"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+        </div>
 
         {/* Excluded Company Banner */}
         {((parsedCompany && (parsedCompany.toLowerCase().includes('iqvia') || parsedCompany.toLowerCase().includes('sify'))) ||

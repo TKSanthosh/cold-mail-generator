@@ -101,6 +101,20 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === 'PARSE_RECRUITER_POST') {
+    handleParseRecruiterPost(request)
+      .then(res => { try { sendResponse(res); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
+    return true;
+  }
+
+  if (request.action === 'GET_LIVE_APP_URL') {
+    resolveLiveServerUrl(request.serverUrl, request.serverMode)
+      .then(url => { try { sendResponse({ success: true, url }); } catch (_) {} })
+      .catch(err => { try { sendResponse({ success: false, error: err.message }); } catch (_) {} });
+    return true;
+  }
+
   return false;
 });
 
@@ -427,6 +441,39 @@ async function handleCreateDraft(data) {
 
   const result = await response.json();
   return { success: true, message: result.message || 'Draft saved in Gmail!', result };
+}
+
+async function handleParseRecruiterPost(data) {
+  const settings = await getStoredSettings();
+  const rawUrl = data.serverUrl || settings.serverUrl || 'http://localhost:5001';
+  const serverUrl = await resolveLiveServerUrl(rawUrl);
+  const userKey = data.userKey || settings.userKey || 'tksanthosh494_gmail_com';
+
+  const response = await fetch(`${serverUrl}/api/recruiter/parse-post`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-user-key': userKey
+    },
+    body: JSON.stringify({
+      text: data.text || data.rawText,
+      authorName: data.authorName,
+      company: data.company
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    let errMsg = `Server HTTP ${response.status}`;
+    try {
+      const errObj = JSON.parse(errorText);
+      if (errObj.error) errMsg = errObj.error;
+    } catch (_) {}
+    throw new Error(errMsg);
+  }
+
+  const result = await response.json();
+  return { success: true, lead: result.lead, serverUrl };
 }
 
 // ============================================================================
