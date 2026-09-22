@@ -9,6 +9,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // https://vite.dev/config/
 export default defineConfig({
   root: __dirname,
+  base: process.env.GITHUB_PAGES === 'true' ? '/cold-mail-generator/' : './',
   plugins: [react(), tailwindcss()],
 })
 

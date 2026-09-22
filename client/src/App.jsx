@@ -1,7 +1,14 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mail, FileText, Settings, Sparkles, Send, Plus, Trash2, CheckCircle, XCircle, LogOut, Loader2, ArrowRight, History, Download, Eye, Search, UploadCloud, Globe, Clock, Bookmark, User, UserCheck, Shield, ShieldCheck, ShieldAlert, Users, Activity, Layers, Radio, AlertCircle, AlertTriangle, Sun, Moon, TrendingUp, Lock, RefreshCw, Check, Key, Copy, ExternalLink, Briefcase, Edit3, SlidersHorizontal, Filter, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, ListChecks, CheckSquare, X, Zap, RotateCw, Building2, Bot, Play, Bell } from 'lucide-react';
 
-const BACKEND_URL = window.location.port === '5174' || window.location.port === '5173' ? 'http://localhost:5001' : '';
+const BACKEND_URL = (() => {
+  if (typeof window === 'undefined') return '';
+  if (window.location.port === '5174' || window.location.port === '5173') return 'http://localhost:5001';
+  if (window.location.hostname && window.location.hostname.includes('github.io')) {
+    return localStorage.getItem('cold_email_backend_url') || 'https://cold-mail-generator-7ytw.onrender.com';
+  }
+  return '';
+})();
 
 // Reusable, responsive pagination component for any dataset
 function Pagination({
