@@ -6040,7 +6040,7 @@ function NaukriAutoUploader({ showToast, isActive, currentUser }) {
   const handleAddCustomSlot = async (slotTime24) => {
     if (!slotTime24) return;
     const formatted = formatTime24to12(slotTime24);
-    const current = Array.isArray(config.customSlots) ? config.customSlots : ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'];
+    const current = Array.isArray(config.customSlots) ? config.customSlots : ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
     if (current.includes(formatted)) {
       return showToast(`Slot ${formatted} is already in your schedule!`, 'info');
     }

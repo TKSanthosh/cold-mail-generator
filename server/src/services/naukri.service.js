@@ -223,7 +223,7 @@ function calculateNextUploadTime(config = {}, baseDate = new Date()) {
   if (scheduleMode === 'custom') {
     const rawSlots = Array.isArray(config.customSlots) && config.customSlots.length > 0
       ? config.customSlots
-      : ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'];
+      : ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
 
     const parsedSlots = [];
     for (const slot of rawSlots) {
@@ -1237,9 +1237,9 @@ function getNaukriConfig(userKey = 'default_user') {
       const envCookies = process.env.NAUKRI_COOKIES ? (() => { try { return JSON.parse(process.env.NAUKRI_COOKIES); } catch (e) { return null; } })() : null;
       const conf = {
         enabled: true,
-        scheduleMode: 'quarter_day',
-        slots: ['10:00 AM', '04:00 PM', '10:00 PM', '04:00 AM'],
-        customSlots: ['09:30 AM', '01:30 PM', '04:30 PM', '06:30 PM'],
+        scheduleMode: 'custom',
+        slots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
+        customSlots: ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'],
         intervalHours: 6,
         intervalMinutes: 360,
         username: process.env.NAUKRI_USERNAME || '',
@@ -1261,10 +1261,10 @@ function getNaukriConfig(userKey = 'default_user') {
         ...saved
       };
       // Auto-upgrade legacy slots to user's preferred 10 AM, 1 PM, 4 PM, 6 PM
-      if (!conf.slots || conf.slots.includes('04:00 AM')) {
+      if (!conf.slots || conf.slots.includes('04:00 AM') || conf.slots.includes('10:00 PM') || conf.slots.includes('09:30 AM')) {
         conf.slots = ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
       }
-      if (!conf.customSlots || conf.customSlots.includes('09:30 AM') || conf.customSlots.includes('10:00 PM')) {
+      if (!conf.customSlots || conf.customSlots.includes('09:30 AM') || conf.customSlots.includes('10:00 PM') || conf.customSlots.includes('04:00 AM')) {
         conf.customSlots = ['10:00 AM', '01:00 PM', '04:00 PM', '06:00 PM'];
       }
       if (hasActiveSession) {
@@ -1352,8 +1352,11 @@ function saveNaukriConfig(userKey = 'default_user', config = {}) {
     updated.lastStatus = updated.sessionStatus === 'ACTIVE' ? 'Active & Verified' : 'Session Connected (Cookies)';
   }
 
-  // Always recalculate nextUploadAt if scheduleMode or customSlots changed
-  if (config.scheduleMode || config.customSlots || !updated.nextUploadAt) {
+  // Only recalculate nextUploadAt if schedule mode or custom slots explicitly changed, or if not yet set
+  const scheduleModeChanged = config.scheduleMode && config.scheduleMode !== current.scheduleMode;
+  const slotsChanged = Array.isArray(config.customSlots) && JSON.stringify(config.customSlots) !== JSON.stringify(current.customSlots);
+  const generalSlotsChanged = Array.isArray(config.slots) && JSON.stringify(config.slots) !== JSON.stringify(current.slots);
+  if (scheduleModeChanged || slotsChanged || generalSlotsChanged || !updated.nextUploadAt) {
     updated.nextUploadAt = calculateNextUploadTime(updated).toISOString();
   }
 
@@ -2226,7 +2229,8 @@ async function uploadResumeToNaukri(userKey = 'default_user', overrideOptions = 
       } else {
         config.lastStatus = 'Failed';
         config.lastError = err.message;
-        config.nextUploadAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+        // Retry in 2 minutes so slot window (e.g. 10:00 AM) is not abandoned
+        config.nextUploadAt = new Date(Date.now() + 2 * 60 * 1000).toISOString();
       }
       await saveNaukriConfigAsync(userKey, config);
 
@@ -2278,6 +2282,18 @@ async function triggerAutonomousNaukriApply(options = {}) {
         const paths = getUserPaths(userKey);
         const hasSession = (Array.isArray(config.sessionCookies) && config.sessionCookies.length > 0) || fs.existsSync(paths.naukriSessionPath) || Boolean(config.username);
         if (!hasSession) continue;
+
+        // Yield browser and locks to scheduled resume upload if within 10 minutes or currently due
+        const nextUploadStr = config.nextUploadAt;
+        if (nextUploadStr) {
+          const nextUploadTime = new Date(nextUploadStr).getTime();
+          const msUntilUpload = nextUploadTime - Date.now();
+          // If within 10 minutes before slot or up to 60 minutes after (overdue slot pending execution)
+          if (msUntilUpload <= 10 * 60 * 1000 && msUntilUpload >= -60 * 60 * 1000) {
+            logStructured('AUTONOMOUS_WORKER', `Yielding browser lock for user "${userKey}": Scheduled resume upload is imminent or due (slot at ${new Date(nextUploadTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}).`);
+            continue;
+          }
+        }
 
         // Auto-enable so user never needs to toggle manually
         if (!config.enabled) {
@@ -2567,7 +2583,7 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
 
       const now = new Date();
       const nextRun = config.nextUploadAt ? new Date(config.nextUploadAt) : new Date(0);
-      const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 15 * 60 * 1000);
+      const isDue = now >= nextRun || (nextRun.getTime() - now.getTime() <= 60 * 1000);
 
       if (!force && !isDue) {
         logStructured('CRON', `Skipped "${userKey}": Slot not yet due (Next run: ${config.nextUploadAt || 'Not scheduled'}).`);
@@ -2575,14 +2591,22 @@ async function triggerNaukriUploadForActiveUsers(options = {}) {
         continue;
       }
 
-      if (isUserLocked(userKey) || await isUserLockedAsync(userKey)) {
-        logStructured('LOCK', `Skipped "${userKey}": Account is locked by an ongoing automation process.`);
-        results.push({ userKey, skipped: true, reason: 'Account locked by ongoing process' });
-        continue;
+      // Preemption and lock coordination for scheduled upload:
+      const lockInfo = await getUserLockInfoAsync(userKey);
+      if (lockInfo.locked) {
+        if (lockInfo.owner === 'resume_uploader') {
+          logStructured('LOCK', `Skipped "${userKey}": Resume uploader is already actively executing.`);
+          results.push({ userKey, skipped: true, reason: 'Resume upload in progress' });
+          continue;
+        } else {
+          // Preempt lower-priority background tasks (batch orchestrator, micro update, portfolio check)
+          logStructured('LOCK', `Preempting lower-priority background task (${lockInfo.owner}) for user "${userKey}" to execute scheduled resume upload.`);
+          await releaseUserLockAsync(userKey, lockInfo.owner);
+        }
       }
 
       logStructured('CRON', `Executing slot workflow for user "${userKey}" (force: ${force}, due: ${isDue})...`);
-      const uploadResult = await uploadResumeToNaukri(userKey);
+      const uploadResult = await uploadResumeToNaukri(userKey, { force: true });
       const updatedConfig = await getNaukriConfigAsync(userKey);
       const uploadedFileName = uploadResult?.fileName || 'resume.pdf';
 

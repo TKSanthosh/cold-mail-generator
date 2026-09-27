@@ -165,38 +165,117 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateCharCount();
       };
 
-      chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_JD' }, (response) => {
-        const _scanErr = chrome.runtime.lastError;
-        if (_scanErr || !response || !response.data) {
-          // If content script was not yet injected into this tab, inject dynamically
-          if (chrome.scripting && tab.url && (tab.url.startsWith('http://') || tab.url.startsWith('https://'))) {
-            chrome.scripting.executeScript({
-              target: { tabId: tab.id },
-              files: ['content.js']
-            }, () => {
-              const _injErr = chrome.runtime.lastError;
-              if (_injErr) {
-                labelDetectedStatus.innerText = 'Manual input mode';
-                badgeSource.innerText = 'Ready';
-                return;
-              }
-              // Retry after short delay
-              setTimeout(() => {
-                chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_JD' }, (retryResp) => {
-                  const _retryErr = chrome.runtime.lastError;
-                  if (retryResp && retryResp.data) {
-                    applyJobData(retryResp.data);
-                  } else {
-                    labelDetectedStatus.innerText = 'No JD found on page (paste below)';
-                  }
-                });
-              }, 400);
-            });
-            return;
-          }
-
+      const tryInTabDirectExtraction = () => {
+        if (!chrome.scripting || !tab.id) {
           labelDetectedStatus.innerText = 'Manual input mode';
           badgeSource.innerText = 'Ready';
+          return;
+        }
+
+        chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          func: () => {
+            const cleanText = (t) => (t || '').replace(/\s+/g, ' ').trim();
+            const host = window.location.hostname.toLowerCase();
+            
+            // 1. Role
+            let role = '';
+            const roleSelectors = [
+              'h1[data-automation-id="jobPostingHeader"]',
+              'h2[data-automation-id="jobPostingHeader"]',
+              '[data-automation-id="jobPostingHeader"]',
+              '[data-automation-id="job-posting-header"]',
+              '[class*="jobPostingHeader"]',
+              '[data-automation-id="jobTitle"]',
+              '[data-automation-id="job-title"]',
+              'main h1', 'main h2', 'article h1', 'article h2',
+              'h1', 'h2'
+            ];
+            for (const s of roleSelectors) {
+              const el = document.querySelector(s);
+              if (el && el.innerText && el.innerText.trim().length > 2) {
+                const candidate = cleanText(el.innerText);
+                const lower = candidate.toLowerCase();
+                if (!lower.includes('about us') && !lower.includes('apply') && !lower.startsWith('sign in') && !lower.startsWith('search')) {
+                  role = candidate;
+                  break;
+                }
+              }
+            }
+            if (!role && document.title) {
+              role = document.title.split(/[-|–•]/)[0].trim();
+            }
+
+            // 2. Company
+            let company = '';
+            const match = host.match(/^([a-z0-9-]+)\.(?:wd\d+\.)?myworkdayjobs\.com/i);
+            if (match && match[1]) {
+              const raw = match[1].toLowerCase();
+              company = raw.charAt(0).toUpperCase() + raw.slice(1);
+            }
+            if (!company) {
+              const compEl = document.querySelector('[data-automation-id="companyName"], img[data-automation-id="clientLogo"], header img[alt], [class*="clientLogo"], img[alt*="logo" i]');
+              if (compEl) {
+                company = compEl.alt || cleanText(compEl.innerText);
+              }
+            }
+            if (!company) {
+              const base = host.replace(/^www\./, '').split('.')[0];
+              if (base && base.length > 2) company = base.charAt(0).toUpperCase() + base.slice(1);
+            }
+
+            // 3. JD Text
+            let jd = '';
+            const jdSelectors = [
+              '[data-automation-id="jobPostingDescription"]',
+              '[data-automation-id="jobPostingBody"]',
+              '[data-automation-id="rich-text-container"]',
+              '[data-automation-id="jobPostingPage"]',
+              '[data-automation-id="job-posting-details"]',
+              '[data-automation-id="jobDescription"]',
+              '[class*="jobPostingDescription"]',
+              '[class*="rich-text"]',
+              '[class*="job-description"]',
+              '[class*="jobDescription"]',
+              'main', '[role="main"]', 'article', 'section'
+            ];
+            for (const s of jdSelectors) {
+              const el = document.querySelector(s);
+              if (el && el.innerText && el.innerText.trim().length > jd.length) {
+                jd = el.innerText.trim();
+              }
+            }
+            if (!jd || jd.length < 80) {
+              const paras = Array.from(document.querySelectorAll('main p, main ul, main ol, main div[class*="css-"], article p, article ul, article ol, [role="main"] p, [role="main"] ul, body p, body ul'));
+              if (paras.length > 0) {
+                const combined = paras.map(p => p.innerText.trim()).filter(t => t.length > 15).join('\n\n');
+                if (combined.length > jd.length) jd = combined;
+              }
+            }
+
+            return {
+              role: role || 'Software Engineer',
+              company: company || 'Company',
+              jd: jd || '',
+              source: host.includes('workday') ? 'Workday' : 'Detected',
+              url: window.location.href
+            };
+          }
+        }, (results) => {
+          const _injErr = chrome.runtime.lastError;
+          if (_injErr || !results || !results[0] || !results[0].result) {
+            labelDetectedStatus.innerText = 'Manual input mode';
+            badgeSource.innerText = 'Ready';
+            return;
+          }
+          applyJobData(results[0].result);
+        });
+      };
+
+      chrome.tabs.sendMessage(tab.id, { action: 'GET_PAGE_JD' }, (response) => {
+        const _scanErr = chrome.runtime.lastError;
+        if (_scanErr || !response || !response.data || !response.data.jd) {
+          tryInTabDirectExtraction();
           return;
         }
 

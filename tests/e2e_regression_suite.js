@@ -333,7 +333,7 @@ async function runMasterRegressionSuite() {
         break;
       }
     }
-    assert('Micro PDF ATS Layer: Microscopic text rendering instructions embedded in PDF stream', hasWhiteText);
+    assert('Micro PDF ATS Layer: Microscopic/hidden white text completely removed from PDF stream', !hasWhiteText, 'White text was unexpectedly found');
   } catch (err) {
     assert('Micro PDF Generation Test', false, err.message);
   }
@@ -556,7 +556,7 @@ async function runMasterRegressionSuite() {
       const tailorPayload = JSON.stringify({
         role: 'Software Engineer, Full Stack, Google Cloud',
         company: 'Google LLC',
-        jd: 'Google Cloud is seeking an experienced Full Stack Software Engineer to build scalable microservices using React, TypeScript, Node.js, Go, Kubernetes, and GCP.',
+        jd: 'Google Cloud is seeking an experienced Full Stack Software Engineer to build scalable microservices and web applications using React, TypeScript, Node.js, Express.js, MySQL, MongoDB, REST APIs, and AWS.',
         userKey: 'tksanthosh494_gmail_com'
       });
 

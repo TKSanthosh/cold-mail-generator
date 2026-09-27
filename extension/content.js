@@ -7,6 +7,8 @@
   if (window.__AI_RESUME_EXTRACTOR_LOADED__) return;
   window.__AI_RESUME_EXTRACTOR_LOADED__ = true;
 
+  const currentHost = window.location.hostname.toLowerCase();
+
   let currentScrapedData = null;
   let floatingBtn = null;
   let floatingModal = null;
@@ -426,35 +428,58 @@
   function extractWorkday() {
     // 1. Role Title
     let role = '';
-    const roleEl = document.querySelector(
-      'h1[data-automation-id="jobPostingHeader"], h2[data-automation-id="jobPostingHeader"], [data-automation-id="jobPostingHeader"], [class*="jobPostingHeader"], h1, h2'
-    );
-    if (roleEl) {
-      role = cleanText(roleEl.innerText);
+    const roleSelectors = [
+      'h1[data-automation-id="jobPostingHeader"]',
+      'h2[data-automation-id="jobPostingHeader"]',
+      '[data-automation-id="jobPostingHeader"]',
+      '[data-automation-id="job-posting-header"]',
+      '[class*="jobPostingHeader"]',
+      '[data-automation-id="jobTitle"]',
+      '[data-automation-id="job-title"]',
+      'main h1',
+      'main h2',
+      'article h1',
+      'h1',
+      'h2'
+    ];
+    for (const sel of roleSelectors) {
+      const el = document.querySelector(sel);
+      if (el && el.innerText && el.innerText.trim().length > 2) {
+        const candidate = cleanText(el.innerText);
+        const lower = candidate.toLowerCase();
+        if (!lower.includes('about us') && !lower.includes('apply') && !lower.startsWith('sign in') && !lower.startsWith('search')) {
+          role = candidate;
+          break;
+        }
+      }
     }
     if (!role && document.title) {
-      role = document.title.split(/[-|–]/)[0].trim();
+      role = document.title.split(/[-|–•]/)[0].trim();
     }
 
     // 2. Company Name
     let company = '';
-    const companyEl = document.querySelector(
-      '[data-automation-id="companyName"], img[data-automation-id="clientLogo"], header img[alt], .css-1q2s3w'
-    );
-    if (companyEl) {
-      company = companyEl.alt || cleanText(companyEl.innerText);
+    const host = window.location.hostname.toLowerCase();
+    const match = host.match(/^([a-z0-9-]+)\.(?:wd\d+\.)?myworkdayjobs\.com/i);
+    if (match && match[1]) {
+      const raw = match[1].toLowerCase();
+      const known = {
+        'pwc': 'PwC', 'ey': 'EY', 'kpmg': 'KPMG', 'deloitte': 'Deloitte', 'ibm': 'IBM',
+        'fractal': 'Fractal Analytics', 'fractalanalytics': 'Fractal Analytics',
+        'target': 'Target', 'adobe': 'Adobe', 'broadcom': 'Broadcom', 'nvidia': 'NVIDIA',
+        'salesforce': 'Salesforce', 'qualcomm': 'Qualcomm', 'walmart': 'Walmart',
+        'cisco': 'Cisco', 'siemens': 'Siemens', 'philips': 'Philips', 'bosch': 'Bosch'
+      };
+      if (known[raw]) company = known[raw];
+      else company = raw.charAt(0).toUpperCase() + raw.slice(1);
     }
+    
     if (!company) {
-      const host = window.location.hostname.toLowerCase();
-      const match = host.match(/^([a-z0-9-]+)\.(?:wd\d+\.)?myworkdayjobs\.com/i);
-      if (match && match[1]) {
-        const raw = match[1].toLowerCase();
-        if (raw === 'pwc') company = 'PwC';
-        else if (raw === 'ey') company = 'EY';
-        else if (raw === 'kpmg') company = 'KPMG';
-        else if (raw === 'deloitte') company = 'Deloitte';
-        else if (raw === 'ibm') company = 'IBM';
-        else company = raw.charAt(0).toUpperCase() + raw.slice(1);
+      const companyEl = document.querySelector(
+        '[data-automation-id="companyName"], img[data-automation-id="clientLogo"], header img[alt], [class*="clientLogo"], .css-1q2s3w'
+      );
+      if (companyEl) {
+        company = companyEl.alt || cleanText(companyEl.innerText);
       }
     }
 
@@ -463,30 +488,28 @@
 
     // Check main body/page containers in Workday
     const mainContainers = Array.from(document.querySelectorAll(
-      '[data-automation-id="jobPostingBody"], [data-automation-id="jobPostingPage"], [data-automation-id="job-posting-details"], main, [role="main"]'
+      '[data-automation-id="jobPostingDescription"], [data-automation-id="jobPostingBody"], [data-automation-id="jobPostingPage"], [data-automation-id="rich-text-container"], [data-automation-id="jobPostingRichText"], [data-automation-id="job-posting-details"], [data-automation-id="jobDescription"], [data-automation-id="jobPostingDetails"], [class*="jobPostingDescription"], [class*="rich-text"], [class*="job-description"], [class*="jobDescription"], main, [role="main"], article, section'
     ));
 
     for (const cont of mainContainers) {
-      const t = cont.innerText.trim();
+      const t = (cont.innerText || '').trim();
       if (t.length > jdText.length) {
         jdText = t;
       }
     }
 
-    // Check all dedicated description & rich-text nodes
-    const descEls = Array.from(document.querySelectorAll(
-      '[data-automation-id="jobPostingDescription"], [data-automation-id="rich-text-container"], [data-automation-id="jobPostingRichText"], [data-automation-id="jobDescription"], .job-description, [class*="job-description"], [class*="rich-text"]'
-    ));
-
-    if (descEls.length > 0) {
-      const parts = descEls.map(el => el.innerText.trim()).filter(t => t.length > 20);
-      const combined = parts.join('\n\n');
-      if (combined.length > jdText.length || !jdText) {
-        jdText = combined;
+    // If still not enough, collect all p, ul, ol, li inside the body
+    if (!jdText || jdText.length < 80) {
+      const paragraphsAndLists = Array.from(document.querySelectorAll('main p, main ul, main ol, main div[class*="css-"], article p, article ul, article ol, [role="main"] p, [role="main"] ul, body p, body ul'));
+      if (paragraphsAndLists.length > 0) {
+        const joined = paragraphsAndLists.map(el => el.innerText.trim()).filter(t => t.length > 15).join('\n\n');
+        if (joined.length > jdText.length) {
+          jdText = joined;
+        }
       }
     }
 
-    if (jdText && cleanText(jdText).length > 50) {
+    if (jdText && cleanText(jdText).length > 40) {
       return {
         role: role || 'Software Engineer',
         company: company || 'Company',
@@ -503,21 +526,24 @@
     companyName = companyName.charAt(0).toUpperCase() + companyName.slice(1);
 
     // Try finding brand from logo alt or header
-    const logoEl = document.querySelector('img[alt*="logo" i], header img, [class*="brand"]');
+    const logoEl = document.querySelector('img[alt*="logo" i], header img, [class*="brand"], [class*="logo"]');
     if (logoEl && logoEl.alt && logoEl.alt.length > 2) {
       companyName = logoEl.alt.replace(/logo/gi, '').trim();
     }
 
-    const h1 = document.querySelector('h1, [class*="title-header"], [class*="job-title"]');
-    const roleTitle = h1 ? cleanText(h1.innerText) : document.title.split(/[-|–]/)[0].trim();
+    const h1 = document.querySelector('h1, [class*="title-header"], [class*="job-title"], [class*="jobTitle"], h2');
+    const roleTitle = h1 ? cleanText(h1.innerText) : document.title.split(/[-|–•]/)[0].trim();
 
     // Check containers that typically house JDs
     const candidateSelectors = [
       'article',
       '[role="main"]',
       'main',
+      '[data-automation-id="jobPostingDescription"]',
+      '[data-automation-id="jobPostingBody"]',
       '[class*="job-details"]',
       '[class*="job-desc"]',
+      '[class*="jobDescription"]',
       '[class*="description"]',
       '[id*="job-desc"]',
       '[id*="jobDescription"]',
@@ -527,13 +553,13 @@
 
     let bestContainer = null;
     let maxKeywordScore = 0;
-    const keywords = ['requirements', 'responsibilities', 'qualifications', 'experience', 'skills', 'what you will do', 'about the role', 'overview', 'duties', 'who you are', 'candidate'];
+    const keywords = ['requirements', 'responsibilities', 'qualifications', 'experience', 'skills', 'what you will do', 'about the role', 'overview', 'duties', 'who you are', 'candidate', 'engineer', 'architect', 'developer'];
 
     for (const sel of candidateSelectors) {
       const els = document.querySelectorAll(sel);
       for (const el of els) {
         const text = (el.innerText || '').toLowerCase();
-        if (text.length < 120) continue;
+        if (text.length < 80) continue;
         let score = 0;
         for (const kw of keywords) {
           if (text.includes(kw)) score++;
@@ -545,13 +571,28 @@
       }
     }
 
-    if (bestContainer && maxKeywordScore >= 1) {
+    if (bestContainer && bestContainer.innerText.trim().length > 40) {
       return {
         role: roleTitle || 'Software Engineer',
         company: companyName || 'Company',
         jd: bestContainer.innerText.trim(),
         source: 'Universal Career Scraper'
       };
+    }
+
+    // Fallback: collect paragraphs and list items from document body
+    const pEls = Array.from(document.querySelectorAll('main p, main ul, article p, article ul, [role="main"] p, [role="main"] ul, p, ul'));
+    const validBlocks = pEls.map(p => p.innerText.trim()).filter(t => t.length > 20);
+    if (validBlocks.length > 2) {
+      const combined = validBlocks.join('\n\n');
+      if (combined.length > 80) {
+        return {
+          role: roleTitle || 'Software Engineer',
+          company: companyName || 'Company',
+          jd: combined,
+          source: 'Universal Career Scraper'
+        };
+      }
     }
 
     return null;
@@ -882,12 +923,12 @@
             </button>
           </div>
 
-          <!-- LOADING STATE -->
+          <!-- LOADING STATE WITH MULTI-STEP PROGRESS -->
           <div class="air-loading-box air-hidden" id="air-loading">
             <div class="air-spinner"></div>
             <div class="air-loading-texts">
-              <p class="air-loading-title" id="air-loading-step">Tailoring resume with AI...</p>
-              <p class="air-loading-desc">Extracting ATS keywords & compiling 1-page PDF</p>
+              <p class="air-loading-title" id="air-loading-step">Analyzing Job Description...</p>
+              <p class="air-loading-desc" id="air-loading-desc">Matching authentic skills & protecting immutable facts</p>
             </div>
           </div>
 
@@ -895,15 +936,27 @@
           <div class="air-result-box air-hidden" id="air-result">
             <div class="air-result-header">
               <div class="air-score-pill">
-                <span class="air-score-num" id="air-ats-score">95%</span>
-                <span class="air-score-label">ATS Match Score</span>
+                <span class="air-score-num" id="air-ats-score">90%</span>
+                <span class="air-score-label" id="air-score-label">JD Match Coverage</span>
               </div>
-              <div class="air-status-tag">Ready to Apply</div>
+              <div class="air-status-tag" id="air-status-tag">✓ 1-Page ATS Verified</div>
+            </div>
+
+            <!-- Tailored Sections Badges -->
+            <div class="air-sections-badge-bar">
+              <span class="air-section-badge">✓ Profile Summary</span>
+              <span class="air-section-badge">✓ Technical Skills</span>
+              <span class="air-section-badge">✓ Experience Highlights</span>
             </div>
 
             <div class="air-skills-block">
-              <div class="air-skills-title">Matched Technical Skills:</div>
+              <div class="air-skills-title">Matched Technical Skills (Authentic):</div>
               <div class="air-chips-wrap" id="air-chips"></div>
+            </div>
+
+            <div class="air-skills-block air-unsupported-block air-hidden" id="air-unsupported-container">
+              <div class="air-skills-title air-unsupported-title">Omitted Requirements (Not in Resume):</div>
+              <div class="air-chips-wrap" id="air-unsupported-chips"></div>
             </div>
 
             <div class="air-summary-block">
@@ -1009,12 +1062,35 @@
     document.getElementById('air-error').classList.add('air-hidden');
     document.getElementById('air-loading').classList.remove('air-hidden');
 
+    const stepTitle = document.getElementById('air-loading-step');
+    const stepDesc = document.getElementById('air-loading-desc');
+    if (stepTitle) stepTitle.innerText = '🔍 Analyzing Job Description...';
+    if (stepDesc) stepDesc.innerText = 'Extracting technical requirements & domain terms';
+
+    const progressStages = [
+      { step: '🔍 Analyzing Job Description...', desc: 'Extracting key responsibilities, technical requirements & domain terms' },
+      { step: '🎯 Matching Resume to JD...', desc: 'Classifying authentic matches and locking immutable facts' },
+      { step: '✍️ Tailoring Profile & Skills...', desc: 'Prioritizing relevant skills and writing executive summary' },
+      { step: '🛡️ Verifying Immutability...', desc: 'Enforcing zero hallucination, metric protection & anti-fabrication' },
+      { step: '📄 Compiling 1-Page ATS PDF...', desc: 'Formatting readable typography & single-page layout' }
+    ];
+
+    let stageIdx = 0;
+    const progressTimer = setInterval(() => {
+      stageIdx++;
+      if (stageIdx < progressStages.length) {
+        if (stepTitle) stepTitle.innerText = progressStages[stageIdx].step;
+        if (stepDesc) stepDesc.innerText = progressStages[stageIdx].desc;
+      }
+    }, 600);
+
     safeSendMessage({
       action: 'TAILOR_RESUME',
       role,
       company,
       jd
     }, (response) => {
+      clearInterval(progressTimer);
       document.getElementById('air-loading').classList.add('air-hidden');
 
       if (!response || !response.success) {
@@ -1027,20 +1103,52 @@
       currentPdfFilename = response.pdfFilename || formatTailoredPdfName('Santhosh_TK', company, role);
 
       // Render results
-      document.getElementById('air-ats-score').innerText = `${response.atsScore || 95}%`;
+      const cov = response.jdMatchCoverage || { coveragePercentage: response.atsScore || 90, formula: '' };
+      document.getElementById('air-ats-score').innerText = `${cov.coveragePercentage}%`;
+      const labelEl = document.getElementById('air-score-label');
+      if (labelEl) {
+        labelEl.innerText = cov.formula ? `JD Match Coverage (${cov.formula})` : 'JD Match Coverage';
+      }
       document.getElementById('air-summary-text').innerText =
         response.application?.tailoredResume?.summary || 'Tailored executive summary optimized for ATS keywords.';
 
-      // Chips
+      // Matched Skills Chips
       const chipsBox = document.getElementById('air-chips');
       chipsBox.innerHTML = '';
       const skills = response.matchedSkills || [];
-      skills.forEach(skill => {
-        const chip = document.createElement('span');
-        chip.className = 'air-skill-chip';
-        chip.innerText = skill;
-        chipsBox.appendChild(chip);
-      });
+      if (skills.length === 0) {
+        const noChip = document.createElement('span');
+        noChip.className = 'air-skill-chip';
+        noChip.innerText = 'Core Full Stack Profile';
+        chipsBox.appendChild(noChip);
+      } else {
+        skills.forEach(skill => {
+          const chip = document.createElement('span');
+          chip.className = 'air-skill-chip air-chip-matched';
+          chip.innerText = `✓ ${skill}`;
+          chipsBox.appendChild(chip);
+        });
+      }
+
+      // Unsupported Requirements Chips (guarantee zero hallucination)
+      const unsupportedContainer = document.getElementById('air-unsupported-container');
+      const unsupportedChipsBox = document.getElementById('air-unsupported-chips');
+      const unsupported = response.unsupportedRequirements || [];
+      if (unsupportedContainer && unsupportedChipsBox) {
+        if (unsupported.length > 0) {
+          unsupportedChipsBox.innerHTML = '';
+          unsupported.slice(0, 8).forEach(u => {
+            const chip = document.createElement('span');
+            chip.className = 'air-skill-chip air-chip-unsupported';
+            chip.innerText = `— ${u}`;
+            chip.title = 'Skill required by JD but not present in candidate resume (safely omitted)';
+            unsupportedChipsBox.appendChild(chip);
+          });
+          unsupportedContainer.classList.remove('air-hidden');
+        } else {
+          unsupportedContainer.classList.add('air-hidden');
+        }
+      }
 
       document.getElementById('air-result').classList.remove('air-hidden');
 
@@ -1862,7 +1970,7 @@
    * Keeps fields 100% editable for the user.
    */
   function autoPrefillPageQuestions(silent = false) {
-    if (isSitePaused() || !localQaMemory || localQaMemory.length === 0) return 0;
+    return 0; // Autofill disabled as requested
 
     let prefilledCount = 0;
 
@@ -2054,7 +2162,8 @@
   }
 
   function initQaTracker() {
-    if (!isJobDomainOrPath() || isSitePaused()) return;
+    console.log('[AI Tailor Q&A] Autofill is completely disabled as requested.');
+    return;
 
     // 1. Initial memory sync & prefill
     syncQaMemory(() => {

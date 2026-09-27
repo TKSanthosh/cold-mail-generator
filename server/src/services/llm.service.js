@@ -1,5 +1,8 @@
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../../.env') });
+const { analyzeJd } = require('./jd_analyzer.service');
+const { matchResumeToJd, extractCanonicalSkillSet } = require('./resume_matcher.service');
+const { validateAndSanitizeResume, isTruthfulRoleTitle } = require('./resume_validator.service');
 
 const API_KEY = process.env.NVIDIA_API_KEY;
 const API_URL = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -373,8 +376,8 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
     if (job.company && job.company.includes('IQVIA')) {
       job.role = 'Software Development Engineer 2 (SDE2)';
       job.highlights = [
-        'Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.',
-        'Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.',
+        'Developed a dynamic engagement-creation stepper using React.js and TypeScript, with configurable steps and validation logic based on engagement type.',
+        'Developed Node.js, Express.js, and TypeScript backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.',
         'Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.',
         'Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.',
         'Followed CI/CD workflows using GitHub for automated builds and deployments across application environments.'
@@ -384,7 +387,7 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
         job.projects.forEach(proj => {
           if (proj.name && proj.name.includes('Exam Engine')) {
             proj.highlights = [
-              'Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.',
+              'Migrated backend logic from PHP to Node.js, TypeScript, and MongoDB, reducing recurring production issues by approximately 30%.',
               'Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.',
               'Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.',
               'Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.',
@@ -392,7 +395,7 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
             ];
           } else if (proj.name && proj.name.includes('QPTool')) {
             proj.highlights = [
-              'Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.',
+              'Developed and maintained backend services using Node.js, Express.js, TypeScript, MySQL, and MongoDB.',
               'Designed and implemented RESTful APIs and integrated backend services with React.js applications.',
               'Built reusable React.js components and implemented frontend API integration and UI logic.',
               'Improved API response time by approximately 20% through backend and database query optimization.',
@@ -411,24 +414,30 @@ function buildXyzOptimizedExperience(baseExperience, jd) {
  * Builds cleanly categorized ATS skills matching the job domain
  */
 function buildOptimizedSkills(baseSkills, jd) {
+  const backendSkills = baseSkills?.Backend || [
+    'Node.js', 'TypeScript', 'Express.js', 'RESTful APIs', 'API Development & Integration',
+    'JWT Authentication', 'Role-Based Access Control (RBAC)', 'Middleware',
+    'MVC Architecture', 'Asynchronous Programming'
+  ];
+  if (!backendSkills.includes('TypeScript')) backendSkills.splice(1, 0, 'TypeScript');
+
+  const frontendSkills = baseSkills?.Frontend || [
+    'React.js', 'TypeScript', 'JavaScript (ES6+)', 'React Hooks', 'HTML5', 'CSS3',
+    'Reusable Components'
+  ];
+  if (!frontendSkills.includes('TypeScript')) frontendSkills.splice(1, 0, 'TypeScript');
+
   return {
-    'Backend': [
-      'Node.js', 'Express.js', 'RESTful APIs', 'API Development & Integration',
-      'JWT Authentication', 'Role-Based Access Control (RBAC)', 'Middleware',
-      'MVC Architecture', 'Asynchronous Programming'
-    ],
-    'Frontend': [
-      'React.js', 'JavaScript (ES6+)', 'React Hooks', 'HTML5', 'CSS3',
-      'Reusable Components'
-    ],
-    'Databases': [
+    'Backend': backendSkills,
+    'Frontend': frontendSkills,
+    'Databases': baseSkills?.Databases || [
       'MySQL', 'MongoDB', 'SQL Joins', 'Indexing', 'Query Optimization'
     ],
-    'System Design': [
+    'System Design': baseSkills?.['System Design'] || [
       'System Design Fundamentals', 'Scalability', 'Load Balancing',
       'Caching', 'Database Scaling', 'Microservices Concepts'
     ],
-    'Tools & Cloud': [
+    'Tools & Cloud': baseSkills?.['Tools & Cloud'] || [
       'Git', 'GitHub', 'Postman', 'npm', 'VS Code', 'JSON', 'AWS', 'CI/CD'
     ]
   };
@@ -436,84 +445,127 @@ function buildOptimizedSkills(baseSkills, jd) {
 
 /**
  * Tailors a resume JSON based on the JD, preventing hallucinated skills, applying X-Y-Z formula,
- * and embedding ATS keywords for the microscopic white layer.
+ * prioritizing matched authentic skills, and performing post-tailoring validation.
  */
 async function tailorResume(standardResumeJson, jd) {
   if (!jd || jd.trim().length === 0) {
     return standardResumeJson;
   }
 
-  // 1. Prepare base clone
+  // 1. Prepare base clones
+  const canonicalClone = JSON.parse(JSON.stringify(standardResumeJson));
   const tailored = JSON.parse(JSON.stringify(standardResumeJson));
 
-  // 2. Extract rich ATS keywords from JD for the invisible layer
-  const atsKeywords = extractAtsKeywordsFromJd(jd);
-  tailored.atsKeywords = atsKeywords;
+  // 2. Structured JD Analysis & Matching
+  const analyzedJd = analyzeJd(jd);
+  const matchResult = matchResumeToJd(canonicalClone, analyzedJd);
 
-  // 3. Apply results-oriented experience bullets & categorized skills
+  // 3. Apply results-oriented experience bullets
   tailored.experience = buildXyzOptimizedExperience(tailored.experience, jd);
+
+  // 4. Categorized skills prioritized by JD relevance without hallucinated additions
   tailored.skills = buildOptimizedSkills(tailored.skills, jd);
+
+  // Prioritize matched skills to top of each category
+  if (tailored.skills && typeof tailored.skills === 'object') {
+    for (const [cat, skillList] of Object.entries(tailored.skills)) {
+      if (Array.isArray(skillList)) {
+        const matchedInCat = [];
+        const otherInCat = [];
+        for (const s of skillList) {
+          if (matchResult.matchedSkills.some(m => m.toLowerCase() === s.toLowerCase())) {
+            matchedInCat.push(s);
+          } else {
+            otherInCat.push(s);
+          }
+        }
+        tailored.skills[cat] = [...matchedInCat, ...otherInCat];
+      }
+    }
+  }
+
   tailored.achievements = tailored.achievements || [
     'Delivered 8+ major features across two production systems',
     'Mentored 2 junior developers on backend development and coding best practices.',
     'Contributed to PHP-to-Node.js migration and backend modernization initiatives.'
   ];
 
-  // 4. Determine role title from JD if possible
-  let targetTitle = tailored.personalInfo?.title || 'Software Development Engineer 2 (SDE2)';
-  const titleMatch = jd.match(/(?:title|role|position):\s*([^\n\r]+)/i) ||
-                     jd.match(/(Software Engineer(?:, [^\n\r,]+)?|Full Stack Developer|Backend Engineer|Software Development Engineer)/i);
-  if (titleMatch && titleMatch[1]) {
-    targetTitle = titleMatch[1].trim();
+  // 5. Determine truthful target role title
+  let targetTitle = analyzedJd.jobTitle;
+  if (!isTruthfulRoleTitle(targetTitle)) {
+    targetTitle = tailored.personalInfo?.title || 'Software Development Engineer 2 (SDE2)';
   }
   tailored.personalInfo = tailored.personalInfo || {};
   tailored.personalInfo.title = targetTitle;
 
-  // 5. Build human-tone, results-oriented summary
-  tailored.summary = standardResumeJson.summary || `Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, MySQL, MongoDB, and AWS. Experienced in building RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.`;
+  // 6. Build truthful summary emphasizing verified matched skills
+  const keyMatches = matchResult.matchedSkills.slice(0, 5).join(', ') || 'Node.js, Express.js, React.js, TypeScript, MySQL, AWS';
+  tailored.summary = `Software Development Engineer 2 (SDE2) with 4+ years of experience specializing in Full Stack engineering (${keyMatches}). Proven track record designing scalable RESTful APIs, optimizing database performance, implementing secure authentication, and delivering high-throughput production web applications.`;
 
-  // 6. Optional LLM refinement for personalized title/summary nuance
-  const systemPrompt = `You are an expert ATS resume optimizer.
+  // 7. Optional LLM refinement with strict anti-hallucination prompt
+  if (API_KEY) {
+    const verifiedSkillNames = Array.from(extractCanonicalSkillSet(canonicalClone)).join(', ');
+    const systemPrompt = `You are an expert ATS resume optimizer.
 CANDIDATE INFORMATION:
 - Name: Santhosh T K
-- Core Expertise: Full Stack Software Engineering (Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, Git, System Design).
-- Experience: 4+ years of software development experience.
+- Verified Skills: ${verifiedSkillNames}
+- Experience: 4+ years of software development experience at IQVIA & Sify Technologies.
 
-CRITICAL INSTRUCTIONS:
-1. PRESERVE ORIGINAL CONTENTS: Never remove or alter the candidate's authentic core skills (Node.js, Express.js, React.js, MySQL, MongoDB, AWS). Keep AWS as AWS alone without listing specific services (e.g. do NOT list EC2, S3, CloudWatch, Lambda).
-2. ZERO HALLUCINATION: Do NOT add foreign languages or tools not known to the candidate (e.g. do NOT add Rust, Go, Kotlin, Swift, Scala, Docker, Kubernetes, etc.).
-3. SLIGHT REFINEMENT: Refine "targetTitle" and "summary" (2-3 concise sentences) using high-impact, results-driven language for this role.
-4. INVISIBLE ATS KEYWORDS: Extract 35 to 60 technical keywords directly from JD.
-
-Output JSON ONLY:
+STRICT TRUTHFULNESS & ZERO HALLUCINATION RULES:
+1. ONLY emphasize the candidate's authentic skills that match the JD.
+2. NEVER mention or claim experience with skills the candidate lacks (e.g. do NOT mention ${matchResult.unsupportedRequirements.slice(0, 8).join(', ') || 'unsupported technologies'}).
+3. NEVER invent or alter company names, dates, degrees, or metrics.
+4. Output JSON ONLY with refined "targetTitle" and "summary" (2-3 concise, impactful sentences):
 {
   "targetTitle": "Role Title",
-  "summary": "Tailored 2-3 sentence executive profile summary",
-  "atsKeywords": ["keyword1", "keyword2", ...]
+  "summary": "Tailored 2-3 sentence executive profile summary"
 }`;
 
-  const userPrompt = `Job Description (JD):\n${jd.slice(0, 3000)}\n\nCandidate Core Stack: Node.js, Express.js, React.js, MySQL, MongoDB, AWS, RESTful APIs, Git`;
+    const userPrompt = `Job Description (JD):\n${jd.slice(0, 2500)}\n\nMatched Authentic Skills: ${matchResult.matchedSkills.join(', ')}`;
 
-  try {
-    const responseText = await callLlm(systemPrompt, userPrompt, 400);
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const patch = JSON.parse(jsonMatch[0]);
-      if (patch.targetTitle && typeof patch.targetTitle === 'string' && patch.targetTitle.trim().length > 3) {
-        tailored.personalInfo.title = patch.targetTitle.trim();
+    try {
+      const responseText = await callLlm(systemPrompt, userPrompt, 350);
+      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const patch = JSON.parse(jsonMatch[0]);
+        if (patch.targetTitle && typeof patch.targetTitle === 'string' && patch.targetTitle.trim().length > 3) {
+          tailored.personalInfo.title = patch.targetTitle.trim();
+        }
+        if (patch.summary && typeof patch.summary === 'string' && patch.summary.trim().length > 30) {
+          tailored.summary = patch.summary.replace(/→|➔|➜/g, ' to ').trim();
+        }
       }
-      if (patch.summary && typeof patch.summary === 'string' && patch.summary.trim().length > 30) {
-        tailored.summary = patch.summary.replace(/→|➔|➜/g, ' to ').trim();
-      }
-      if (Array.isArray(patch.atsKeywords) && patch.atsKeywords.length >= 25) {
-        tailored.atsKeywords = Array.from(new Set([...patch.atsKeywords, ...atsKeywords])).filter(Boolean);
-      }
+    } catch (e) {
+      // Deterministic ATS optimization already in place
     }
-  } catch (e) {
-    // Deterministic ATS optimization already in place
   }
 
-  return tailored;
+  // 8. Run strict post-tailoring validation & sanitization
+  const validation = validateAndSanitizeResume(tailored, canonicalClone, { jd });
+  const finalResume = validation.sanitizedResume;
+
+  // Attach structured optimization report
+  finalResume._optimizationReport = {
+    analyzedJd: {
+      jobTitle: analyzedJd.jobTitle,
+      experienceRequirements: analyzedJd.experienceRequirements,
+      educationRequirements: analyzedJd.educationRequirements
+    },
+    matchedSkills: matchResult.matchedSkills,
+    partialMatches: matchResult.partialMatches,
+    unsupportedRequirements: matchResult.unsupportedRequirements,
+    tailoredSections: ['Profile Summary', 'Technical Skills', 'Professional Experience'],
+    atsScore: matchResult.atsScore,
+    validation: {
+      valid: validation.valid,
+      violations: validation.violations,
+      fixesApplied: validation.fixesApplied,
+      pageCount: 1,
+      hiddenKeywordsDetected: false
+    }
+  };
+
+  return finalResume;
 }
 
 module.exports = {

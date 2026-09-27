@@ -1,0 +1,182 @@
+const fs = require('fs');
+const path = require('path');
+const zlib = require('zlib');
+
+require('./server/node_modules/dotenv').config({ path: path.join(__dirname, '.env') });
+
+const updatedResume = {
+  personalInfo: {
+    name: "SANTHOSH T K",
+    title: "Software Development Engineer 2 (SDE2)",
+    location: "Bangalore, Karnataka | Remote",
+    email: "tksanthosh494@gmail.com",
+    phone: "+91 8825802707",
+    portfolio: "https://santhoshtk-portfolio.netlify.app/",
+    linkedin: "linkedin.com/in/santhosh-tk",
+    github: "github.com/TKSanthosh"
+  },
+  summary: "Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, MongoDB, and AWS. Experienced in building type-safe RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of TypeScript, JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.",
+  skills: {
+    Backend: [
+      "Node.js",
+      "TypeScript",
+      "Express.js",
+      "RESTful APIs",
+      "API Development & Integration",
+      "JWT Authentication",
+      "Role-Based Access Control (RBAC)",
+      "Middleware",
+      "MVC Architecture",
+      "Asynchronous Programming"
+    ],
+    Frontend: [
+      "React.js",
+      "TypeScript",
+      "JavaScript (ES6+)",
+      "React Hooks",
+      "HTML5",
+      "CSS3",
+      "Reusable Components"
+    ],
+    Databases: [
+      "MySQL",
+      "MongoDB",
+      "SQL Joins",
+      "Indexing",
+      "Query Optimization"
+    ],
+    "System Design": [
+      "System Design Fundamentals",
+      "Scalability",
+      "Load Balancing",
+      "Caching",
+      "Database Scaling",
+      "Microservices Concepts"
+    ],
+    "Tools & Cloud": [
+      "Git",
+      "GitHub",
+      "Postman",
+      "npm",
+      "VS Code",
+      "JSON",
+      "AWS",
+      "CI/CD"
+    ]
+  },
+  experience: [
+    {
+      role: "Software Development Engineer 2 (SDE2)",
+      company: "IQVIA, Bangalore",
+      duration: "June 2026 – Present",
+      project: "Project: Expert Events – Clinical Event & Engagement Management Platform",
+      highlights: [
+        "Developed a dynamic engagement-creation stepper using React.js and TypeScript, with configurable steps and validation logic based on engagement type.",
+        "Developed Node.js, Express.js, and TypeScript backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.",
+        "Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.",
+        "Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.",
+        "Followed CI/CD workflows using GitHub for automated builds and deployments across application environments."
+      ]
+    },
+    {
+      role: "Software Developer",
+      company: "Sify Technologies, Chennai",
+      duration: "July 2023 – June 2026",
+      projects: [
+        {
+          name: "Project: Exam Engine – Exam Delivery System",
+          highlights: [
+            "Migrated backend logic from PHP to Node.js, TypeScript, and MongoDB, reducing recurring production issues by approximately 30%.",
+            "Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.",
+            "Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.",
+            "Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.",
+            "Implemented structured logging and centralized exception handling to improve debugging and issue resolution."
+          ]
+        },
+        {
+          name: "Project: QPTool – Exam Configuration Platform",
+          highlights: [
+            "Developed and maintained backend services using Node.js, Express.js, TypeScript, MySQL, and MongoDB.",
+            "Designed and implemented RESTful APIs and integrated backend services with React.js applications.",
+            "Built reusable React.js components and implemented frontend API integration and UI logic.",
+            "Improved API response time by approximately 20% through backend and database query optimization.",
+            "Refactored legacy backend code into modular services and enhanced API validation, security, and centralized error handling."
+          ]
+        }
+      ]
+    }
+  ],
+  internship: {
+    role: "Full Stack Intern",
+    company: "Sify Technologies – CHIP 2023 Program",
+    duration: "February 2023 – June 2023",
+    highlights: [
+      "Worked on full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, and MongoDB.",
+      "Gained hands-on experience with production workflows, debugging, and Git-based version control.",
+      "Developed internal tools and modules used by engineering teams in real-world projects."
+    ]
+  },
+  achievements: [
+    "Delivered 8+ major features across two production systems",
+    "Mentored 2 junior developers on backend development and coding best practices.",
+    "Contributed to PHP-to-Node.js migration and backend modernization initiatives."
+  ],
+  education: [
+    {
+      degree: "Bachelor of Engineering (B.E.) – Electronics & Communication Engineering",
+      institution: "Velammal College of Engineering & Technology, Madurai",
+      duration: "2023",
+      details: "CGPA: 9.15 / 10"
+    }
+  ]
+};
+
+async function updateAll() {
+  const jsonStr = JSON.stringify(updatedResume, null, 2);
+  const compressedGz = zlib.gzipSync(Buffer.from(jsonStr, 'utf8'), { level: 9 });
+
+  // 1. Update server/resume.json
+  const masterPath = path.join(__dirname, 'server/resume.json');
+  fs.writeFileSync(masterPath, jsonStr, 'utf8');
+  console.log(`[1] Updated ${masterPath}`);
+
+  // 2. Update server/seed_backup.json if it exists
+  const seedPath = path.join(__dirname, 'server/seed_backup.json');
+  if (fs.existsSync(seedPath)) {
+    fs.writeFileSync(seedPath, jsonStr, 'utf8');
+    console.log(`[2] Updated ${seedPath}`);
+  }
+
+  // 3. Update all user sandboxes matching santhosh or default_user
+  const usersDir = path.join(__dirname, 'server/users');
+  if (fs.existsSync(usersDir)) {
+    const userFolders = fs.readdirSync(usersDir);
+    for (const folder of userFolders) {
+      if (folder.includes('santhosh') || folder === 'default_user') {
+        const uResumeJson = path.join(usersDir, folder, 'resume.json');
+        const uResumeGz = path.join(usersDir, folder, 'resume.json.gz');
+        fs.writeFileSync(uResumeJson, jsonStr, 'utf8');
+        fs.writeFileSync(uResumeGz, compressedGz);
+        console.log(`[3] Updated sandbox for user: ${folder}`);
+      }
+    }
+  }
+
+  // 4. Update Supabase Cloud Database if configured
+  try {
+    const { supabaseSaveResume, isSupabaseConfigured } = require('./server/src/services/supabase.service');
+    if (isSupabaseConfigured()) {
+      console.log('[4] Uploading updated resume to Supabase cloud database...');
+      await supabaseSaveResume('tksanthosh494_gmail_com', updatedResume);
+      console.log('[4] Successfully saved to Supabase for tksanthosh494_gmail_com');
+    } else {
+      console.log('[4] Supabase not configured, skipped cloud sync.');
+    }
+  } catch (err) {
+    console.warn('[4] Supabase sync warning:', err.message);
+  }
+
+  console.log('\nAll resume locations successfully updated with TypeScript!');
+}
+
+updateAll();

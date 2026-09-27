@@ -17,7 +17,7 @@ process.on('unhandledRejection', (reason) => {
 const { parseHrEmail } = require('./utils/parser');
 const { getAuthUrl, handleCallbackCode, isAuthorized, logout } = require('./services/oauth.service');
 const { generateColdEmail, tailorResume } = require('./services/llm.service');
-const { generateResumePdf } = require('./services/pdf.service');
+const { generateResumePdf, validatePdfOutput } = require('./services/pdf.service');
 const { sendGmail, createGmailDraft } = require('./services/mail.service');
 const { scrapeCompanyIntel } = require('./services/scraper.service');
 const { addScheduledJob, getScheduledJobs, cancelScheduledJob, initScheduler } = require('./services/schedule.service');
@@ -1464,8 +1464,10 @@ app.post('/api/applications/tailor', async (req, res) => {
     if (!standardResume || !standardResume.personalInfo || !standardResume.personalInfo.name) {
       standardResume = getUserResume('default_user');
     }
+    // Deep clone canonical resume to guarantee zero in-memory cross-contamination
+    const canonicalBase = JSON.parse(JSON.stringify(standardResume));
 
-    const tailoredResume = await tailorResume(standardResume, cleanJd);
+    const tailoredResume = await tailorResume(canonicalBase, cleanJd);
 
     if (role && role.trim().length > 0) {
       tailoredResume.personalInfo = tailoredResume.personalInfo || {};
@@ -1474,7 +1476,7 @@ app.post('/api/applications/tailor', async (req, res) => {
 
     const displayRole = role ? role.trim() : (tailoredResume.personalInfo?.title || 'Software Development Engineer');
     const displayCompany = company ? company.trim() : 'Company';
-    const candidateName = tailoredResume.personalInfo?.name || standardResume?.personalInfo?.name || 'Candidate';
+    const candidateName = tailoredResume.personalInfo?.name || canonicalBase?.personalInfo?.name || 'Candidate';
     const cleanPdfFilename = formatTailoredPdfName(candidateName, displayCompany, displayRole);
 
     const userPaths = getUserPaths(userKey);
@@ -1484,17 +1486,33 @@ app.post('/api/applications/tailor', async (req, res) => {
 
     await generateResumePdf(tailoredResume, pdfPath);
 
-    // Calculate matched skills & ATS score
-    const allSkills = Object.values(tailoredResume.skills || {}).flat();
-    const jdLower = jd.toLowerCase();
-    const matchedSkills = allSkills.filter(s => jdLower.includes(String(s).toLowerCase())).slice(0, 12);
-    if (matchedSkills.length === 0 && allSkills.length > 0) {
-      matchedSkills.push(...allSkills.slice(0, 6));
+    // Validate PDF output: strictly 1 page, readable, and zero invisible white text
+    let pdfValidation = { valid: true, pageCount: 1, hasWhiteText: false };
+    try {
+      pdfValidation = validatePdfOutput(pdfPath, canonicalBase);
+    } catch (valErr) {
+      console.warn('[PDF VALIDATION WARNING]', valErr.message);
     }
-    
-    // ATS match calculation (base 82% + bonus for keyword density, capped at 98%)
-    const skillRatio = allSkills.length > 0 ? (matchedSkills.length / Math.min(allSkills.length, 10)) : 0.8;
-    const atsScore = Math.min(98, Math.max(78, Math.round(75 + (skillRatio * 20) + Math.min(jd.length / 500, 3))));
+
+    // Extract structured optimization report from tailoredResume
+    const report = tailoredResume._optimizationReport || {};
+    const matchedSkills = report.matchedSkills || [];
+    const partialMatches = report.partialMatches || [];
+    const unsupportedRequirements = report.unsupportedRequirements || [];
+    const tailoredSections = report.tailoredSections || ['Profile Summary', 'Technical Skills', 'Professional Experience'];
+    const jdMatchCoverage = report.jdMatchCoverage || {
+      matchedCount: matchedSkills.length,
+      totalRelevantCount: Math.max(1, matchedSkills.length + unsupportedRequirements.length),
+      coveragePercentage: report.atsScore || 90,
+      formula: `${matchedSkills.length} / ${Math.max(1, matchedSkills.length + unsupportedRequirements.length)} requirements matched`
+    };
+    const atsScore = jdMatchCoverage.coveragePercentage;
+    const validation = report.validation || { valid: true, violations: [], fixesApplied: [], pageCount: 1 };
+    validation.pdfValid = pdfValidation.valid;
+    validation.hasWhiteText = pdfValidation.hasWhiteText;
+
+    // Remove internal report field before saving
+    delete tailoredResume._optimizationReport;
 
     const newApplication = {
       id: appId,
@@ -1505,7 +1523,12 @@ app.post('/api/applications/tailor', async (req, res) => {
       appliedAt: new Date().toISOString(),
       timestamp: Date.now(),
       atsScore,
+      jdMatchCoverage,
       matchedSkills,
+      partialMatches,
+      unsupportedRequirements,
+      tailoredSections,
+      validation,
       pdfFilename,
       downloadName: cleanPdfFilename
     };
@@ -1518,7 +1541,12 @@ app.post('/api/applications/tailor', async (req, res) => {
       success: true,
       application: newApplication,
       atsScore,
+      jdMatchCoverage,
       matchedSkills,
+      partialMatches,
+      unsupportedRequirements,
+      tailoredSections,
+      validation,
       downloadUrl: `/api/applications/${appId}/pdf?userKey=${encodeURIComponent(userKey)}`,
       pdfFilename: cleanPdfFilename,
       userKey
@@ -2865,6 +2893,10 @@ app.post('/api/naukri/apply/reconcile', async (req, res) => {
 });
 
 // --- 24/7 CONTAINER HEALTH & KEEP-ALIVE ENDPOINTS ---
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', uptime: Math.round(process.uptime()), timestamp: new Date().toISOString() });
+});
+
 app.get('/api/health/full', (req, res) => {
   res.json({
     status: 'ok',

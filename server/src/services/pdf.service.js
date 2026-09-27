@@ -315,15 +315,6 @@ function generateResumePdf(resumeJson, outputPath) {
 
       renderResumeToDocument(doc, resumeJson, scale);
 
-      // Microscopic ATS keyword layer (1pt white text at bottom of canvas without page break)
-      const leftMargin = 36;
-      const contentWidth = 559.28 - 36;
-      doc.page.margins.bottom = 0;
-      doc.font('Helvetica')
-         .fontSize(1)
-         .fillColor('#FFFFFF')
-         .text('Full Stack Developer SDE 2 Node.js React JavaScript TypeScript REST APIs Microservices MySQL MongoDB AWS CI/CD', leftMargin, 832, { width: contentWidth, lineBreak: false });
-
       doc.end();
 
       writeStream.on('finish', () => {
@@ -339,4 +330,65 @@ function generateResumePdf(resumeJson, outputPath) {
   });
 }
 
-module.exports = { generateResumePdf };
+/**
+ * Validates the generated PDF resume file:
+ * - Checks existence and minimum size (> 5KB)
+ * - Confirms strictly 1 page
+ * - Asserts no microscopic/invisible white text (#FFFFFF or 1 1 1 scn with <= 1pt font)
+ */
+function validatePdfOutput(pdfPath, canonicalResume = null) {
+  const zlib = require('zlib');
+  if (!fs.existsSync(pdfPath)) {
+    throw new Error(`PDF file does not exist at ${pdfPath}`);
+  }
+
+  const rawBuffer = fs.readFileSync(pdfPath);
+  if (rawBuffer.length === 0) {
+    throw new Error('PDF file is 0 bytes');
+  }
+
+  const pdfString = rawBuffer.toString('binary');
+  const pageMatches = pdfString.match(/\/Type\s*\/Page\b/g) || [];
+  const pageCount = pageMatches.length;
+
+  if (pageCount !== 1) {
+    throw new Error(`PDF page count validation failed: Expected strictly 1 page, found ${pageCount}`);
+  }
+
+  let hasWhiteText = false;
+  let idx = 0;
+  while ((idx = rawBuffer.indexOf('stream', idx)) !== -1) {
+    let start = idx + 6;
+    if (rawBuffer[start] === 0x0d) start++;
+    if (rawBuffer[start] === 0x0a) start++;
+    const end = rawBuffer.indexOf('endstream', start);
+    if (end !== -1) {
+      try {
+        const inflated = zlib.inflateSync(rawBuffer.slice(start, end)).toString('utf8');
+        if (inflated.includes('1 1 1 scn') && (inflated.includes('1 Tf') || inflated.includes('0.75 Tf'))) {
+          hasWhiteText = true;
+          break;
+        }
+      } catch (_) {}
+      idx = end + 9;
+    } else {
+      break;
+    }
+  }
+
+  if (hasWhiteText) {
+    throw new Error('PDF contains invalid microscopic white text layer');
+  }
+
+  return {
+    valid: true,
+    pageCount: 1,
+    fileSize: rawBuffer.length,
+    hasWhiteText: false
+  };
+}
+
+module.exports = {
+  generateResumePdf,
+  validatePdfOutput
+};

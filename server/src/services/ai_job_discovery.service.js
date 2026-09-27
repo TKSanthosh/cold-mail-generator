@@ -88,7 +88,7 @@ const ENTERPRISE_JOB_BANK = [
       "MySQL",
       "Cloud APIs"
     ],
-    "url": "https://www.firstsource.com/careers/",
+    "url": "https://firstsource.wd3.myworkdayjobs.com/Firstsource_Careers",
     "jd": "Lead full-stack engineering initiatives across healthcare, telecom, and financial digital solutions. Build responsive web applications using React.js, develop robust Node.js backend microservices, and design highly available relational and document database architectures."
   },
   {
@@ -188,7 +188,7 @@ const ENTERPRISE_JOB_BANK = [
       "SaaS Architecture",
       "SQL"
     ],
-    "url": "https://careers.servicenow.com/jobs?location=India",
+    "url": "https://careers.servicenow.com/jobs?q=Full%20Stack&location=India",
     "jd": "Develop enterprise workflow automation capabilities on the Now Platform. Build modular frontend components in React, engineer high-throughput backend services, and optimize enterprise database querying across multi-tenant cloud architectures."
   },
   {
@@ -208,7 +208,7 @@ const ENTERPRISE_JOB_BANK = [
       "Distributed Systems",
       "REST APIs"
     ],
-    "url": "https://careers.microsoft.com/v2/global/en/home.html",
+    "url": "https://jobs.careers.microsoft.com/global/en/search?q=Full%20Stack&lc=India",
     "jd": "Build scalable cloud services and modern web experiences across Microsoft 365 and Azure Developer Tools. Deliver resilient microservices, responsive web portals, and automated CI/CD pipelines deployed to global Azure datacenters."
   },
   {
@@ -348,7 +348,7 @@ const ENTERPRISE_JOB_BANK = [
       "Docker",
       "GCP"
     ],
-    "url": "https://corporate.target.com/careers/india",
+    "url": "https://target.wd5.myworkdayjobs.com/targetcareers?locations=India",
     "jd": "Design and implement modern full-stack web applications for Target India technology center. Build responsive React web experiences, engineer scalable cloud microservices, and optimize checkout pipelines."
   },
   {
@@ -408,7 +408,7 @@ const ENTERPRISE_JOB_BANK = [
       "MySQL",
       "REST APIs"
     ],
-    "url": "https://www.zohocorp.com/careers/",
+    "url": "https://www.zohocorp.com/careers/openings.html",
     "jd": "Build feature-rich cloud applications across the Zoho SaaS suite. Develop fast, modular frontends, design scalable backend APIs in Node.js and Java, and optimize high-volume database queries for enterprise business workflows."
   },
   {
@@ -428,7 +428,7 @@ const ENTERPRISE_JOB_BANK = [
       "Redis",
       "Kafka"
     ],
-    "url": "https://www.swiggy.com/careers/",
+    "url": "https://careers.swiggy.com/#/jobs?search=Software",
     "jd": "Architect and build high-throughput full stack applications for Swiggy food delivery, Instamart, and dining platforms. Develop responsive mobile-first web interfaces in React and build low-latency Node.js microservices handling peak traffic surges."
   },
   {
@@ -448,7 +448,7 @@ const ENTERPRISE_JOB_BANK = [
       "AWS",
       "Kafka"
     ],
-    "url": "https://razorpay.com/jobs/",
+    "url": "https://job-boards.greenhouse.io/razorpay/jobs",
     "jd": "Build the next generation of digital payments infrastructure for India. Create developer-friendly payment gateways, modular dashboard UI in React, and robust transactional backends in Node.js with high availability."
   },
   {
@@ -468,7 +468,7 @@ const ENTERPRISE_JOB_BANK = [
       "Redis",
       "REST APIs"
     ],
-    "url": "https://www.zomato.com/careers",
+    "url": "https://www.zomato.com/careers#open-positions",
     "jd": "Build high-impact consumer and merchant web applications for Zomato and Blinkit. Scale real-time order tracking, merchant management consoles, and high-concurrency order placement systems using modern MERN stack."
   },
   {
@@ -488,7 +488,7 @@ const ENTERPRISE_JOB_BANK = [
       "Cloud",
       "REST APIs"
     ],
-    "url": "https://www.phonepe.com/careers/",
+    "url": "https://www.phonepe.com/careers/jobs/?department=Engineering",
     "jd": "Design and implement reliable, scalable web platforms for UPI payments, insurance, and merchant commerce. Build lightning-fast React interfaces and high-concurrency Node.js microservices processing millions of daily transactions."
   },
   {
@@ -508,7 +508,7 @@ const ENTERPRISE_JOB_BANK = [
       "AWS",
       "Microservices"
     ],
-    "url": "https://cred.club/careers",
+    "url": "https://job-boards.greenhouse.io/cred/",
     "jd": "Craft pixel-perfect user experiences and high-scale backend engines for CRED rewards, payments, and store. Develop responsive React web apps and resilient Node.js services with focus on extreme performance and reliability."
   },
   {
@@ -528,7 +528,7 @@ const ENTERPRISE_JOB_BANK = [
       "MySQL",
       "AWS"
     ],
-    "url": "https://www.meesho.io/jobs",
+    "url": "https://job-boards.greenhouse.io/meesho/",
     "jd": "Build accessible e-commerce applications for hundreds of millions of users across India. Develop performant web interfaces in React and build resilient Node.js order management and seller systems with heavy cloud scale."
   },
   {
@@ -548,7 +548,7 @@ const ENTERPRISE_JOB_BANK = [
       "Docker",
       "AWS"
     ],
-    "url": "https://www.browserstack.com/careers",
+    "url": "https://job-boards.greenhouse.io/browserstack",
     "jd": "Engineer cloud infrastructure that tests thousands of real mobile and desktop browsers concurrently. Build responsive developer dashboards in React and low-latency streaming backends in Node.js with WebSockets and cloud containers."
   },
   {
@@ -568,7 +568,7 @@ const ENTERPRISE_JOB_BANK = [
       "AWS",
       "Microservices"
     ],
-    "url": "https://www.chargebee.com/careers/",
+    "url": "https://job-boards.greenhouse.io/chargebee",
     "jd": "Build subscription management and recurring billing web platforms. Develop intuitive merchant dashboards in React, engineer reliable financial ledger microservices in Node.js, and scale SaaS integrations."
   },
   {
@@ -588,7 +588,7 @@ const ENTERPRISE_JOB_BANK = [
       "REST APIs",
       "AWS"
     ],
-    "url": "https://clevertap.com/careers/",
+    "url": "https://job-boards.greenhouse.io/clevertap",
     "jd": "Develop customer engagement and retention platforms handling over 10 billion events daily. Build data visualization web interfaces in React and high-throughput Node.js microservices processing real-time marketing automations."
   },
   {
@@ -608,7 +608,7 @@ const ENTERPRISE_JOB_BANK = [
       "Kafka",
       "AWS"
     ],
-    "url": "https://www.delhivery.com/careers/",
+    "url": "https://delhivery.darwinbox.in/ms/candidate/careers",
     "jd": "Build automated logistics orchestration and supply chain web platforms. Develop real-time fleet and package tracking dashboards in React, construct scalable Node.js dispatch backends, and optimize route routing pipelines."
   },
   {
@@ -628,7 +628,7 @@ const ENTERPRISE_JOB_BANK = [
       "AWS",
       "Distributed Systems"
     ],
-    "url": "https://www.inmobi.com/company/careers/",
+    "url": "https://job-boards.greenhouse.io/inmobi",
     "jd": "Engineer advertising technology platforms and real-time bidder consoles. Build interactive analytics dashboards in React and low-latency Node.js API backends processing billions of mobile ad impressions daily."
   },
   {
@@ -648,7 +648,7 @@ const ENTERPRISE_JOB_BANK = [
       "REST APIs",
       "GraphQL"
     ],
-    "url": "https://www.postman.com/company/careers/",
+    "url": "https://job-boards.greenhouse.io/postman",
     "jd": "Build collaborative API development tools utilized by over 30 million software developers worldwide. Architect frontend React components, build scalable cloud synchronization services in Node.js, and innovate developer workflows."
   },
   {
@@ -928,7 +928,7 @@ const ENTERPRISE_JOB_BANK = [
       "TDD",
       "Cloud"
     ],
-    "url": "https://www.thoughtworks.com/careers/jobs",
+    "url": "https://www.thoughtworks.com/en-in/careers/jobs?country=India",
     "jd": "Architect modern, resilient full-stack applications for enterprise clients. Drive clean code, test-driven development (TDD), and micro-frontend architectures using React, Node.js, and cloud container platforms."
   },
   {
@@ -948,7 +948,7 @@ const ENTERPRISE_JOB_BANK = [
       "AWS",
       "REST APIs"
     ],
-    "url": "https://www.epam.com/careers/job-listings",
+    "url": "https://www.epam.com/careers/job-listings?country=India&query=Full+Stack",
     "jd": "Deliver cutting-edge digital enterprise platforms for global Tier-1 clients. Engineer scalable Node.js backend services, build responsive React web applications, and implement continuous integration pipelines."
   },
   {
@@ -968,8 +968,28 @@ const ENTERPRISE_JOB_BANK = [
       "Docker",
       "Cloud"
     ],
-    "url": "https://www.nagarro.com/en/careers",
+    "url": "https://www.nagarro.com/en/careers/jobs?location=India",
     "jd": "Architect full stack enterprise web solutions with a focus on fluid agile engineering. Build modular micro-frontends with React, scalable Node.js microservices, and automate cloud deployments."
+  },
+  {
+    "company": "Fractal Analytics",
+    "role": "Fullstack Architect / Senior Engineer",
+    "category": "AI & Analytics Enterprise",
+    "employeeCount": "4,500+ Employees",
+    "location": "Bengaluru / Mumbai / Gurgaon, India",
+    "workMode": "Hybrid",
+    "experience": "4-8 Years",
+    "salaryRange": "₹28 - 45 LPA",
+    "skills": [
+      "React.js",
+      "Node.js",
+      "TypeScript",
+      "Cloud Architecture",
+      "Python",
+      "REST APIs"
+    ],
+    "url": "https://fractal.wd1.myworkdayjobs.com/Careers/job/Bengaluru/Fullstack-Architect_SR-41804",
+    "jd": "Architect and build enterprise AI-powered decision platforms and rich data applications. Create modular React dashboards, construct scalable Node.js microservices, and integrate machine learning pipelines."
   }
 ];
 
@@ -1201,8 +1221,6 @@ function getDiscoveredJobs(userKey) {
   
   const data = readCompressedJson(filePathGz, filePath, null);
   if (data && Array.isArray(data.jobs) && data.jobs.length >= 20) {
-    const hasSearchQueryUrls = data.jobs.some(j => j.url && (j.url.includes('?q=') || j.url.includes('?keyword=') || j.url.includes('careers?query=')));
-    
     // Count company frequency to guarantee zero duplicate companies in active feed
     const compCounts = {};
     for (const j of data.jobs) {
@@ -1211,7 +1229,7 @@ function getDiscoveredJobs(userKey) {
     }
     const hasDuplicateCompanies = Object.values(compCounts).some(c => c > 1);
 
-    if (!hasSearchQueryUrls && !hasDuplicateCompanies) {
+    if (!hasDuplicateCompanies) {
       data.shownHistory = data.shownHistory || [];
       data.shownCount = data.shownHistory.length;
       data.totalPool = ENTERPRISE_JOB_BANK.length;
@@ -1219,7 +1237,7 @@ function getDiscoveredJobs(userKey) {
     }
   }
   
-  // If not discovered yet, under 20, or holding query URLs, seed immediately
+  // If not discovered yet or under 20, seed immediately
   return refreshDiscoveredJobsSync(key);
 }
 

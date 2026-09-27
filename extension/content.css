@@ -356,6 +356,23 @@
   letter-spacing: 0.5px !important;
 }
 
+.air-sections-badge-bar {
+  display: flex !important;
+  gap: 8px !important;
+  flex-wrap: wrap !important;
+  margin-top: -4px !important;
+}
+
+.air-section-badge {
+  background: rgba(99, 102, 241, 0.12) !important;
+  color: #a5b4fc !important;
+  border: 1px solid rgba(99, 102, 241, 0.25) !important;
+  padding: 3px 8px !important;
+  border-radius: 6px !important;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+}
+
 .air-chips-wrap {
   display: flex !important;
   flex-wrap: wrap !important;
@@ -370,6 +387,28 @@
   border-radius: 6px !important;
   font-size: 12px !important;
   font-weight: 500 !important;
+}
+
+.air-chip-matched {
+  background: rgba(16, 185, 129, 0.15) !important;
+  color: #34d399 !important;
+  border: 1px solid rgba(16, 185, 129, 0.35) !important;
+  font-weight: 600 !important;
+}
+
+.air-unsupported-block {
+  opacity: 0.85 !important;
+}
+
+.air-unsupported-title {
+  color: #f87171 !important;
+}
+
+.air-chip-unsupported {
+  background: rgba(239, 68, 68, 0.1) !important;
+  color: #fca5a5 !important;
+  border: 1px dashed rgba(239, 68, 68, 0.3) !important;
+  font-size: 11px !important;
 }
 
 .air-summary-text {

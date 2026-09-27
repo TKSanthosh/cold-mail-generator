@@ -15,7 +15,8 @@
     "test:security": "node tests/test_runner.js --suite=security",
     "test:performance": "node tests/test_runner.js --suite=performance",
     "test:all": "node tests/test_runner.js --suite=all",
-    "test:regression": "node tests/e2e_regression_suite.js"
+    "test:regression": "node tests/e2e_regression_suite.js",
+    "test:optimizer": "node tests/resume_optimizer_validation.test.js"
   },
   "keywords": [
     "cold-email",
