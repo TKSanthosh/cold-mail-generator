@@ -62,6 +62,12 @@ const updatedResume = {
       "JSON",
       "AWS",
       "CI/CD"
+    ],
+    "AI & Developer Tools": [
+      "Cursor",
+      "Claude Code",
+      "GitHub Copilot",
+      "Generative AI / LLM APIs"
     ]
   },
   experience: [
@@ -176,7 +182,7 @@ async function updateAll() {
     console.warn('[4] Supabase sync warning:', err.message);
   }
 
-  console.log('\nAll resume locations successfully updated!');
+  console.log('\nAll resume locations successfully updated with AI & Developer Tools!');
 }
 
 updateAll();
