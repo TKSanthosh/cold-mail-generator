@@ -15,7 +15,7 @@ const updatedResume = {
     linkedin: "linkedin.com/in/santhosh-tk",
     github: "github.com/TKSanthosh"
   },
-  summary: "Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, MongoDB, and AWS. Experienced in building type-safe RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of TypeScript, JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.",
+  summary: "Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, MongoDB, and AWS. Experienced in building RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of TypeScript, JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.",
   skills: {
     Backend: [
       "Node.js",
@@ -71,8 +71,8 @@ const updatedResume = {
       duration: "June 2026 – Present",
       project: "Project: Expert Events – Clinical Event & Engagement Management Platform",
       highlights: [
-        "Developed a dynamic engagement-creation stepper using React.js and TypeScript, with configurable steps and validation logic based on engagement type.",
-        "Developed Node.js, Express.js, and TypeScript backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.",
+        "Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.",
+        "Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.",
         "Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.",
         "Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.",
         "Followed CI/CD workflows using GitHub for automated builds and deployments across application environments."
@@ -86,7 +86,7 @@ const updatedResume = {
         {
           name: "Project: Exam Engine – Exam Delivery System",
           highlights: [
-            "Migrated backend logic from PHP to Node.js, TypeScript, and MongoDB, reducing recurring production issues by approximately 30%.",
+            "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.",
             "Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.",
             "Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.",
             "Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.",
@@ -96,7 +96,7 @@ const updatedResume = {
         {
           name: "Project: QPTool – Exam Configuration Platform",
           highlights: [
-            "Developed and maintained backend services using Node.js, Express.js, TypeScript, MySQL, and MongoDB.",
+            "Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.",
             "Designed and implemented RESTful APIs and integrated backend services with React.js applications.",
             "Built reusable React.js components and implemented frontend API integration and UI logic.",
             "Improved API response time by approximately 20% through backend and database query optimization.",
@@ -111,7 +111,7 @@ const updatedResume = {
     company: "Sify Technologies – CHIP 2023 Program",
     duration: "February 2023 – June 2023",
     highlights: [
-      "Worked on full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, and MongoDB.",
+      "Worked on full-stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
       "Gained hands-on experience with production workflows, debugging, and Git-based version control.",
       "Developed internal tools and modules used by engineering teams in real-world projects."
     ]
@@ -176,7 +176,7 @@ async function updateAll() {
     console.warn('[4] Supabase sync warning:', err.message);
   }
 
-  console.log('\nAll resume locations successfully updated with TypeScript!');
+  console.log('\nAll resume locations successfully updated!');
 }
 
 updateAll();
