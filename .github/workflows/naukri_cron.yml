@@ -20,7 +20,7 @@ jobs:
       - name: Ping Server & Trigger Naukri Resume Auto-Upload
         run: |
           echo "Triggering Naukri automated profile boost..."
-          curl -s -X POST "https://cold-mail-generator-7ytw.onrender.com/api/naukri/cron-trigger?force=true" \
+          curl -s -X POST "https://cold-mail-generator-backend-w3vu.onrender.com/api/naukri/cron-trigger?force=true" \
             -H "Content-Type: application/json" \
             -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
             -H "x-cron-secret: ${{ secrets.CRON_SECRET }}" \

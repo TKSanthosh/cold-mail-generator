@@ -1046,6 +1046,11 @@ async function runLinkedInOutreachJob(userKey, options = {}) {
       let statusLabel = '';
       let effectiveMode = mode;
 
+      // STRICT USER SAFETY GUARD: Never blast live emails without explicit approval or if outreach approval is required
+      if (process.env.REQUIRE_OUTREACH_APPROVAL === 'true' || config.mode === 'draft' || mode === 'draft') {
+        effectiveMode = 'draft';
+      }
+
       // CRITICAL SAFETY BARRIER: Never blast live emails to unverified generic or guessed addresses
       if (effectiveMode === 'send' && (!preCheck.verifiedMailbox || preCheck.isGeneric || lead.leadType === 'DIRECT_COMPANY_INQUIRY')) {
         console.warn(`[SAFETY GUARD] Recipient ${lead.email} (${lead.company}) has unconfirmed mailbox deliverability. Safely saving to Gmail Draft to prevent bounce-backs.`);
