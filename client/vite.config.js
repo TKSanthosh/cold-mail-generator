@@ -11,6 +11,17 @@ export default defineConfig({
   root: __dirname,
   base: process.env.GITHUB_PAGES === 'true' ? '/cold-mail-generator/' : './',
   plugins: [react(), tailwindcss()],
+  build: {
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ['react', 'react-dom'],
+          icons: ['lucide-react']
+        }
+      }
+    }
+  }
 })
 
 

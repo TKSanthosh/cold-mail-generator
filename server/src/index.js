@@ -2893,9 +2893,6 @@ app.post('/api/naukri/apply/reconcile', async (req, res) => {
 });
 
 // --- 24/7 CONTAINER HEALTH & KEEP-ALIVE ENDPOINTS ---
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', uptime: Math.round(process.uptime()), timestamp: new Date().toISOString() });
-});
 
 app.get('/api/health/full', (req, res) => {
   res.json({
