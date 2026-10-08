@@ -57,13 +57,33 @@ function renderResumeToDocument(doc, resumeJson, scale = 1.0) {
        .fillColor(textColor)
        .text('•', leftMargin + 2, startY, { lineBreak: false });
 
-    doc.font('Helvetica')
-       .fontSize(bulletSize)
-       .fillColor(textColor)
-       .text(text, leftMargin + 12, startY, {
-         width: contentWidth - 12,
-         lineGap: bulletLineGap
-       });
+    if (text.includes('**')) {
+      const parts = text.split(/(\*\*.*?\*\*)/g);
+      doc.fontSize(bulletSize).fillColor(textColor);
+      doc.text('', leftMargin + 12, startY, { lineBreak: false });
+      parts.forEach((part, idx) => {
+        if (!part) return;
+        const isBold = part.startsWith('**') && part.endsWith('**');
+        const content = isBold ? part.slice(2, -2) : part;
+        const isLast = idx === parts.length - 1;
+        doc.font(isBold ? 'Helvetica-Bold' : 'Helvetica')
+           .fontSize(bulletSize)
+           .fillColor(textColor)
+           .text(content, {
+             continued: !isLast,
+             width: contentWidth - 12,
+             lineGap: bulletLineGap
+           });
+      });
+    } else {
+      doc.font('Helvetica')
+         .fontSize(bulletSize)
+         .fillColor(textColor)
+         .text(text, leftMargin + 12, startY, {
+           width: contentWidth - 12,
+           lineGap: bulletLineGap
+         });
+    }
     doc.y += bulletGap;
   }
 
@@ -120,9 +140,9 @@ function renderResumeToDocument(doc, resumeJson, scale = 1.0) {
     doc.y += summaryAfterGap;
   }
 
-  // --- 3. TECHNICAL SKILLS ---
+  // --- 3. KEY SKILLS ---
   if (resumeJson.skills && Object.keys(resumeJson.skills).length > 0) {
-    drawSectionHeader('Technical Skills');
+    drawSectionHeader('Key Skills');
     Object.entries(resumeJson.skills).forEach(([category, skillsList]) => {
       const listStr = Array.isArray(skillsList) ? skillsList.join(', ') : skillsList;
       const itemY = doc.y;

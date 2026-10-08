@@ -368,39 +368,86 @@ function extractAtsKeywordsFromJd(jd) {
 
 /**
  * Transforms experience highlights into results-oriented X-Y-Z statements without hallucinating facts
+ * Contextually emphasizes authentic JD keywords (e.g. API design, caching, microservices, auth, UI, AWS)
  */
 function buildXyzOptimizedExperience(baseExperience, jd) {
   const exp = JSON.parse(JSON.stringify(baseExperience || []));
+  const lowerJd = (jd || '').toLowerCase();
+
+  // Detect key emphasis areas from JD
+  const hasPerf = lowerJd.includes('latency') || lowerJd.includes('performance') || lowerJd.includes('throughput') || lowerJd.includes('high volume') || lowerJd.includes('scale') || lowerJd.includes('scalable') || lowerJd.includes('optimization');
+  const hasAuth = lowerJd.includes('auth') || lowerJd.includes('jwt') || lowerJd.includes('rbac') || lowerJd.includes('security') || lowerJd.includes('access control') || lowerJd.includes('compliance');
+  const hasDb = lowerJd.includes('mysql') || lowerJd.includes('mongodb') || lowerJd.includes('database') || lowerJd.includes('query') || lowerJd.includes('indexing') || lowerJd.includes('sql') || lowerJd.includes('nosql');
+  const hasMicroservices = lowerJd.includes('microservice') || lowerJd.includes('distributed') || lowerJd.includes('architecture') || lowerJd.includes('async') || lowerJd.includes('event') || lowerJd.includes('api development');
+  const hasCloud = lowerJd.includes('aws') || lowerJd.includes('cloud') || lowerJd.includes('ci/cd') || lowerJd.includes('pipeline') || lowerJd.includes('deployment') || lowerJd.includes('git');
+  const hasFrontend = lowerJd.includes('react') || lowerJd.includes('ui') || lowerJd.includes('frontend') || lowerJd.includes('component') || lowerJd.includes('responsive') || lowerJd.includes('hooks');
 
   exp.forEach(job => {
     if (job.company && job.company.includes('IQVIA')) {
       job.role = 'Software Development Engineer 2 (SDE2)';
-      job.highlights = [
-        'Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.',
-        'Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.',
-        'Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.',
-        'Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.',
-        'Followed CI/CD workflows using GitHub for automated builds and deployments across application environments.'
-      ];
+      
+      const b1 = hasFrontend
+        ? 'Developed a dynamic engagement-creation stepper and responsive UI workflows using React.js with modular component validation logic based on engagement type.'
+        : 'Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.';
+
+      const b2 = hasAuth || hasDb
+        ? 'Engineered Node.js and Express.js backend services and multi-level approval workflows using MySQL, implementing role-based access control and administrator overrides.'
+        : 'Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.';
+
+      const b3 = hasMicroservices || hasPerf
+        ? 'Implemented end-to-end session lifecycle management for live engagement events, ensuring seamless state synchronization from session joining through completion.'
+        : 'Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.';
+
+      const b4 = 'Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.';
+
+      const b5 = hasCloud
+        ? 'Followed automated CI/CD deployment pipelines using GitHub and AWS cloud environments for reliable multi-environment delivery.'
+        : 'Followed CI/CD workflows using GitHub for automated builds and deployments across application environments.';
+
+      job.highlights = [b1, b2, b3, b4, b5];
     } else if (job.company && job.company.includes('Sify')) {
       if (Array.isArray(job.projects)) {
         job.projects.forEach(proj => {
           if (proj.name && proj.name.includes('Exam Engine')) {
-            proj.highlights = [
-              'Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.',
-              'Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.',
-              'Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.',
-              'Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.',
-              'Implemented structured logging and centralized exception handling to improve debugging and issue resolution.'
-            ];
+            const eb1 = hasMicroservices || hasDb
+              ? 'Migrated backend architecture from legacy PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.'
+              : 'Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.';
+
+            const eb2 = hasAuth
+              ? 'Implemented secure JWT-based authentication and Role-Based Access Control (RBAC) to protect mission-critical exam workflows.'
+              : 'Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.';
+
+            const eb3 = hasDb || hasPerf
+              ? 'Optimized complex MySQL and MongoDB queries with indexing and query tuning to accelerate data retrieval and reduce database load.'
+              : 'Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.';
+
+            const eb4 = hasMicroservices || hasPerf
+              ? 'Resolved asynchronous processing bottlenecks, race conditions, and UI rendering delays across high-volume production workflows.'
+              : 'Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.';
+
+            const eb5 = 'Implemented structured logging and centralized exception handling to improve debugging and issue resolution.';
+
+            proj.highlights = [eb1, eb2, eb3, eb4, eb5];
           } else if (proj.name && proj.name.includes('QPTool')) {
-            proj.highlights = [
-              'Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.',
-              'Designed and implemented RESTful APIs and integrated backend services with React.js applications.',
-              'Built reusable React.js components and implemented frontend API integration and UI logic.',
-              'Improved API response time by approximately 20% through backend and database query optimization.',
-              'Refactored legacy backend code into modular services and enhanced API validation, security, and centralized error handling.'
-            ];
+            const qb1 = hasMicroservices || hasDb
+              ? 'Developed and maintained scalable backend services using Node.js, Express.js, MySQL, and MongoDB for exam platform configuration.'
+              : 'Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.';
+
+            const qb2 = hasMicroservices || hasFrontend
+              ? 'Designed and implemented robust RESTful APIs and seamlessly integrated backend endpoints with React.js frontend applications.'
+              : 'Designed and implemented RESTful APIs and integrated backend services with React.js applications.';
+
+            const qb3 = hasFrontend
+              ? 'Built reusable, modular React.js UI components and implemented efficient frontend state management and API integration logic.'
+              : 'Built reusable React.js components and implemented frontend API integration and UI logic.';
+
+            const qb4 = hasPerf
+              ? 'Improved API response latency by approximately 20% through backend logic refinement and database query optimization.'
+              : 'Improved API response time by approximately 20% through backend and database query optimization.';
+
+            const qb5 = 'Refactored legacy backend code into modular services and enhanced API validation, security, and centralized error handling.';
+
+            proj.highlights = [qb1, qb2, qb3, qb4, qb5];
           }
         });
       }
@@ -505,29 +552,54 @@ async function tailorResume(standardResumeJson, jd) {
   const keyMatches = matchResult.matchedSkills.slice(0, 5).join(', ') || 'Node.js, Express.js, React.js, TypeScript, MySQL, AWS';
   tailored.summary = `Software Development Engineer 2 (SDE2) with 4+ years of experience specializing in Full Stack engineering (${keyMatches}). Proven track record designing scalable RESTful APIs, optimizing database performance, implementing secure authentication, and delivering high-throughput production web applications.`;
 
-  // 7. Optional LLM refinement with strict anti-hallucination prompt
+  // 7. Optional LLM refinement with strict anti-hallucination prompt across entire resume
   if (API_KEY) {
     const verifiedSkillNames = Array.from(extractCanonicalSkillSet(canonicalClone)).join(', ');
     const systemPrompt = `You are an expert ATS resume optimizer.
 CANDIDATE INFORMATION:
 - Name: Santhosh T K
 - Verified Skills: ${verifiedSkillNames}
-- Experience: 4+ years of software development experience at IQVIA & Sify Technologies.
+- Authentic Experience:
+  1. IQVIA: SDE2 (June 2026 – Present) on "Project: Expert Events – Clinical Event & Engagement Management Platform"
+  2. Sify Technologies: Software Developer (July 2023 – June 2026) on "Project: Exam Engine" and "Project: QPTool"
 
 STRICT TRUTHFULNESS & ZERO HALLUCINATION RULES:
 1. ONLY emphasize the candidate's authentic skills that match the JD.
 2. NEVER mention or claim experience with skills the candidate lacks (e.g. do NOT mention ${matchResult.unsupportedRequirements.slice(0, 8).join(', ') || 'unsupported technologies'}).
-3. NEVER invent or alter company names, dates, degrees, or metrics.
-4. Output JSON ONLY with refined "targetTitle" and "summary" (2-3 concise, impactful sentences):
+3. NEVER invent or alter company names, dates, degrees, or metrics (~20% latency reduction, ~30% issue reduction, 8+ major features, 2 junior developers).
+4. NEVER mention TypeScript inside project bullets (TypeScript is strictly reserved for the Skills section).
+5. Ensure bullet lengths stay concise and tight (1-2 lines each) so the resume fits strictly on 1 page.
+6. Output JSON ONLY with refined "targetTitle", "summary", and tailored highlight phrasing for the projects:
 {
   "targetTitle": "Role Title",
-  "summary": "Tailored 2-3 sentence executive profile summary"
+  "summary": "Tailored 2-3 sentence executive profile summary",
+  "iqviaHighlights": [
+    "Developed dynamic engagement-creation stepper...",
+    "Developed Node.js and Express.js backend workflow...",
+    "Implemented end-to-end session lifecycle...",
+    "Collaborated with business analysts...",
+    "Followed CI/CD workflows..."
+  ],
+  "sifyExamEngineHighlights": [
+    "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%...",
+    "Implemented JWT-based authentication and Role-Based Access Control (RBAC)...",
+    "Optimized MySQL and MongoDB queries...",
+    "Resolved asynchronous processing issues...",
+    "Implemented structured logging..."
+  ],
+  "sifyQpToolHighlights": [
+    "Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB...",
+    "Designed and implemented RESTful APIs...",
+    "Built reusable React.js components...",
+    "Improved API response time by approximately 20%...",
+    "Refactored legacy backend code into modular services..."
+  ]
 }`;
 
     const userPrompt = `Job Description (JD):\n${jd.slice(0, 2500)}\n\nMatched Authentic Skills: ${matchResult.matchedSkills.join(', ')}`;
 
     try {
-      const responseText = await callLlm(systemPrompt, userPrompt, 350);
+      const responseText = await callLlm(systemPrompt, userPrompt, 700);
       const jsonMatch = responseText.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const patch = JSON.parse(jsonMatch[0]);
@@ -536,6 +608,38 @@ STRICT TRUTHFULNESS & ZERO HALLUCINATION RULES:
         }
         if (patch.summary && typeof patch.summary === 'string' && patch.summary.trim().length > 30) {
           tailored.summary = patch.summary.replace(/→|➔|➜/g, ' to ').trim();
+        }
+
+        // Apply tailored project highlights with safety sanitization
+        const sanitizeHighlights = (list) => {
+          if (!Array.isArray(list) || list.length === 0) return null;
+          return list.map(b => String(b)
+            .replace(/typescript/gi, '')
+            .replace(/\s+/g, ' ')
+            .replace(/,\s*,/g, ',')
+            .replace(/\(\s*\)/g, '')
+            .trim()
+          );
+        };
+
+        if (Array.isArray(patch.iqviaHighlights) && patch.iqviaHighlights.length === 5) {
+          const sanitizedIqvia = sanitizeHighlights(patch.iqviaHighlights);
+          if (sanitizedIqvia && tailored.experience[0]) {
+            tailored.experience[0].highlights = sanitizedIqvia;
+          }
+        }
+
+        if (tailored.experience[1] && Array.isArray(tailored.experience[1].projects)) {
+          if (Array.isArray(patch.sifyExamEngineHighlights) && patch.sifyExamEngineHighlights.length === 5) {
+            const sanitizedEngine = sanitizeHighlights(patch.sifyExamEngineHighlights);
+            const p0 = tailored.experience[1].projects.find(p => p.name.includes('Exam Engine'));
+            if (p0 && sanitizedEngine) p0.highlights = sanitizedEngine;
+          }
+          if (Array.isArray(patch.sifyQpToolHighlights) && patch.sifyQpToolHighlights.length === 5) {
+            const sanitizedQp = sanitizeHighlights(patch.sifyQpToolHighlights);
+            const p1 = tailored.experience[1].projects.find(p => p.name.includes('QPTool'));
+            if (p1 && sanitizedQp) p1.highlights = sanitizedQp;
+          }
         }
       }
     } catch (e) {

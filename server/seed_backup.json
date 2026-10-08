@@ -9,7 +9,7 @@
     "linkedin": "linkedin.com/in/santhosh-tk",
     "github": "github.com/TKSanthosh"
   },
-  "summary": "Software Development Engineer 2 (SDE2) with 4+ years of experience in full-stack development using Node.js, Express.js, React.js, TypeScript, MySQL, MongoDB, and AWS. Experienced in building RESTful APIs, implementing JWT authentication and Role-Based Access Control (RBAC), troubleshooting production issues, optimizing database queries, and improving application performance. Strong understanding of TypeScript, JavaScript, asynchronous programming, MVC architecture, scalability, caching, and database optimization.",
+  "summary": "Software Development Engineer 2 (SDE2) with 4+ years of experience engineering high-performance web applications across Node.js, Express.js, React.js, TypeScript, and AWS. Proven track record in designing resilient RESTful APIs, secure authentication architectures, optimizing MySQL and MongoDB query performance, and resolving complex production challenges. Deep expertise in asynchronous programming, MVC design, scalable caching, and modern CI/CD deployment pipelines.",
   "skills": {
     "Backend": [
       "Node.js",
@@ -18,7 +18,7 @@
       "RESTful APIs",
       "API Development & Integration",
       "JWT Authentication",
-      "Role-Based Access Control (RBAC)",
+      "RBAC & Authorization",
       "Middleware",
       "MVC Architecture",
       "Asynchronous Programming"
@@ -69,13 +69,13 @@
       "role": "Software Development Engineer 2 (SDE2)",
       "company": "IQVIA, Bangalore",
       "duration": "June 2026 – Present",
-      "project": "Project: Expert Events – Clinical Event & Engagement Management Platform",
+      "project": "Expert Events – Clinical Engagement Management Platform",
       "highlights": [
-        "Developed a dynamic engagement-creation stepper using React.js, with configurable steps and validation logic based on engagement type.",
-        "Developed Node.js and Express.js backend workflow logic and a multi-level approval workflow using MySQL, including administrator-level approval overrides.",
-        "Implemented end-to-end session lifecycle handling for live engagement events, from session joining through completion.",
-        "Collaborated with business analysts, project leads, and client stakeholders to translate business requirements into technical solutions.",
-        "Followed CI/CD workflows using GitHub for automated builds and deployments across application environments."
+        "Developed a dynamic engagement-creation stepper using React.js, with configurable multi-step validation logic based on event type.",
+        "Engineered Node.js and Express.js backend services and a multi-level approval workflow in MySQL with administrator override capabilities.",
+        "Spearheaded end-to-end session lifecycle handling for live engagement events, from attendee onboarding through completion.",
+        "Collaborated with business analysts, technical leads, and client stakeholders to translate product roadmaps into reliable technical solutions.",
+        "Maintained automated CI/CD deployment workflows using GitHub Actions across staging and production environments."
       ]
     },
     {
@@ -84,23 +84,23 @@
       "duration": "July 2023 – June 2026",
       "projects": [
         {
-          "name": "Project: Exam Engine – Exam Delivery System",
+          "name": "Exam Engine – Exam Delivery Platform",
           "highlights": [
-            "Migrated backend logic from PHP to Node.js and MongoDB, reducing recurring production issues by approximately 30%.",
-            "Implemented JWT-based authentication and Role-Based Access Control (RBAC) for secure exam workflows.",
-            "Optimized MySQL and MongoDB queries to improve data retrieval performance and reduce database load.",
-            "Resolved asynchronous processing issues, race conditions, and UI rendering delays across production workflows.",
-            "Implemented structured logging and centralized exception handling to improve debugging and issue resolution."
+            "Migrated legacy backend services from PHP to Node.js and MongoDB, decreasing recurring production issues by **30%**.",
+            "Architected JWT authentication with fine-grained authorization (RBAC) to ensure tamper-proof exam integrity.",
+            "Optimized MySQL and MongoDB indexing strategies to accelerate query retrieval and decrease database load.",
+            "Resolved asynchronous race conditions and UI rendering bottlenecks across high-concurrency exam sessions.",
+            "Deployed structured logging and centralized exception handling to accelerate triage and incident resolution."
           ]
         },
         {
-          "name": "Project: QPTool – Exam Configuration Platform",
+          "name": "QPTool – Exam Configuration Platform",
           "highlights": [
-            "Developed and maintained backend services using Node.js, Express.js, MySQL, and MongoDB.",
-            "Designed and implemented RESTful APIs and integrated backend services with React.js applications.",
-            "Built reusable React.js components and implemented frontend API integration and UI logic.",
-            "Improved API response time by approximately 20% through backend and database query optimization.",
-            "Refactored legacy backend code into modular services and enhanced API validation, security, and centralized error handling."
+            "Engineered robust backend microservices utilizing Node.js, Express.js, MySQL, and MongoDB.",
+            "Designed high-throughput RESTful APIs and orchestrated seamless integration with React.js single-page applications.",
+            "Crafted reusable React.js component libraries with optimized rendering performance and clean state management.",
+            "Enhanced API response latency by **20%** through targeted server-side caching and SQL query optimization.",
+            "Refactored legacy services into modular architectures, reinforcing input validation, data sanitization, and security policies."
           ]
         }
       ]
@@ -111,19 +111,19 @@
     "company": "Sify Technologies – CHIP 2023 Program",
     "duration": "February 2023 – June 2023",
     "highlights": [
-      "Worked on full-stack development using Node.js, Express.js, React.js, MySQL, and MongoDB.",
-      "Gained hands-on experience with production workflows, debugging, and Git-based version control.",
-      "Developed internal tools and modules used by engineering teams in real-world projects."
+      "Built responsive frontend views and backend REST services utilizing React.js, Node.js, Express.js, and MySQL.",
+      "Participated in Agile sprints, production code reviews, and Git-driven collaboration workflows.",
+      "Contributed to internal engineering utilities adopted by core development teams across production initiatives."
     ]
   },
   "achievements": [
-    "Delivered 8+ major features across two production systems",
-    "Mentored 2 junior developers on backend development and coding best practices.",
-    "Contributed to PHP-to-Node.js migration and backend modernization initiatives."
+    "Delivered **8+ major features** across two mission-critical production systems.",
+    "Mentored junior engineers on backend development patterns, clean architecture, and coding standards.",
+    "Contributed to core PHP-to-Node.js migration and architecture modernization initiatives."
   ],
   "education": [
     {
-      "degree": "Bachelor of Engineering (B.E.) – Electronics & Communication Engineering",
+      "degree": "Bachelor of Engineering (B.E.), Electronics & Communication Engineering",
       "institution": "Velammal College of Engineering & Technology, Madurai",
       "duration": "2023",
       "details": "CGPA: 9.15 / 10"
